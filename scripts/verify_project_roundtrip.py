@@ -93,7 +93,10 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         src_files, src_dirs = _members(source)
         dst_files, dst_dirs = _members(target)
         missing_dirs = sorted(src_dirs - dst_dirs)
-        missing_files = sorted(set(src_files) - set(dst_files) - allowed)
+        # An edit allowance permits changed bytes, not deletion of an original
+        # project member. Otherwise an exported ZIP missing its only edited map
+        # could be reported as verified despite losing gameplay data.
+        missing_files = sorted(set(src_files) - set(dst_files))
         added_files = sorted(set(dst_files) - set(src_files) - allowed)
         if missing_dirs or missing_files or added_files:
             raise ValueError(
