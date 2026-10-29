@@ -374,7 +374,7 @@ pub async fn save_event(
                     for (key, event_val) in pairs.iter_mut() {
                         if let Some(id) = key.as_int() {
                             if id == event.id {
-                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value());
+                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value())?;
                                 replaced = true;
                                 break;
                             }
@@ -406,6 +406,71 @@ pub async fn save_event(
         .map_err(|e| format!("Failed to save map: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod event_save_integrity_tests {
+    use super::*;
+    use crate::marshal::types::{RubyObject, RubyString, RubyValue};
+
+    fn object(class_name: &str, fields: Vec<(&str, RubyValue)>) -> RubyValue {
+        let mut obj = RubyObject::new(class_name.to_owned());
+        for (name, value) in fields {
+            obj.instance_vars.push((format!("@{name}"), value));
+        }
+        RubyValue::Object(obj)
+    }
+
+    fn command(text: &str, extension: i64) -> RubyValue {
+        object("RPG::EventCommand", vec![
+            ("code", RubyValue::Integer(101)),
+            ("indent", RubyValue::Integer(0)),
+            ("parameters", RubyValue::Array(vec![
+                RubyValue::String(RubyString::new(text.as_bytes().to_vec())),
+            ])),
+            ("extension_marker", RubyValue::Integer(extension)),
+        ])
+    }
+
+    #[tokio::test]
+    async fn ambiguous_event_save_returns_error_and_leaves_original_rxdata_untouched() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-event-merge-{}-{unique}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+
+        let page = object("RPG::Event::Page", vec![
+            ("list", RubyValue::Array(vec![
+                command("A", 11), command("B", 22),
+            ])),
+        ]);
+        let event = object("RPG::Event", vec![
+            ("id", RubyValue::Integer(1)),
+            ("name", RubyValue::String(RubyString::new(b"Test".to_vec()))),
+            ("x", RubyValue::Integer(0)),
+            ("y", RubyValue::Integer(0)),
+            ("pages", RubyValue::Array(vec![page])),
+        ]);
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut map_obj) = map else { panic!("map object") };
+        let events = map_obj.instance_vars.iter_mut()
+            .find(|(name, _)| name == "@events").unwrap();
+        events.1 = RubyValue::Hash(vec![(RubyValue::Integer(1), event.clone())]);
+        marshal::dump_file(&map_file, &map).unwrap();
+        let original_bytes = std::fs::read(&map_file).unwrap();
+
+        let mut edited = RpgEvent::from_ruby_value(&event).unwrap();
+        edited.pages[0].list[0].parameters[0] = serde_json::json!("NEW");
+        let error = save_event(root.to_string_lossy().into_owned(), 1, edited)
+            .await.unwrap_err();
+        assert!(error.contains("Ambiguous event page/command"), "{error}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), original_bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Create a new event on a map at position (x, y).
