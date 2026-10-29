@@ -67,6 +67,16 @@ class ProjectRoundtripTests(unittest.TestCase):
         self.assertEqual(report["approved_changed_files"], ["Data/Map001.rxdata"])
         self.assertEqual(report["unchanged_files"], 4)
 
+    def test_allowlisted_edit_must_not_delete_original_map(self):
+        original = self.make_zip("original.zip", self.sample())
+        exported = self.make_zip(
+            "export.zip",
+            [(name, data) for name, data in self.sample() if name != "Data/Map001.rxdata"],
+        )
+        # An allowlist is for byte changes, not permission to lose the map.
+        with self.assertRaisesRegex(ValueError, "missing files=.*Data/Map001.rxdata"):
+            verify_roundtrip(original, exported, {"Data/Map001.rxdata"})
+
     def test_lost_pbs_script_and_empty_directory_are_rejected(self):
         original = self.make_zip("original.zip", self.sample())
         for index, omitted in enumerate(("PBS/pokemon.txt", "Data/Scripts.rxdata", "Graphics/Empty/")):
