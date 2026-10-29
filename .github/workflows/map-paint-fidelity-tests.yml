@@ -1,0 +1,32 @@
+name: XP map painting fidelity regressions
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/mapEditor.ts'
+      - 'src/types/index.ts'
+      - 'src/services/autotileData.ts'
+      - 'tests/mapEditorFidelity.test.mjs'
+      - '.github/workflows/map-paint-fidelity-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/mapEditor.ts'
+      - 'src/types/index.ts'
+      - 'src/services/autotileData.ts'
+      - 'tests/mapEditorFidelity.test.mjs'
+      - '.github/workflows/map-paint-fidelity-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  map-paint-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify three-layer edits, clipboard and flood fill
+        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs
