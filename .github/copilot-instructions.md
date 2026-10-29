@@ -12,3 +12,9 @@ This is the **Android Tauri/Rust/React editor for RPG Maker XP / Pokémon Essent
 - Tests and acceptance evidence are required with every PR. Report unsupported operations, blocker reproductions and exact manual on-device test instructions; do not claim to have used a phone or desktop editor if not actually tested.
 - Run focused Node/Rust suites before expensive Android compilation. Keep checks incremental, avoid duplicate Actions runs, do not enable any paid AI API or overage budget.
 - Changes live on reviewable PR branches, do not auto-merge. Do not modify Shattered, XGBA, PokéBacon or paused PKHeX/CUBE repos as part of this assignment.
+
+## Integration-first execution priority
+Before adding feature PRs, reconcile the current SAF, event integrity, graphics, ZIP import and map editing drafts into one reviewable candidate using newest main. Inspect current heads and CI, run focused checks first, fix combined regressions and preserve existing review requirements.
+The next acceptance milestone is one genuine authorised Shattered Essentials project: Android import → map/event edit → export through SAF → desktop reopen → changed event executes. Preserve all untouched archive members byte-for-byte. Synthetic fixtures and APK compilation remain distinct from this acceptance.
+Produce one commit-specific candidate artifact and short manual test route after combined native/frontend checks pass; build Android once per validated candidate rather than per speculative change. Record project hash, candidate SHA and evidence for each acceptance step. Missing source inputs must be explicit blockers.
+After completing a queue task select the next eligible integration task in the same execution while capacity remains. Hourly watchdog is recovery, not a reason to stop. Do not open duplicate implementations or spend sessions on repeated generic audits. Keep genuine device/runtime gates open until observed.
