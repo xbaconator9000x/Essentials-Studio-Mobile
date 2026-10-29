@@ -41,6 +41,8 @@ jobs:
         run: node --test scripts/queue-watchdog.test.mjs
       - name: Verify automatic coding-agent selection and receipt safety
         run: node --test scripts/copilot-dispatch.test.mjs
+      - name: Test free Jules cloud dispatch, daily budget and deduplication
+        run: node --test scripts/jules-dispatch.test.mjs
       - name: Surface CI failures for the next implementation run
         if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
         run: echo "::warning::A CI workflow failed or was cancelled. Inspect the originating run before proceeding."
@@ -48,17 +50,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/queue-watchdog.mjs --create-issues
-      - name: Dispatch real cloud coding tasks (requires configured Copilot secret)
+      - name: Run free Jules coding agent if configured (paid Copilot opt-in only)
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
-        run: node scripts/copilot-dispatch.mjs
+          CODING_AGENT_PROVIDER: ${{ vars.CODING_AGENT_PROVIDER }}
+        run: |
+          if [ -n "$JULES_API_KEY" ]; then
+            node scripts/jules-dispatch.mjs
+          elif [ "$CODING_AGENT_PROVIDER" = "copilot" ]; then
+            node scripts/copilot-dispatch.mjs
+          else
+            echo "Free Jules not connected; paid Copilot NOT started. Add JULES_API_KEY to start free cloud coding." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Report queue state
         run: |
           {
             echo "### Essentials Studio Mobile development queue"
             echo ""
-            echo "The watchdog runs every five minutes as well as after main pushes and CI completion. With COPILOT_AGENT_TOKEN and an eligible GitHub Copilot plan, it starts bounded coding-agent sessions using durable receipts; otherwise it reports a clear configuration blocker. GitHub Issues are optional."
+            echo "The watchdog runs every five minutes as well as after main pushes and CI completion. With JULES_API_KEY and a connected Google Jules repository, it starts bounded free cloud coding sessions using durable receipts. Paid Copilot dispatch only occurs with an explicit CODING_AGENT_PROVIDER=copilot variable and no Jules secret. GitHub Issues are optional."
             echo "GitHub Copilot writes code only when separately configured. Agents open PRs for review; they never auto-merge or auto-approve acceptance."
             echo ""
             node scripts/queue-watchdog.mjs | sed 's/^/    /'
