@@ -21,6 +21,7 @@ import {
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
 import { importProjectZip, exportProjectZip, discardFailedProjectImport } from "./services/archiveApi";
+import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
 import { inspectProjectBeforeOpen } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
@@ -225,23 +226,15 @@ function AppContent() {
     setLoading(true);
     setArchiveProgress(0);
     setError(null);
-    let importedPath: string | null = null;
     try {
-      importedPath = await importProjectZip(file, setArchiveProgress);
-      await handleOpenProject(importedPath);
+      await importAndOpenProject(file, {
+        importArchive: importProjectZip,
+        openProject: handleOpenProject,
+        discardFailedImport: discardFailedProjectImport,
+        isActiveProject: (path) => projectRef.current?.path === path,
+      }, setArchiveProgress);
     } catch (err) {
-      // A rejected initial map/tileset must not leave a large, unusable
-      // project stranded in app-private storage. Never delete a project that
-      // was already committed as the active editor project.
-      let cleanupFailure = "";
-      if (importedPath && projectRef.current?.path !== importedPath) {
-        try {
-          await discardFailedProjectImport(importedPath);
-        } catch (cleanupErr) {
-          cleanupFailure = ` (private import cleanup failed: ${String(cleanupErr)})`;
-        }
-      }
-      setError(`Project ZIP import failed: ${String(err)}${cleanupFailure}`);
+      setError(`Project ZIP import failed: ${String(err)}`);
     } finally {
       setLoading(false);
       setArchiveProgress(null);
