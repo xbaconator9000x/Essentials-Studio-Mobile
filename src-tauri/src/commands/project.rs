@@ -428,8 +428,14 @@ pub async fn create_event(
     let map = RpgMap::from_ruby_value(&value)
         .ok_or_else(|| "Failed to interpret map data".to_string())?;
 
-    // Find next available event ID
-    let new_id = map.events.keys().max().copied().unwrap_or(0) + 1;
+    if x < 0 || y < 0 || x >= map.width || y >= map.height {
+        return Err(format!("Event position ({x},{y}) is outside map {}x{}", map.width, map.height));
+    }
+
+    // A malformed or exhausted event-ID space must never wrap into another ID.
+    let new_id = map.events.keys().max().copied().unwrap_or(0)
+        .checked_add(1).filter(|id| *id > 0)
+        .ok_or("Cannot allocate a valid event ID")?;
 
     // Build default event with one blank page
     let new_event = RpgEvent {
@@ -458,20 +464,9 @@ pub async fn create_event(
         }],
     };
 
-    // Insert into the raw RubyValue @events hash
-    if let marshal::types::RubyValue::Object(ref mut obj) = value {
-        for (name, val) in obj.instance_vars.iter_mut() {
-            if name == "@events" {
-                if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
-                    pairs.push((
-                        marshal::types::RubyValue::Integer(new_id),
-                        new_event.to_ruby_value(),
-                    ));
-                }
-                break;
-            }
-        }
-    }
+    // Do not report success or write an unchanged map if @events is absent,
+    // malformed, or the new ID already exists.
+    mutate_event_hash(&mut value, new_id, Some(new_event.to_ruby_value()))?;
 
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
@@ -503,17 +498,8 @@ pub async fn delete_event(
     let mut value = marshal::load_file(&map_file)
         .map_err(|e| format!("Failed to read map: {}", e))?;
 
-    // Remove from the @events hash
-    if let marshal::types::RubyValue::Object(ref mut obj) = value {
-        for (name, val) in obj.instance_vars.iter_mut() {
-            if name == "@events" {
-                if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
-                    pairs.retain(|(key, _)| key.as_int() != Some(event_id));
-                }
-                break;
-            }
-        }
-    }
+    // Reject missing IDs or malformed hashes instead of claiming deletion.
+    mutate_event_hash(&mut value, event_id, None)?;
 
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
@@ -528,6 +514,105 @@ pub async fn delete_event(
 
     eprintln!("[delete_event] Deleted event {} from map {}", event_id, map_id);
     Ok(events)
+}
+
+/// Insert or remove a single event in the original Marshal @events hash.
+/// Return an error before touching disk if the requested mutation cannot be
+/// applied; never silently acknowledge a no-op as a successful edit.
+fn mutate_event_hash(
+    map: &mut marshal::types::RubyValue,
+    event_id: i64,
+    replacement: Option<marshal::types::RubyValue>,
+) -> Result<(), String> {
+    use marshal::types::RubyValue;
+    if event_id <= 0 {
+        return Err("Event ID must be positive".into());
+    }
+    let RubyValue::Object(map_object) = map else {
+        return Err("Map is not a Ruby object".into());
+    };
+    if map_object.class_name != "RPG::Map" {
+        return Err("Expected an RPG::Map object".into());
+    }
+    let (_, events) = map_object.instance_vars.iter_mut()
+        .find(|(name, _)| name == "@events")
+        .ok_or("Map has no @events hash")?;
+    let RubyValue::Hash(pairs) = events else {
+        return Err("Map @events is not a Ruby hash".into());
+    };
+    // Ruby Hash data may be malformed or manually edited to contain duplicate
+    // serialized keys. Removing only the first match would report success while
+    // leaving the event present. Refuse ambiguous mutations without writing.
+    let mut matches = pairs.iter().enumerate()
+        .filter(|(_, (key, _))| key.as_int() == Some(event_id))
+        .map(|(index, _)| index);
+    let position = matches.next();
+    if matches.next().is_some() {
+        return Err(format!("Event {event_id} has duplicate Marshal hash keys"));
+    }
+    match (replacement, position) {
+        (Some(event), None) => pairs.push((RubyValue::Integer(event_id), event)),
+        (Some(_), Some(_)) => return Err(format!("Event {event_id} already exists")),
+        (None, Some(index)) => { pairs.remove(index); }
+        (None, None) => return Err(format!("Event {event_id} does not exist")),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod event_mutation_safety_tests {
+    use super::*;
+    use marshal::types::RubyValue;
+
+    #[test]
+    fn insertion_and_deletion_change_only_the_target_event_hash() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let before = map.clone();
+        mutate_event_hash(&mut map, 7, Some(RubyValue::Integer(99))).unwrap();
+        let events = map.as_object().unwrap().get("events").unwrap().as_hash().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], (RubyValue::Integer(7), RubyValue::Integer(99)));
+        assert!(mutate_event_hash(&mut map, 7, Some(RubyValue::Integer(1))).is_err());
+        mutate_event_hash(&mut map, 7, None).unwrap();
+        assert_eq!(map, before, "unrelated map fields changed");
+    }
+
+    #[test]
+    fn duplicate_event_keys_reject_deletion_and_insertion_without_mutating_map() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        if let RubyValue::Object(ref mut obj) = map {
+            let (_, events) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap();
+            let RubyValue::Hash(pairs) = events else { panic!("expected event hash") };
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(10)));
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(11)));
+        }
+        let original = map.clone();
+        let delete_error = mutate_event_hash(&mut map, 7, None).unwrap_err();
+        assert!(delete_error.contains("duplicate"), "{delete_error}");
+        assert_eq!(map, original, "ambiguous delete must not modify map");
+        let insert_error = mutate_event_hash(&mut map, 7, Some(RubyValue::Nil)).unwrap_err();
+        assert!(insert_error.contains("duplicate"), "{insert_error}");
+        assert_eq!(map, original, "ambiguous insert must not modify map");
+    }
+
+    #[test]
+    fn missing_event_or_corrupt_hash_never_reports_success() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let original = map.clone();
+        assert!(mutate_event_hash(&mut map, 1, None).is_err());
+        assert!(mutate_event_hash(&mut map, 0, Some(RubyValue::Nil)).is_err());
+        assert_eq!(map, original);
+        if let RubyValue::Object(ref mut obj) = map {
+            let (_, events) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap();
+            *events = RubyValue::Nil;
+        }
+        let corrupt = map.clone();
+        assert!(mutate_event_hash(&mut map, 1, Some(RubyValue::Nil)).is_err());
+        assert!(mutate_event_hash(&mut map, 1, None).is_err());
+        assert_eq!(map, corrupt);
+    }
 }
 
 /// Apply a targeted edit to the original XP Table without rebuilding the
