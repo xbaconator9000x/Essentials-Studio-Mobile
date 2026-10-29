@@ -9,11 +9,18 @@ import { getAssetPath } from "./tauriApi";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { DecodedImageCache } from "./imageCacheBudget";
 import { boundedAsyncMap } from "./boundedAsyncMap";
+import {
+  MAX_PRIVATE_IMAGE_BYTES,
+  PrivateImageLoadCoordinator,
+  privateImageCacheKey,
+  privateImageReadRequest,
+} from "./privateImageRequests";
 
 // Count-only LRU limits are insufficient for large RPG Maker XP tilesets.
 // Approximate decoded RGBA memory at 4 bytes/pixel: 12M pixels ~48 MiB.
 // Oversized individual assets may render but are never retained in this cache.
 const imageCache = new DecodedImageCache<HTMLImageElement>(96, 12_000_000);
+const privateImageLoads = new PrivateImageLoadCoordinator<HTMLImageElement>();
 
 function cacheImage(path: string, img: HTMLImageElement) {
   imageCache.set(path, img);
@@ -56,13 +63,33 @@ async function loadProjectImage(
   assetName: string,
 ): Promise<HTMLImageElement> {
   if (isAndroidTauri()) {
-    const cacheKey = `private:${projectPath}:${assetType}:${assetName}`;
+    const request = privateImageReadRequest(projectPath, assetType, assetName);
+    const cacheKey = privateImageCacheKey(
+      privateImageLoads.generation,
+      request.args.projectPath,
+      request.args.assetType,
+      request.args.assetName,
+    );
     const cached = imageCache.get(cacheKey);
     if (cached) return cached;
-    const dataUrl = await invoke<string>("read_private_project_image", {
-      projectPath, assetType, assetName,
-    });
-    return loadImage(dataUrl, cacheKey);
+    return privateImageLoads.load(
+      request.args.projectPath,
+      request.args.assetType,
+      request.args.assetName,
+      ({ command, args }) => invoke<string>(command, args),
+      async (dataUrl) => {
+        const response = await fetch(dataUrl);
+        if (!response.ok) throw new Error("Could not prepare private project image data");
+        const blob = await response.blob();
+        if (blob.size > MAX_PRIVATE_IMAGE_BYTES) {
+          throw new Error("Project image exceeds the 32 MiB per-image limit");
+        }
+        const src = URL.createObjectURL(blob);
+        return { src, release: () => URL.revokeObjectURL(src) };
+      },
+      (src, key, isCurrent) =>
+        loadImage(src, key, isCurrent),
+    );
   }
   const path = await getAssetPath(projectPath, assetType, assetName);
   return loadImage(path);
@@ -89,7 +116,11 @@ async function convertFilePathToUrl(filePath: string): Promise<string> {
  * Caches loaded images for reuse.
  * Falls back to alternate URL encoding if the first attempt fails (handles spaces in filenames).
  */
-export async function loadImage(path: string, cacheKey = path): Promise<HTMLImageElement> {
+export async function loadImage(
+  path: string,
+  cacheKey = path,
+  shouldCache: () => boolean = () => true,
+): Promise<HTMLImageElement> {
   const cached = imageCache.get(cacheKey);
   if (cached) return cached;
 
@@ -101,10 +132,14 @@ export async function loadImage(path: string, cacheKey = path): Promise<HTMLImag
     new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        cacheImage(cacheKey, img);
+        img.onload = null;
+        img.onerror = null;
+        if (shouldCache()) cacheImage(cacheKey, img);
         resolve(img);
       };
       img.onerror = (e) => {
+        img.onload = null;
+        img.onerror = null;
         reject(new Error(`Failed to load image: ${src} — ${e}`));
       };
       img.src = src;
@@ -304,5 +339,6 @@ export async function loadCharacterImage(
 
 /** Clear the image cache. */
 export function clearImageCache() {
+  privateImageLoads.clear();
   imageCache.clear();
 }

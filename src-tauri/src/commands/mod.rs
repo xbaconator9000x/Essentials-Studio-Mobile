@@ -3,6 +3,7 @@ pub mod audio;
 #[cfg(target_os = "android")]
 #[path = "audio_android.rs"]
 pub mod audio;
+pub mod android_document;
 pub mod database;
 pub(crate) mod event_merge;
 pub mod pbs;
@@ -12,6 +13,7 @@ pub mod project_archive;
 pub mod scripts;
 pub mod util;
 
+pub use android_document::*;
 pub use audio::*;
 pub use database::*;
 pub use pbs::*;

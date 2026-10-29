@@ -374,7 +374,7 @@ pub async fn save_event(
                     for (key, event_val) in pairs.iter_mut() {
                         if let Some(id) = key.as_int() {
                             if id == event.id {
-                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value());
+                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value())?;
                                 replaced = true;
                                 break;
                             }
@@ -408,6 +408,71 @@ pub async fn save_event(
     Ok(())
 }
 
+#[cfg(test)]
+mod event_save_integrity_tests {
+    use super::*;
+    use crate::marshal::types::{RubyObject, RubyString, RubyValue};
+
+    fn object(class_name: &str, fields: Vec<(&str, RubyValue)>) -> RubyValue {
+        let mut obj = RubyObject::new(class_name.to_owned());
+        for (name, value) in fields {
+            obj.instance_vars.push((format!("@{name}"), value));
+        }
+        RubyValue::Object(obj)
+    }
+
+    fn command(text: &str, extension: i64) -> RubyValue {
+        object("RPG::EventCommand", vec![
+            ("code", RubyValue::Integer(101)),
+            ("indent", RubyValue::Integer(0)),
+            ("parameters", RubyValue::Array(vec![
+                RubyValue::String(RubyString::new(text.as_bytes().to_vec())),
+            ])),
+            ("extension_marker", RubyValue::Integer(extension)),
+        ])
+    }
+
+    #[tokio::test]
+    async fn ambiguous_event_save_returns_error_and_leaves_original_rxdata_untouched() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-event-merge-{}-{unique}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+
+        let page = object("RPG::Event::Page", vec![
+            ("list", RubyValue::Array(vec![
+                command("A", 11), command("B", 22),
+            ])),
+        ]);
+        let event = object("RPG::Event", vec![
+            ("id", RubyValue::Integer(1)),
+            ("name", RubyValue::String(RubyString::new(b"Test".to_vec()))),
+            ("x", RubyValue::Integer(0)),
+            ("y", RubyValue::Integer(0)),
+            ("pages", RubyValue::Array(vec![page])),
+        ]);
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut map_obj) = map else { panic!("map object") };
+        let events = map_obj.instance_vars.iter_mut()
+            .find(|(name, _)| name == "@events").unwrap();
+        events.1 = RubyValue::Hash(vec![(RubyValue::Integer(1), event.clone())]);
+        marshal::dump_file(&map_file, &map).unwrap();
+        let original_bytes = std::fs::read(&map_file).unwrap();
+
+        let mut edited = RpgEvent::from_ruby_value(&event).unwrap();
+        edited.pages[0].list[0].parameters[0] = serde_json::json!("NEW");
+        let error = save_event(root.to_string_lossy().into_owned(), 1, edited)
+            .await.unwrap_err();
+        assert!(error.contains("Ambiguous event page/command"), "{error}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), original_bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
 /// Create a new event on a map at position (x, y).
 /// Returns the created event (with auto-assigned ID) and the updated event list.
 #[tauri::command]
@@ -428,8 +493,14 @@ pub async fn create_event(
     let map = RpgMap::from_ruby_value(&value)
         .ok_or_else(|| "Failed to interpret map data".to_string())?;
 
-    // Find next available event ID
-    let new_id = map.events.keys().max().copied().unwrap_or(0) + 1;
+    if x < 0 || y < 0 || x >= map.width || y >= map.height {
+        return Err(format!("Event position ({x},{y}) is outside map {}x{}", map.width, map.height));
+    }
+
+    // A malformed or exhausted event-ID space must never wrap into another ID.
+    let new_id = map.events.keys().max().copied().unwrap_or(0)
+        .checked_add(1).filter(|id| *id > 0)
+        .ok_or("Cannot allocate a valid event ID")?;
 
     // Build default event with one blank page
     let new_event = RpgEvent {
@@ -458,20 +529,9 @@ pub async fn create_event(
         }],
     };
 
-    // Insert into the raw RubyValue @events hash
-    if let marshal::types::RubyValue::Object(ref mut obj) = value {
-        for (name, val) in obj.instance_vars.iter_mut() {
-            if name == "@events" {
-                if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
-                    pairs.push((
-                        marshal::types::RubyValue::Integer(new_id),
-                        new_event.to_ruby_value(),
-                    ));
-                }
-                break;
-            }
-        }
-    }
+    // Do not report success or write an unchanged map if @events is absent,
+    // malformed, or the new ID already exists.
+    mutate_event_hash(&mut value, new_id, Some(new_event.to_ruby_value()))?;
 
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
@@ -503,17 +563,8 @@ pub async fn delete_event(
     let mut value = marshal::load_file(&map_file)
         .map_err(|e| format!("Failed to read map: {}", e))?;
 
-    // Remove from the @events hash
-    if let marshal::types::RubyValue::Object(ref mut obj) = value {
-        for (name, val) in obj.instance_vars.iter_mut() {
-            if name == "@events" {
-                if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
-                    pairs.retain(|(key, _)| key.as_int() != Some(event_id));
-                }
-                break;
-            }
-        }
-    }
+    // Reject missing IDs or malformed hashes instead of claiming deletion.
+    mutate_event_hash(&mut value, event_id, None)?;
 
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
@@ -528,6 +579,105 @@ pub async fn delete_event(
 
     eprintln!("[delete_event] Deleted event {} from map {}", event_id, map_id);
     Ok(events)
+}
+
+/// Insert or remove a single event in the original Marshal @events hash.
+/// Return an error before touching disk if the requested mutation cannot be
+/// applied; never silently acknowledge a no-op as a successful edit.
+fn mutate_event_hash(
+    map: &mut marshal::types::RubyValue,
+    event_id: i64,
+    replacement: Option<marshal::types::RubyValue>,
+) -> Result<(), String> {
+    use marshal::types::RubyValue;
+    if event_id <= 0 {
+        return Err("Event ID must be positive".into());
+    }
+    let RubyValue::Object(map_object) = map else {
+        return Err("Map is not a Ruby object".into());
+    };
+    if map_object.class_name != "RPG::Map" {
+        return Err("Expected an RPG::Map object".into());
+    }
+    let (_, events) = map_object.instance_vars.iter_mut()
+        .find(|(name, _)| name == "@events")
+        .ok_or("Map has no @events hash")?;
+    let RubyValue::Hash(pairs) = events else {
+        return Err("Map @events is not a Ruby hash".into());
+    };
+    // Ruby Hash data may be malformed or manually edited to contain duplicate
+    // serialized keys. Removing only the first match would report success while
+    // leaving the event present. Refuse ambiguous mutations without writing.
+    let mut matches = pairs.iter().enumerate()
+        .filter(|(_, (key, _))| key.as_int() == Some(event_id))
+        .map(|(index, _)| index);
+    let position = matches.next();
+    if matches.next().is_some() {
+        return Err(format!("Event {event_id} has duplicate Marshal hash keys"));
+    }
+    match (replacement, position) {
+        (Some(event), None) => pairs.push((RubyValue::Integer(event_id), event)),
+        (Some(_), Some(_)) => return Err(format!("Event {event_id} already exists")),
+        (None, Some(index)) => { pairs.remove(index); }
+        (None, None) => return Err(format!("Event {event_id} does not exist")),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod event_mutation_safety_tests {
+    use super::*;
+    use marshal::types::RubyValue;
+
+    #[test]
+    fn insertion_and_deletion_change_only_the_target_event_hash() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let before = map.clone();
+        mutate_event_hash(&mut map, 7, Some(RubyValue::Integer(99))).unwrap();
+        let events = map.as_object().unwrap().get("events").unwrap().as_hash().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], (RubyValue::Integer(7), RubyValue::Integer(99)));
+        assert!(mutate_event_hash(&mut map, 7, Some(RubyValue::Integer(1))).is_err());
+        mutate_event_hash(&mut map, 7, None).unwrap();
+        assert_eq!(map, before, "unrelated map fields changed");
+    }
+
+    #[test]
+    fn duplicate_event_keys_reject_deletion_and_insertion_without_mutating_map() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        if let RubyValue::Object(ref mut obj) = map {
+            let (_, events) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap();
+            let RubyValue::Hash(pairs) = events else { panic!("expected event hash") };
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(10)));
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(11)));
+        }
+        let original = map.clone();
+        let delete_error = mutate_event_hash(&mut map, 7, None).unwrap_err();
+        assert!(delete_error.contains("duplicate"), "{delete_error}");
+        assert_eq!(map, original, "ambiguous delete must not modify map");
+        let insert_error = mutate_event_hash(&mut map, 7, Some(RubyValue::Nil)).unwrap_err();
+        assert!(insert_error.contains("duplicate"), "{insert_error}");
+        assert_eq!(map, original, "ambiguous insert must not modify map");
+    }
+
+    #[test]
+    fn missing_event_or_corrupt_hash_never_reports_success() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let original = map.clone();
+        assert!(mutate_event_hash(&mut map, 1, None).is_err());
+        assert!(mutate_event_hash(&mut map, 0, Some(RubyValue::Nil)).is_err());
+        assert_eq!(map, original);
+        if let RubyValue::Object(ref mut obj) = map {
+            let (_, events) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap();
+            *events = RubyValue::Nil;
+        }
+        let corrupt = map.clone();
+        assert!(mutate_event_hash(&mut map, 1, Some(RubyValue::Nil)).is_err());
+        assert!(mutate_event_hash(&mut map, 1, None).is_err());
+        assert_eq!(map, corrupt);
+    }
 }
 
 /// Apply a targeted edit to the original XP Table without rebuilding the
@@ -736,6 +886,12 @@ pub async fn save_map_properties(
     // Update map file — modify instance variables on the raw RubyValue
     let mut value = marshal::load_file(&map_file)
         .map_err(|e| format!("Failed to read map: {}", e))?;
+    // Check both source files before writing either one: a missing MapInfos
+    // entry must not leave an edited map behind after reporting an error.
+    let map_infos_path = path.join("Data").join("MapInfos.rxdata");
+    let mut infos_value = marshal::load_file(&map_infos_path)
+        .map_err(|e| format!("Failed to read MapInfos: {}", e))?;
+    validate_map_properties_preflight(&value, &infos_value, props.id, props.width, props.height)?;
 
     if let marshal::types::RubyValue::Object(ref mut obj) = value {
         // Capture the original dimensions BEFORE we overwrite @width/@height below,
@@ -785,8 +941,16 @@ pub async fn save_map_properties(
                     if let marshal::types::RubyValue::UserDefined { class_name, data } = val {
                         if class_name == "Table" {
                             if let Some(mut table) = Table::from_bytes(data) {
+                                // Preserve opaque trailing bytes from custom XP Table
+                                // serializers; resizing known cells must not discard them.
+                                let table_bytes = 20 + table.data.len() * 2;
+                                let extension = data[table_bytes..].to_vec();
                                 table.resize(props.width as u32, props.height as u32, 3);
-                                *data = table.to_bytes();
+                                let mut resized = table.to_bytes();
+                                resized.extend_from_slice(&extension);
+                                *data = resized;
+                            } else {
+                                return Err("Cannot resize malformed XP Table".into());
                             }
                         }
                     }
@@ -799,11 +963,7 @@ pub async fn save_map_properties(
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
 
-    // Update MapInfos.rxdata with the new name
-    let map_infos_path = path.join("Data").join("MapInfos.rxdata");
-    let mut infos_value = marshal::load_file(&map_infos_path)
-        .map_err(|e| format!("Failed to read MapInfos: {}", e))?;
-
+    // MapInfos was already parsed and validated before the map write.
     if let marshal::types::RubyValue::Hash(ref mut pairs) = infos_value {
         for (key, val) in pairs.iter_mut() {
             if let Some(id) = key.as_int() {
@@ -831,6 +991,164 @@ pub async fn save_map_properties(
 
     eprintln!("[save_map_properties] Saved map {} properties", props.id);
     Ok(())
+}
+
+/// Reject invalid map/Table and MapInfos sources before the first disk write.
+/// Without this check a failed resize can change @width/@height but silently
+/// leave the old Table, producing an unplayable XP map.
+fn validate_map_properties_preflight(
+    map_value: &marshal::types::RubyValue,
+    infos_value: &marshal::types::RubyValue,
+    map_id: i64,
+    new_width: i64,
+    new_height: i64,
+) -> Result<(), String> {
+    use marshal::types::RubyValue;
+    if map_id <= 0 {
+        return Err("Invalid map ID".into());
+    }
+    crate::models::map::checked_map_tile_dimensions(new_width, new_height)
+        .ok_or("Invalid destination map dimensions")?;
+    let map = RpgMap::from_ruby_value(map_value)
+        .ok_or("Cannot edit properties of a malformed XP map or Table")?;
+    let obj = map_value.as_object().ok_or("Expected RPG::Map object")?;
+    for field in ["@width", "@height", "@data"] {
+        if !obj.instance_vars.iter().any(|(name, _)| name == field) {
+            return Err(format!("Map is missing required {field}"));
+        }
+    }
+    if map.events.values().any(|event| {
+        event.x < 0 || event.y < 0 || event.x >= new_width || event.y >= new_height
+    }) {
+        return Err("Cannot resize map while an event would be outside the new bounds".into());
+    }
+    let RubyValue::Hash(pairs) = infos_value else {
+        return Err("MapInfos is not a Ruby Hash".into());
+    };
+    let mut matching = pairs.iter().filter(|(key, _)| key.as_int() == Some(map_id));
+    let (_, info) = matching.next().ok_or("Map ID is missing from MapInfos")?;
+    if matching.next().is_some() {
+        return Err("MapInfos contains duplicate map IDs".into());
+    }
+    let RubyValue::Object(info_obj) = info else {
+        return Err("MapInfos entry is not a Ruby object".into());
+    };
+    if info_obj.class_name != "RPG::MapInfo"
+        || !info_obj.instance_vars.iter().any(|(name, value)| {
+            name == "@name" && matches!(value, RubyValue::String(_))
+        })
+    {
+        return Err("MapInfos entry lacks a valid map name".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod map_properties_preflight_tests {
+    use super::*;
+    use marshal::types::RubyValue;
+
+    fn sources() -> (RubyValue, RubyValue) {
+        let map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let info = MapInfo {
+            name: "Fixture".into(), parent_id: 0, order: 1,
+            expanded: true, scroll_x: 0, scroll_y: 0,
+        }.to_ruby_value();
+        (map, RubyValue::Hash(vec![(RubyValue::Integer(1), info)]))
+    }
+
+    #[test]
+    fn valid_three_layer_map_and_mapinfos_can_be_edited() {
+        let (map, infos) = sources();
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 3, 3).is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_or_duplicate_mapinfos_before_map_mutation() {
+        let (map, mut infos) = sources();
+        assert!(validate_map_properties_preflight(&map, &RubyValue::Hash(vec![]), 1, 2, 2).is_err());
+        let RubyValue::Hash(ref mut pairs) = infos else { panic!("hash") };
+        pairs.push(pairs[0].clone());
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 2, 2).is_err());
+    }
+
+    #[test]
+    fn rejects_corrupt_table_and_missing_dimensions_without_touching_sources() {
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        let (_, table) = obj.instance_vars.iter_mut().find(|(n, _)| n == "@data").unwrap();
+        let RubyValue::UserDefined { ref mut data, .. } = table else { panic!("table") };
+        data[12..16].copy_from_slice(&1u32.to_le_bytes());
+        let before = map.clone();
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 4, 4).is_err());
+        assert_eq!(map, before);
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        obj.instance_vars.retain(|(name, _)| name != "@width");
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 4, 4).is_err());
+    }
+
+    fn temp_project() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xp-map-properties-{}-{unique}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        root
+    }
+
+    fn edited_properties() -> MapProperties {
+        MapProperties {
+            id: 1, name: "Renamed".into(), tileset_id: 1, width: 3, height: 3,
+            autoplay_bgm: false, bgm_name: String::new(), bgm_volume: 100,
+            bgm_pitch: 100, autoplay_bgs: false, bgs_name: String::new(),
+            bgs_volume: 100, bgs_pitch: 100, encounter_step: 30,
+            scroll_type: 0, disable_dashing: false, parallax_name: String::new(),
+            parallax_loop_x: false, parallax_loop_y: false, parallax_sx: 0,
+            parallax_sy: 0, parallax_show: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_mapinfos_does_not_partially_save_map_properties() {
+        let root = temp_project();
+        let (map, _) = sources();
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        marshal::dump_file(&root.join("Data/MapInfos.rxdata"), &RubyValue::Nil).unwrap();
+        let before = std::fs::read(&map_path).unwrap();
+        let result = save_map_properties(root.to_string_lossy().into_owned(), edited_properties()).await;
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&map_path).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn valid_map_property_resize_preserves_layers_and_updates_name() {
+        let root = temp_project();
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        let (_, raw) = obj.instance_vars.iter_mut().find(|(n, _)| n == "@data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw else { panic!("Table") };
+        data.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        let infos_path = root.join("Data/MapInfos.rxdata");
+        marshal::dump_file(&infos_path, &infos).unwrap();
+        save_map_properties(root.to_string_lossy().into_owned(), edited_properties())
+            .await.unwrap();
+        let loaded = marshal::load_file(&map_path).unwrap();
+        let resized = RpgMap::from_ruby_value(&loaded).expect("valid resized three-layer Table");
+        assert_eq!((resized.width, resized.height, resized.data.z_size), (3, 3, 3));
+        assert_eq!(resized.data.get(0, 0, 0), 384);
+        let raw_table = loaded.as_object().unwrap().get("data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw_table else { panic!("Table") };
+        assert!(data.ends_with(&[0xde, 0xad, 0xbe, 0xef]));
+        let updated = load_map_infos(&infos_path).unwrap();
+        assert_eq!(updated.get(&1).unwrap().name, "Renamed");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Create a new blank map. Returns the new map ID and updated map_infos.

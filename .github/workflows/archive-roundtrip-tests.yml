@@ -52,5 +52,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Verify archive, XP Marshal and independent ZIP hashes
-        run: python3 scripts/run_project_roundtrip.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native import-edit-export and independent ZIP integrity
+        run: python scripts/run_project_roundtrip.py

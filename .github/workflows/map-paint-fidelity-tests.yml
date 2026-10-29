@@ -1,0 +1,40 @@
+name: XP map painting fidelity regressions
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/mapEditor.ts'
+      - 'src/services/mapGestures.ts'
+      - 'src/components/MapEditor/MapEditor.tsx'
+      - 'src/components/MapEditor/MapEditor.css'
+      - 'src/types/index.ts'
+      - 'src/services/autotileData.ts'
+      - 'tests/mapEditorFidelity.test.mjs'
+      - 'tests/mapGestures.test.mjs'
+      - '.github/workflows/map-paint-fidelity-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/mapEditor.ts'
+      - 'src/services/mapGestures.ts'
+      - 'src/components/MapEditor/MapEditor.tsx'
+      - 'src/components/MapEditor/MapEditor.css'
+      - 'src/types/index.ts'
+      - 'src/services/autotileData.ts'
+      - 'tests/mapEditorFidelity.test.mjs'
+      - 'tests/mapGestures.test.mjs'
+      - '.github/workflows/map-paint-fidelity-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  map-paint-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify map fidelity and touch gestures
+        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs

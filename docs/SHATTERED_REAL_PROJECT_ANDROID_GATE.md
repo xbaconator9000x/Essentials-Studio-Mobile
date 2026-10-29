@@ -14,6 +14,17 @@ On a standard supported Android ARM64 phone, open an **authorised Pokémon Essen
 6. On a desktop Essentials/RPG Maker XP environment, open the edited project and execute the event. Independently confirm that its executable/game runtime starts in JoiPlay/NaviaXP on Android and the changed dialogue can be observed.
 7. Capture the build SHA, APK version, Android provider/device details, input/output ZIP hashes, allowed changed paths, script and map integrity receipts, screenshots/errors and a clear pass/fail matrix.
 
+## Manual Android SAF test protocol
+
+Run this protocol on a physical ARM64 device with a disposable copy of an authorised project. Synthetic CI fixtures and mocked providers do not count as device evidence.
+
+1. Record the APK SHA/version, device model, Android version, selected document provider, and SHA-256 of the input ZIP. Import it through the system picker and confirm the app opens the expected project without modifying the input ZIP.
+2. Make one controlled map-tile edit, save, close and reopen the project in the app, and verify the edit remains. Export to a new document through the native save picker; do not overwrite the source ZIP.
+3. Confirm the app reports success only after native write completion and byte-for-byte provider readback. Reopen the output from the provider after closing the app, copy it to a desktop, and run `python3 scripts/verify_project_roundtrip.py ORIGINAL.zip EXPORTED.zip --allow-changed Data/MapNNN.rxdata` with the actual changed map path. Record both ZIP hashes and the verifier JSON.
+4. Repeat export and cancel the picker. The operation must report cancellation, must not invoke a document write, and must not show a saved/success result.
+5. On a test provider or disposable destination only, exercise a provider write/permission failure and, where supported, a destination that fails after a partial write (for example a constrained test volume). The app must report failure, never success; any partial new document is allowed but must be identified and removed manually. Confirm the original ZIP and imported project are unchanged. If a provider cannot safely produce a particular failure, record it as not exercised rather than simulating device evidence.
+6. Preserve provider/device details, input and output hashes, allowed changed paths, app result, screenshots or logs, and a pass/fail/not-exercised result for each case. Then reopen the exported project in desktop RMXP/Essentials and launch the game on the phone; those are separate mandatory gates.
+
 ## Core engineering priorities
 - **ASM-005 / PR #12:** Android scoped SAF export is present as a draft with synthetic validation, but not real provider/device verification. Finish code/test/integration against current main, without altering unrelated editor modules.
 - **ASM-004:** Project ZIP import, correct project-root discovery and Tauri app-private path routing must lead to the actual `open_project` backend. The original desktop backend currently requires `Game.rxproj`, `Data/MapInfos.rxdata`, `System.rxdata`, `Tilesets.rxdata`; audit actual v21.1 project inputs rather than assuming an exported ZIP is valid.
