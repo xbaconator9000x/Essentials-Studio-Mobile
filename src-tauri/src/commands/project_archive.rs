@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use zip::ZipArchive;
 
-const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 384 * 1024 * 1024;
@@ -305,7 +305,7 @@ pub struct ProjectArchiveExport {
     pub size: u64,
 }
 
-fn safe_export_id(id: &str) -> Result<(), String> {
+pub(crate) fn safe_export_id(id: &str) -> Result<(), String> {
     if id.starts_with("export-")
         && id.len() <= 90
         && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -316,7 +316,7 @@ fn safe_export_id(id: &str) -> Result<(), String> {
     }
 }
 
-fn exports_root(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn exports_root(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("exports");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
