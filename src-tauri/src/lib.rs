@@ -19,6 +19,7 @@ pub fn run() {
             begin_project_archive_export,
             read_project_archive_export_chunk,
             discard_project_archive_export,
+            read_private_project_image,
             load_map,
             load_tileset,
             get_asset_path,

@@ -74,7 +74,9 @@
       ],
       "evidence": [
         "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending",
-        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding."
+        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding.",
+        "PR #2 CI run 40840333736 compiled native Rust but failed a duplicate-ZIP test fixture because zip 2.x refuses duplicate names at write time; commit 017600e replaces fixture with a true duplicate-header archive and adds export directory-entry limits. Rerun pending.",
+        "PR #2 commit 06eea530: 5/5 native archive tests passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847121085; PR #3 integrated branch: 7/7 passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847130068. Real Essentials import still unverified."
       ]
     },
     {
@@ -93,7 +95,8 @@
       ],
       "evidence": [
         "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending",
-        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding."
+        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding.",
+        "PR #2 native import/export/reimport test passed on 2026-10-29 (run 40847121085), preserving binary RXDATA, PBS bytes, graphics and empty dirs. Android document save/share and desktop reopening remain unverified."
       ]
     },
     {
@@ -109,7 +112,10 @@
         "Tilesets, autotiles and sprites display on phone",
         "No unscoped filesystem access"
       ],
-      "evidence": []
+      "evidence": [
+        "Draft PR #3 branch feature/android-private-image-loading-20261029 proposes scoped Android image data URLs for private-project tilesets/autotiles/characters, with traversal, outside-root and symlink tests. Not yet CI/device verified; task remains todo until ASM-004 acceptance.",
+        "PR #3 native scoped-image tests passed 7/7 in run 40847130068, and Android ARM64 APK compilation succeeded in run 40847130040 (artifact 12885373720, 36,221,901 bytes). Real phone rendering not verified; remains todo."
+      ]
     },
     {
       "id": "ASM-007",
@@ -237,9 +243,9 @@
     }
   ],
   "progress": {
-    "estimated_total_completion_percent": 15,
+    "estimated_total_completion_percent": 16,
     "updated_at": "2026-10-29",
-    "basis": "Verified ARM64 APK build and frontend compile in PR #1; ZIP hardening and automated native regression tests proposed in stacked PR #2, pending CI and real Essentials project/device validation. No additional completion credit yet.",
+    "basis": "PR #1 ARM64 APK verified; PR #2 archive security/lossless synthetic fixture tests 5/5 passed; PR #3 integrated native image/ZIP tests 7/7, frontend and ARM64 APK build passed with artifact. No genuine Essentials v21.1 project or physical Android image/export roundtrip verified; all relevant acceptance tasks remain open.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }

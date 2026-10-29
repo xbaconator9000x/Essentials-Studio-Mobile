@@ -435,6 +435,74 @@ pub async fn discard_project_archive_export(
 }
 
 
+
+const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Resolve an image strictly within a previously imported, app-private project.
+/// Never expose arbitrary filesystem paths to the Android WebView.
+fn private_project_image_path(
+    root: &Path,
+    requested_project: &Path,
+    asset_type: &str,
+    asset_name: &str,
+) -> Result<(PathBuf, &'static str), String> {
+    crate::commands::util::validate_asset_name(asset_name)?;
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    let project = requested_project.canonicalize().map_err(|e| e.to_string())?;
+    if project == root || !project.starts_with(&root) || !project.join("Game.rxproj").is_file() {
+        return Err("Images can only be read from imported app-private projects".into());
+    }
+    let (base, directory, extensions) = crate::commands::util::asset_dirs(asset_type)
+        .ok_or("Unknown asset type")?;
+    if base != "Graphics" {
+        return Err("Only project graphics can be read as images".into());
+    }
+    let stem = project.join(base).join(directory).join(asset_name);
+    for ext in extensions {
+        let candidate = stem.with_extension(ext);
+        if !candidate.is_file() {
+            continue;
+        }
+        let resolved = candidate.canonicalize().map_err(|e| e.to_string())?;
+        if !resolved.starts_with(&project) {
+            return Err("Image resolves outside the private project".into());
+        }
+        let mime = match *ext {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            _ => return Err("Unsupported image format".into()),
+        };
+        let size = fs::metadata(&resolved).map_err(|e| e.to_string())?.len();
+        if size > MAX_IMAGE_BYTES {
+            return Err("Project image exceeds the 32 MiB per-image limit".into());
+        }
+        return Ok((resolved, mime));
+    }
+    Err(format!("Project image not found: {asset_type}/{asset_name}"))
+}
+
+/// Android's WebView cannot be assumed to resolve desktop asset:// URLs.
+/// A scoped data URL avoids broad filesystem permissions and never returns
+/// arbitrary file bytes. Desktop continues using its existing asset protocol.
+#[tauri::command]
+pub async fn read_private_project_image(
+    app: AppHandle,
+    project_path: String,
+    asset_type: String,
+    asset_name: String,
+) -> Result<String, String> {
+    let (path, mime) = private_project_image_path(
+        &projects_root(&app)?,
+        Path::new(&project_path),
+        &asset_type,
+        &asset_name,
+    )?;
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
 #[cfg(test)]
 mod archive_roundtrip_tests {
     use super::{extract_archive, export_zip, finish_import, unique_id};
@@ -551,6 +619,45 @@ mod archive_roundtrip_tests {
         let output = sandbox.path("extracted");
         let error = extract_archive(&archive, &output).unwrap_err();
         assert!(error.contains("outside its single project folder"), "{error}");
+    }
+
+
+    #[test]
+    fn private_image_lookup_is_scoped_to_imported_projects() {
+        use super::private_project_image_path;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let outside = sandbox.path("external");
+        fs::create_dir_all(inside.join("Graphics/Tilesets")).unwrap();
+        fs::create_dir_all(outside.join("Graphics/Tilesets")).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        fs::write(outside.join("Game.rxproj"), b"outside").unwrap();
+        fs::write(inside.join("Graphics/Tilesets/Forest.png"), b"PNG").unwrap();
+        fs::write(outside.join("Graphics/Tilesets/Forest.png"), b"PNG").unwrap();
+
+        let (path, mime) = private_project_image_path(&projects, &inside, "tileset", "Forest").unwrap();
+        assert_eq!(mime, "image/png");
+        assert_eq!(path, inside.join("Graphics/Tilesets/Forest.png"));
+        assert!(private_project_image_path(&projects, &outside, "tileset", "Forest").is_err());
+        assert!(private_project_image_path(&projects, &inside, "tileset", "../Forest").is_err());
+        assert!(private_project_image_path(&projects, &inside, "bgm", "Forest").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_image_lookup_rejects_symlinks_outside_project() {
+        use super::private_project_image_path;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        fs::create_dir_all(inside.join("Graphics/Tilesets")).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        let external = sandbox.path("secret.png");
+        fs::write(&external, b"not a game asset").unwrap();
+        symlink(&external, inside.join("Graphics/Tilesets/Escape.png")).unwrap();
+        assert!(private_project_image_path(&projects, &inside, "tileset", "Escape").is_err());
     }
 
     #[test]
