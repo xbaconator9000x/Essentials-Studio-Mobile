@@ -1049,9 +1049,10 @@ mod archive_roundtrip_tests {
         assert!(extract_archive(&collision, &sandbox.path("out-collision")).is_err());
     }
     #[test]
-    fn genuine_marshal_shaped_project_zip_roundtrip_keeps_layers_scripts_and_pbs_bytes() {
+    fn project_zip_import_open_map_edit_save_export_roundtrip() {
+        use crate::marshal::types::RubyObject;
         use crate::marshal::{self, RubyString, RubyValue};
-        use crate::models::map::RpgMap;
+        use crate::models::{MapInfo, RpgMap};
         use flate2::write::ZlibEncoder;
         use flate2::Compression;
 
@@ -1061,19 +1062,63 @@ mod archive_roundtrip_tests {
         fs::create_dir_all(project.join("PBS")).unwrap();
         fs::create_dir_all(project.join("Graphics/Characters")).unwrap();
         fs::write(project.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+        fs::write(
+            project.join("Game.ini"),
+            b"[Game]\r\nTitle=Synthetic RMXP Fixture\r\n",
+        )
+        .unwrap();
 
         let mut map = RpgMap::new_blank(2, 2, 1);
         for z in 0..3 {
             for y in 0..2 {
                 for x in 0..2 {
-                    map.data.set(x, y, z, [384, 48, 1024][z as usize] + (y * 2 + x) as i16);
+                    map.data
+                        .set(x, y, z, [384, 48, 1024][z as usize] + (y * 2 + x) as i16);
                 }
             }
         }
         let mut map_raw = map.to_ruby_value();
-        let RubyValue::Object(ref mut obj) = map_raw else { panic!("map") };
-        obj.instance_vars.push(("@essentials_custom".into(), RubyValue::Symbol("opaque".into())));
+        let RubyValue::Object(ref mut obj) = map_raw else {
+            panic!("map")
+        };
+        obj.instance_vars.push((
+            "@essentials_custom".into(),
+            RubyValue::Symbol("opaque".into()),
+        ));
         marshal::dump_file(&project.join("Data/Map001.rxdata"), &map_raw).unwrap();
+
+        let map_infos = RubyValue::Hash(vec![(
+            RubyValue::Integer(1),
+            MapInfo {
+                name: "Synthetic Map".into(),
+                parent_id: 0,
+                order: 1,
+                expanded: true,
+                scroll_x: 0,
+                scroll_y: 0,
+            }
+            .to_ruby_value(),
+        )]);
+        marshal::dump_file(&project.join("Data/MapInfos.rxdata"), &map_infos).unwrap();
+        let mut system = RubyObject::new("RPG::System".into());
+        system
+            .instance_vars
+            .push(("@edit_map_id".into(), RubyValue::Integer(1)));
+        marshal::dump_file(
+            &project.join("Data/System.rxdata"),
+            &RubyValue::Object(system),
+        )
+        .unwrap();
+        let mut tileset = RubyObject::new("RPG::Tileset".into());
+        tileset.instance_vars.push((
+            "@name".into(),
+            RubyValue::String(RubyString::new(b"Synthetic Tileset".to_vec())),
+        ));
+        marshal::dump_file(
+            &project.join("Data/Tilesets.rxdata"),
+            &RubyValue::Array(vec![RubyValue::Nil, RubyValue::Object(tileset)]),
+        )
+        .unwrap();
 
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(b"def pbFixture; :ok; end\n").unwrap();
@@ -1088,36 +1133,154 @@ mod archive_roundtrip_tests {
             ]),
         ]);
         marshal::dump_file(&project.join("Data/Scripts.rxdata"), &scripts).unwrap();
-        fs::write(project.join("PBS/pokemon.txt"),
-            b"# preserve this comment\r\n[TEST]\r\nName = Example\r\nCustomField = untouched\r\n").unwrap();
-        fs::write(project.join("Graphics/Characters/NPC.png"), [137, 80, 78, 71, 0, 1, 2]).unwrap();
+        fs::write(
+            project.join("PBS/pokemon.txt"),
+            b"# preserve this comment\r\n[TEST]\r\nName = Example\r\nCustomField = untouched\r\n",
+        )
+        .unwrap();
+        fs::write(
+            project.join("Graphics/Characters/NPC.png"),
+            [137, 80, 78, 71, 0, 1, 2],
+        )
+        .unwrap();
 
         let filenames = [
-            "Game.rxproj", "Data/Map001.rxdata", "Data/Scripts.rxdata",
-            "PBS/pokemon.txt", "Graphics/Characters/NPC.png",
+            "Game.rxproj",
+            "Game.ini",
+            "Data/Map001.rxdata",
+            "Data/MapInfos.rxdata",
+            "Data/System.rxdata",
+            "Data/Tilesets.rxdata",
+            "Data/Scripts.rxdata",
+            "PBS/pokemon.txt",
+            "Graphics/Characters/NPC.png",
         ];
-        let originals: Vec<_> = filenames.iter()
-            .map(|name| fs::read(project.join(name)).unwrap()).collect();
-        let archive = sandbox.path("xp-fixture.zip");
-        export_zip(&project, &archive).unwrap();
-        let extracted = extract_archive(&archive, &sandbox.path("xp-reimport")).unwrap();
-        for (i, name) in filenames.iter().enumerate() {
-            assert_eq!(fs::read(extracted.join(name)).unwrap(), originals[i],
-                "archive changed {name}");
+        let originals: Vec<_> = filenames
+            .iter()
+            .map(|name| fs::read(project.join(name)).unwrap())
+            .collect();
+
+        let archive = sandbox.path("original.zip");
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        let options = SimpleFileOptions::default();
+        for name in filenames {
+            writer
+                .start_file(format!("SyntheticXP/{name}"), options)
+                .unwrap();
+            writer
+                .write_all(&fs::read(project.join(name)).unwrap())
+                .unwrap();
         }
-        let reloaded = marshal::load_file(&extracted.join("Data/Map001.rxdata")).unwrap();
-        assert_eq!(reloaded.as_object().unwrap().get("essentials_custom"),
-            Some(&RubyValue::Symbol("opaque".into())));
+        writer
+            .add_directory("SyntheticXP/Graphics/Empty/", options)
+            .unwrap();
+        writer.finish().unwrap();
+        let original_zip_bytes = fs::read(&archive).unwrap();
+
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let staged = imports.join("import-fixture.zip");
+        fs::copy(&archive, &staged).unwrap();
+        let imported = PathBuf::from(
+            finish_import(staged, imports, projects.clone(), "import-fixture".into())
+                .expect("import nested synthetic XP project"),
+        );
+        assert_eq!(imported.parent(), Some(projects.as_path()));
+        assert!(imported.join("Game.rxproj").is_file());
+        assert!(imported.join("Graphics/Empty").is_dir());
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let opened = runtime
+            .block_on(crate::commands::project::open_project(
+                imported.to_string_lossy().into_owned(),
+            ))
+            .expect("open imported synthetic RMXP project");
+        assert_eq!(opened.name, "Synthetic RMXP Fixture");
+        assert_eq!(opened.map_infos.get(&1).unwrap().name, "Synthetic Map");
+        assert_eq!(opened.tileset_count, 1);
+        assert_eq!(opened.edit_map_id, 1);
+
+        let mut loaded_map = runtime
+            .block_on(crate::commands::project::load_map(
+                imported.to_string_lossy().into_owned(),
+                1,
+            ))
+            .expect("load genuine-format Map001.rxdata");
+        assert_eq!(loaded_map.tiles[0], 384);
+        loaded_map.tiles[0] = 385;
+        runtime
+            .block_on(crate::commands::project::save_map(
+                imported.to_string_lossy().into_owned(),
+                1,
+                loaded_map.tiles,
+                loaded_map.width,
+                loaded_map.height,
+            ))
+            .expect("save one controlled map-tile edit");
+        let saved_map = runtime
+            .block_on(crate::commands::project::load_map(
+                imported.to_string_lossy().into_owned(),
+                1,
+            ))
+            .expect("reopen saved map");
+        assert_eq!(saved_map.tiles[0], 385);
+        assert_eq!(
+            &saved_map.tiles[1..],
+            &[385, 386, 387, 48, 49, 50, 51, 1024, 1025, 1026, 1027,]
+        );
+
+        let reloaded = marshal::load_file(&imported.join("Data/Map001.rxdata")).unwrap();
+        assert_eq!(
+            reloaded.as_object().unwrap().get("essentials_custom"),
+            Some(&RubyValue::Symbol("opaque".into()))
+        );
         let reloaded_map = RpgMap::from_ruby_value(&reloaded).unwrap();
         for z in 0..3 {
             for y in 0..2 {
                 for x in 0..2 {
-                    assert_eq!(reloaded_map.data.get(x, y, z),
-                        [384, 48, 1024][z as usize] + (y * 2 + x) as i16);
+                    let expected = if (x, y, z) == (0, 0, 0) {
+                        385
+                    } else {
+                        [384, 48, 1024][z as usize] + (y * 2 + x) as i16
+                    };
+                    assert_eq!(reloaded_map.data.get(x, y, z), expected);
                 }
             }
         }
-        assert_eq!(marshal::load_file(&extracted.join("Data/Scripts.rxdata")).unwrap(), scripts);
+        assert_eq!(reloaded_map.data.get(0, 0, 0), 385);
+        assert_eq!(
+            marshal::load_file(&imported.join("Data/Scripts.rxdata")).unwrap(),
+            scripts
+        );
+
+        let exported = sandbox.path("exported.zip");
+        export_zip(&imported, &exported).unwrap();
+        for (i, name) in filenames.iter().enumerate() {
+            let actual = read_zip_file(&exported, name);
+            let expected = if *name == "Data/Map001.rxdata" {
+                fs::read(imported.join(name)).unwrap()
+            } else {
+                originals[i].clone()
+            };
+            assert_eq!(actual, expected, "archive changed {name}");
+        }
+        let exported_zip = ZipArchive::new(File::open(&exported).unwrap()).unwrap();
+        assert!(exported_zip
+            .file_names()
+            .any(|name| name == "Graphics/Empty/"));
+        assert_eq!(fs::read(&archive).unwrap(), original_zip_bytes);
+
+        if let Ok(artifact_dir) = std::env::var("PROJECT_ROUNDTRIP_ARTIFACT_DIR") {
+            let artifact_dir = PathBuf::from(artifact_dir);
+            fs::create_dir_all(&artifact_dir).unwrap();
+            fs::copy(&archive, artifact_dir.join("original.zip")).unwrap();
+            fs::copy(&exported, artifact_dir.join("exported.zip")).unwrap();
+        }
     }
 
 }

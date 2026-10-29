@@ -15,6 +15,8 @@ on:
       - 'src-tauri/src/marshal/**'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
+      - 'scripts/run_project_roundtrip.py'
+      - 'scripts/verify_project_roundtrip.py'
       - '.github/workflows/archive-roundtrip-tests.yml'
 
 permissions:
@@ -49,5 +51,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Verify archive and XP Marshal preservation regression tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --nocapture
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native import-edit-export and independent ZIP integrity
+        run: python scripts/run_project_roundtrip.py
