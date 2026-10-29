@@ -296,11 +296,12 @@
       "acceptance": [
         "Unchanged structured PBS save produces byte-identical content including CRLF and comments",
         "Targeted field-value edit retains unknown lines, spacing and other values",
-        "Structural edits rejected with explicit raw-editor guidance rather than dropping data",
+        "Append-only fields/sections preserved while removal/reordering is rejected with raw-editor guidance",
         "Native Rust and Android ARM64 CI pass; real Essentials v21.1 PBS acceptance remains separately open"
       ],
       "evidence": [
-        "Draft branch fix/pbs-structured-save-preserve-raw-20261030 commits cf460072, 5ad90ebb, 0963b3f add lossless field-only PBS merge and three Rust regression tests; CI pending. ASM-009 remains todo until genuine v21.1 source roundtrip."
+        "Draft branch fix/pbs-structured-save-preserve-raw-20261030 commits cf460072, 5ad90ebb, 0963b3f add lossless field-only PBS merge and three Rust regression tests; CI pending. ASM-009 remains todo until genuine v21.1 source roundtrip.",
+        "Follow-up commits 090e11d and 688395e add append-only fields/sections and equality-based parse/reopen fixture checks; native/Android CI pending."
       ]
     }
   ],
