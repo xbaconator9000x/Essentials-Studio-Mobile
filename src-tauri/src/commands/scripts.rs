@@ -4,6 +4,7 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -134,8 +135,61 @@ pub async fn load_script_source(
     Err(format!("Script with id {} not found", script_id))
 }
 
-/// Save all scripts back to Scripts.rxdata.
-/// Receives the full list with sources — rebuilds the entire file.
+/// Reconcile the frontend's known script entries with the original Marshal
+/// array. A full rebuild silently discarded opaque entries, extra tuple fields,
+/// non-standard nil placeholders and every untouched compressed byte stream.
+/// Preserve them unless the corresponding script was actually edited/deleted.
+fn merge_script_entries(original: &[RubyValue], scripts: &[ScriptData]) -> Result<Vec<RubyValue>, String> {
+    let mut submitted = HashMap::new();
+    for script in scripts {
+        if submitted.insert(script.id, script).is_some() {
+            return Err(format!("Duplicate submitted script ID {}", script.id));
+        }
+    }
+
+    let mut seen_original = HashSet::new();
+    let mut merged = Vec::with_capacity(original.len() + scripts.len());
+    for entry in original {
+        if let Some((id, _, _)) = parse_script_entry(entry) {
+            if !seen_original.insert(id) {
+                return Err(format!("Duplicate original script ID {id}; refusing destructive save"));
+            }
+            // Omission of a recognised script is an intentional deletion.
+            if let Some(script) = submitted.get(&id) {
+                let RubyValue::Array(parts) = entry else { unreachable!() };
+                let mut parts = parts.clone();
+                let (_, old_title, compressed) = parse_script_entry(entry).unwrap();
+                if old_title != script.title {
+                    parts[1] = RubyValue::String(RubyString::new(script.title.as_bytes().to_vec()));
+                }
+                // Compare the source, not the compressed representation: zlib may
+                // emit different bytes for the same Ruby script. A failed decode
+                // aborts the entire save rather than silently replacing the data.
+                if decompress_zlib(compressed)? != script.source {
+                    parts[2] = RubyValue::String(RubyString::new(compress_zlib(&script.source)?));
+                }
+                merged.push(RubyValue::Array(parts));
+            }
+        } else {
+            // Preserve unknown/custom Marshal entries and nil slots in place.
+            merged.push(entry.clone());
+        }
+    }
+    // New scripts are appended in the order supplied by the editor.
+    for script in scripts {
+        if !seen_original.contains(&script.id) {
+            merged.push(RubyValue::Array(vec![
+                RubyValue::Integer(script.id),
+                RubyValue::String(RubyString::new(script.title.as_bytes().to_vec())),
+                RubyValue::String(RubyString::new(compress_zlib(&script.source)?)),
+            ]));
+        }
+    }
+    Ok(merged)
+}
+
+/// Save edited script sources without recompressing unrelated Ruby scripts or
+/// discarding custom/opaque entries in Scripts.rxdata.
 #[tauri::command]
 pub async fn save_all_scripts(
     project_path: String,
@@ -144,25 +198,10 @@ pub async fn save_all_scripts(
     let path = PathBuf::from(&project_path)
         .join("Data")
         .join("Scripts.rxdata");
-
-    // Build the array: first element is nil (RMXP convention)
-    let mut arr = Vec::with_capacity(scripts.len() + 1);
-    arr.push(RubyValue::Nil);
-
-    for script in &scripts {
-        let compressed = compress_zlib(&script.source)?;
-        let entry = RubyValue::Array(vec![
-            RubyValue::Integer(script.id),
-            RubyValue::String(RubyString::new(script.title.as_bytes().to_vec())),
-            RubyValue::String(RubyString::new(compressed)),
-        ]);
-        arr.push(entry);
-    }
-
-    let value = RubyValue::Array(arr);
-    marshal::dump_file(&path, &value)
+    let original = load_scripts_raw(&project_path)?;
+    let merged = merge_script_entries(&original, &scripts)?;
+    marshal::dump_file(&path, &RubyValue::Array(merged))
         .map_err(|e| format!("Failed to save Scripts.rxdata: {}", e))?;
-
     eprintln!("[scripts] Saved {} scripts to {:?}", scripts.len(), path);
     Ok(())
 }
@@ -255,4 +294,85 @@ pub async fn delete_script(
 
     eprintln!("[scripts] Deleted script id={}", script_id);
     Ok(result)
+}
+
+#[cfg(test)]
+mod fidelity_tests {
+    use super::*;
+
+    fn script(id: i64, title: &str, source: &str) -> RubyValue {
+        RubyValue::Array(vec![
+            RubyValue::Integer(id),
+            RubyValue::String(RubyString::new(title.as_bytes().to_vec())),
+            RubyValue::String(RubyString::new(compress_zlib(source).unwrap())),
+            RubyValue::Symbol("extra_script_metadata".into()),
+        ])
+    }
+
+    fn source(id: i64, title: &str, source: &str) -> ScriptData {
+        ScriptData { id, title: title.into(), source: source.into() }
+    }
+
+    #[test]
+    fn unchanged_scripts_preserve_marshal_bytes_and_opaque_slots() {
+        let original = vec![
+            RubyValue::Nil,
+            script(11, "Main", "def main\\n  puts :hello\\nend"),
+            RubyValue::Hash(vec![(RubyValue::Symbol("custom".into()), RubyValue::Integer(42))]),
+            RubyValue::Nil,
+            script(12, "Utility", "# Pokémon Essentials\\nmodule Test; end"),
+        ];
+        let submitted = vec![
+            source(11, "Main", "def main\\n  puts :hello\\nend"),
+            source(12, "Utility", "# Pokémon Essentials\\nmodule Test; end"),
+        ];
+        let merged = merge_script_entries(&original, &submitted).unwrap();
+        assert_eq!(merged, original);
+        let before = marshal::dump(&RubyValue::Array(original)).unwrap();
+        let after = marshal::dump(&RubyValue::Array(merged)).unwrap();
+        assert_eq!(before, after, "unchanged Scripts.rxdata should remain byte-identical");
+        assert_eq!(marshal::load(&after).unwrap(), marshal::load(&before).unwrap());
+    }
+
+    #[test]
+    fn targeted_script_edit_preserves_other_sources_and_custom_tuple_fields() {
+        let original = vec![
+            RubyValue::Nil,
+            script(11, "Main", "old source"),
+            script(12, "Untouched", "unchanged source"),
+        ];
+        let submitted = vec![
+            source(11, "Main renamed", "new source"),
+            source(12, "Untouched", "unchanged source"),
+            source(13, "Added", "new script"),
+        ];
+        let merged = merge_script_entries(&original, &submitted).unwrap();
+        assert_eq!(merged[2], original[2], "unmodified script must retain its zlib bytes");
+        assert_eq!(merged[1].as_array().unwrap()[3], RubyValue::Symbol("extra_script_metadata".into()));
+        let encoded = marshal::dump(&RubyValue::Array(merged)).unwrap();
+        let decoded = marshal::load(&encoded).unwrap();
+        let entries = decoded.as_array().unwrap();
+        let (_, title, compressed) = parse_script_entry(&entries[1]).unwrap();
+        assert_eq!(title, "Main renamed");
+        assert_eq!(decompress_zlib(compressed).unwrap(), "new source");
+        assert_eq!(decompress_zlib(parse_script_entry(&entries[3]).unwrap().2).unwrap(), "new script");
+    }
+
+    #[test]
+    fn refuses_duplicate_ids_and_corrupt_original_zlib() {
+        let original = vec![RubyValue::Nil, script(1, "Original", "safe")];
+        assert!(merge_script_entries(&original, &[source(1, "A", "a"), source(1, "B", "b")]).is_err());
+        let mut duplicated = original.clone();
+        duplicated.push(script(1, "Again", "unsafe"));
+        assert!(merge_script_entries(&duplicated, &[source(1, "A", "a")]).is_err());
+        let corrupt = vec![
+            RubyValue::Nil,
+            RubyValue::Array(vec![
+                RubyValue::Integer(1),
+                RubyValue::String(RubyString::new(b"Original".to_vec())),
+                RubyValue::String(RubyString::new(b"not-zlib".to_vec())),
+            ]),
+        ];
+        assert!(merge_script_entries(&corrupt, &[source(1, "Original", "safe")]).is_err());
+    }
 }
