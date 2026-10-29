@@ -20,7 +20,7 @@ import {
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
-import { importProjectZip } from "./services/archiveApi";
+import { importProjectZip, exportProjectZip } from "./services/archiveApi";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -224,6 +224,26 @@ function AppContent() {
       setArchiveProgress(null);
     }
   }, [dirtyCount, handleOpenProject]);
+
+  const handleExportProjectZip = useCallback(async () => {
+    const active = projectRef.current;
+    if (!active) return;
+    if (dirtyCount > 0) {
+      setError("Save all outstanding edits before exporting a project ZIP.");
+      return;
+    }
+    setLoading(true);
+    setArchiveProgress(0);
+    setError(null);
+    try {
+      await exportProjectZip(active.path, active.name, setArchiveProgress);
+    } catch (err) {
+      setError(`Project ZIP export failed: ${String(err)}`);
+    } finally {
+      setLoading(false);
+      setArchiveProgress(null);
+    }
+  }, [dirtyCount]);
 
   // ── Map selection with unsaved-changes guard ───────────────────────────────
 
@@ -604,6 +624,9 @@ function AppContent() {
             onClick={handleLaunchGame}
           >
             ▶ Play
+          </button>
+          <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading}>
+            Export ZIP...
           </button>
           <button className="app-titlebar-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
             Import ZIP...
