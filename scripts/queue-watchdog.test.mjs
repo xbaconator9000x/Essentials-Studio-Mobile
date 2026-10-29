@@ -28,7 +28,19 @@ test("disabled GitHub Issues hand off eligible queue work without failing CI", (
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, /issues are disabled/i);
     const handoff = readFileSync(summary, "utf8");
-    assert.match(handoff, /ASM-014/);
+    const queue = JSON.parse(readFileSync(join(root, "development/queue.json"), "utf8"));
+    const byId = new Map(queue.tasks.map(task => [task.id, task]));
+    const eligible = queue.tasks.filter(task => task.status === "todo"
+      && task.depends_on.every(id => byId.get(id)?.status === "done"));
+    const expected = eligible.length > 0
+      ? eligible
+      : queue.tasks.filter(task => task.status === "in_progress");
+    for (const task of expected) {
+      assert.ok(handoff.includes(task.id), `handoff omitted active task ${task.id}`);
+    }
+    if (eligible.length === 0) {
+      assert.match(handoff, /In-progress implementation streams/);
+    }
     assert.match(handoff, /Only actual code\/test results can advance task states/);
     assert.match(handoff, /development\/queue.json/);
   } finally {
