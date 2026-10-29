@@ -53,6 +53,19 @@ impl Default for AudioFile {
     }
 }
 
+/// Maximum map cells the Android editor can safely send through its WebView.
+/// Prevent a malformed XP Table from causing huge allocations during parsing.
+pub(crate) const MAX_XP_MAP_TILES: usize = 30_000_000;
+
+/// Validate dimensions before converting signed Marshal integers to unsigned
+/// Table sizes or allocating the three XP layers.
+pub(crate) fn checked_map_tile_dimensions(width: i64, height: i64) -> Option<(u32, u32, usize)> {
+    let w = u32::try_from(width).ok().filter(|&w| w > 0)?;
+    let h = u32::try_from(height).ok().filter(|&h| h > 0)?;
+    let cells = (w as usize).checked_mul(h as usize)?.checked_mul(3)?;
+    (cells <= MAX_XP_MAP_TILES).then_some((w, h, cells))
+}
+
 impl RpgMap {
     /// Extract an RpgMap from a deserialized RubyValue.
     pub fn from_ruby_value(value: &RubyValue) -> Option<Self> {
@@ -64,6 +77,7 @@ impl RpgMap {
         let tileset_id = obj.get_int("tileset_id").unwrap_or(1);
         let width = obj.get_int("width").unwrap_or(20);
         let height = obj.get_int("height").unwrap_or(15);
+        let (table_width, table_height, expected_tiles) = checked_map_tile_dimensions(width, height)?;
         let autoplay_bgm = obj.get_bool("autoplay_bgm").unwrap_or(false);
         let autoplay_bgs = obj.get_bool("autoplay_bgs").unwrap_or(false);
         let encounter_step = obj.get_int("encounter_step").unwrap_or(30);
@@ -89,18 +103,26 @@ impl RpgMap {
             .and_then(AudioFile::from_ruby_value)
             .unwrap_or_default();
 
-        // Parse tile data (Table)
-        let data = obj
-            .get("data")
-            .and_then(|v| {
-                if let RubyValue::UserDefined { class_name, data } = v {
-                    if class_name == "Table" {
-                        return Table::from_bytes(data);
-                    }
-                }
-                None
-            })
-            .unwrap_or_else(|| Table::new_3d(width as u32, height as u32, 3));
+        // Never synthesize a blank Table when an imported XP map contains a
+        // missing/corrupt Table. Doing so hides damaged source data and can
+        // allocate enormous buffers from negative or forged dimensions.
+        // Inspect the fixed header before Table::from_bytes allocates cells.
+        let data = obj.get("data").and_then(|v| {
+            let RubyValue::UserDefined { class_name, data } = v else { return None };
+            if class_name != "Table" || data.len() < 20 { return None; }
+            let word = |offset: usize| -> Option<u32> {
+                Some(u32::from_le_bytes(data.get(offset..offset + 4)?.try_into().ok()?))
+            };
+            if word(0)? != 3
+                || word(4)? != table_width
+                || word(8)? != table_height
+                || word(12)? != 3
+                || usize::try_from(word(16)?).ok()? != expected_tiles
+            {
+                return None;
+            }
+            Table::from_bytes(data).filter(|table| table.data.len() == expected_tiles)
+        })?;
 
         // Parse encounter list
         let encounter_list = obj
@@ -287,5 +309,57 @@ impl MapInfo {
         obj.instance_vars.push(("@scroll_x".to_string(), RubyValue::Integer(self.scroll_x)));
         obj.instance_vars.push(("@scroll_y".to_string(), RubyValue::Integer(self.scroll_y)));
         RubyValue::Object(obj)
+    }
+}
+
+#[cfg(test)]
+mod xp_map_table_preflight_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_all_three_layers_without_normalizing_tiles() {
+        let mut map = RpgMap::new_blank(2, 2, 1);
+        map.data.set(0, 0, 0, 384);
+        map.data.set(1, 0, 1, 48);
+        map.data.set(1, 1, 2, 1024);
+        let original = map.data.data.clone();
+        let loaded = RpgMap::from_ruby_value(&map.to_ruby_value()).expect("valid XP Table");
+        assert_eq!(loaded.data.data, original);
+        assert_eq!(loaded.data.z_size, 3);
+    }
+
+    #[test]
+    fn rejects_missing_or_corrupt_table_instead_of_replacing_it_with_blank_tiles() {
+        let original = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let mut missing = original.clone();
+        let RubyValue::Object(obj) = &mut missing else { panic!("map object") };
+        obj.instance_vars.retain(|(name, _)| name != "@data");
+        assert!(RpgMap::from_ruby_value(&missing).is_none());
+
+        for (offset, replacement) in [(0, 2u32), (4, 3), (12, 1), (16, u32::MAX)] {
+            let mut corrupt = original.clone();
+            let RubyValue::Object(obj) = &mut corrupt else { panic!("map object") };
+            let (_, value) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@data").unwrap();
+            let RubyValue::UserDefined { data, .. } = value else { panic!("Table") };
+            data[offset..offset + 4].copy_from_slice(&replacement.to_le_bytes());
+            assert!(RpgMap::from_ruby_value(&corrupt).is_none(), "bad header at {offset}");
+        }
+    }
+
+    #[test]
+    fn rejects_negative_and_oversized_map_dimensions_before_allocation() {
+        let original = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        for width in [-1, 0, 100_000, i64::MAX] {
+            let mut invalid = original.clone();
+            let RubyValue::Object(obj) = &mut invalid else { panic!("map object") };
+            let (_, value) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@width").unwrap();
+            *value = RubyValue::Integer(width);
+            assert!(RpgMap::from_ruby_value(&invalid).is_none(), "accepted width {width}");
+        }
+        assert!(checked_map_tile_dimensions(2, 2).is_some());
+        assert!(checked_map_tile_dimensions(0, 2).is_none());
+        assert!(checked_map_tile_dimensions(100_000, 100_000).is_none());
     }
 }
