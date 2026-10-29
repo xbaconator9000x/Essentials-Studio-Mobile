@@ -25,7 +25,7 @@ if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
 }
 const repo = process.env.GITHUB_REPOSITORY || "xbaconator9000x/Essentials-Studio-Mobile";
 const runGh = (...args) => {
-  const result = spawnSync("gh", ["--repo", repo, ...args], { encoding: "utf8" });
+  const result = spawnSync("gh", [...args, "--repo", repo], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`gh ${args[0]} failed: ${result.stderr}`);
   return result.stdout.trim();
 };
