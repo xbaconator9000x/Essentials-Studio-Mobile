@@ -4,7 +4,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -114,9 +114,50 @@ fn clean_zip_path(name: &str) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
+/// zip 2.x indexes files by name and can hide duplicate central-directory
+/// entries from ZipArchive::len()/file_names(). Compare its parsed count with
+/// the archive's end-of-central-directory count before extraction. ZIP64 counts
+/// are not needed because our own limit is 30,000 entries.
+fn declared_zip_entry_count(path: &Path) -> Result<usize, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    const MAX_EOCD_SEARCH: u64 = 22 + 65_535;
+    let tail_len = size.min(MAX_EOCD_SEARCH) as usize;
+    if tail_len < 22 {
+        return Err("ZIP archive is too short".into());
+    }
+    file.seek(SeekFrom::End(-(tail_len as i64))).map_err(|e| e.to_string())?;
+    let mut tail = vec![0u8; tail_len];
+    file.read_exact(&mut tail).map_err(|e| e.to_string())?;
+    for i in (0..=tail_len - 22).rev() {
+        if tail[i..i + 4] != [0x50, 0x4b, 0x05, 0x06] {
+            continue;
+        }
+        let read_u16 = |offset: usize| u16::from_le_bytes([tail[i + offset], tail[i + offset + 1]]);
+        let comment_len = read_u16(20) as usize;
+        if i + 22 + comment_len != tail_len {
+            continue;
+        }
+        if read_u16(4) != 0 || read_u16(6) != 0 || read_u16(8) != read_u16(10) {
+            return Err("Multi-disk ZIP archives are not supported".into());
+        }
+        let entries = read_u16(10);
+        if entries == u16::MAX {
+            return Err("ZIP64 entry counts are not supported".into());
+        }
+        return Ok(entries as usize);
+    }
+    Err("ZIP end-of-central-directory record is missing or invalid".into())
+}
+
 fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, String> {
     let src = File::open(archive_path).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(src).map_err(|e| format!("Not a valid ZIP: {e}"))?;
+    // A duplicate filename may disappear from the ZIP reader's name index.
+    // Refuse the archive rather than silently losing one of its entries.
+    if zip.len() != declared_zip_entry_count(archive_path)? {
+        return Err("ZIP contains duplicate or hidden central-directory entries".into());
+    }
     if zip.len() > MAX_ENTRIES {
         return Err("Too many archive entries".into());
     }
@@ -657,13 +698,11 @@ mod archive_roundtrip_tests {
             bytes[offset..offset + old_name.len()].copy_from_slice(new_name);
         }
         fs::write(&duplicate, bytes).unwrap();
-        let mut zip = ZipArchive::new(File::open(&duplicate).unwrap()).unwrap();
-        // file_names() is backed by a unique-name index and hides duplicates.
-        // Inspect each central-directory entry by index instead.
-        assert_eq!(zip.len(), 2);
-        assert_eq!(zip.by_index(0).unwrap().name(), "Game.rxproj");
-        assert_eq!(zip.by_index(1).unwrap().name(), "Game.rxproj");
-        assert!(extract_archive(&duplicate, &sandbox.path("out-duplicate")).is_err());
+        // The ZIP library's name index hides duplicate entries, so check the
+        // raw central-directory count instead of trusting file_names()/len().
+        assert_eq!(super::declared_zip_entry_count(&duplicate).unwrap(), 2);
+        let error = extract_archive(&duplicate, &sandbox.path("out-duplicate")).unwrap_err();
+        assert!(error.contains("duplicate or hidden"), "{error}");
 
         // Also reject a valid ZIP whose file entry is later used as a
         // directory; otherwise extraction could silently drop project data.
