@@ -8,6 +8,9 @@ on:
       - feature/android-ci-bootstrap
     paths:
       - 'src-tauri/src/commands/project_archive.rs'
+      - 'src-tauri/src/commands/project.rs'
+      - 'src-tauri/src/commands/scripts.rs'
+      - 'src-tauri/src/commands/event_fidelity.rs'
       - 'src-tauri/src/marshal/**'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
