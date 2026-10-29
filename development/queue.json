@@ -18,14 +18,18 @@
       "title": "Prepare Android CI and compile probe",
       "area": "build",
       "priority": 0,
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [],
       "acceptance": [
         "GitHub Actions completes Android ARM64 debug APK build",
         "APK artifact exists",
         "Pipeline runs on PR"
       ],
-      "evidence": []
+      "evidence": [
+        "GitHub Actions run 40835076628: frontend and Android ARM64 debug APK jobs succeeded",
+        "Artifact 12880885972 (34,640,077 bytes) produced by run 40835076628",
+        "https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40835076628"
+      ]
     },
     {
       "id": "ASM-002",
