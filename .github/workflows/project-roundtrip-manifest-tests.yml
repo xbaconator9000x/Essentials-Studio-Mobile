@@ -1,0 +1,28 @@
+name: Project ZIP source-integrity regression tests
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify_project_roundtrip.py'
+      - 'tests/test_project_roundtrip.py'
+      - '.github/workflows/project-roundtrip-manifest-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/verify_project_roundtrip.py'
+      - 'tests/test_project_roundtrip.py'
+      - '.github/workflows/project-roundtrip-manifest-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  zip-source-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify project ZIP file hashes, explicit empty directories and approved edits
+        run: python -m unittest discover -s tests -p 'test_project_roundtrip.py' -v
