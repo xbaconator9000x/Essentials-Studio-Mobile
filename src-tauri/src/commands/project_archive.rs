@@ -283,6 +283,12 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
             if meta.file_type().is_symlink() {
                 return Err("Cannot export a project containing symlinks".into());
             }
+            // ZIP entries include directories as well as files. Count both
+            // to enforce the same entry cap on export that import enforces.
+            count += 1;
+            if count > MAX_ENTRIES {
+                return Err("Export contains too many archive entries".into());
+            }
             if meta.is_dir() {
                 // Empty directories are part of a project too. Record each
                 // directory explicitly rather than dropping it during export.
@@ -301,9 +307,8 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
             if !meta.is_file() {
                 return Err("Cannot export a project containing special files".into());
             }
-            count += 1;
-            if count > MAX_ENTRIES || meta.len() > MAX_FILE_BYTES {
-                return Err("Export contains too many files or an oversized file".into());
+            if meta.len() > MAX_FILE_BYTES {
+                return Err("Export contains an oversized file".into());
             }
             total_bytes = total_bytes.checked_add(meta.len()).ok_or("Export overflow")?;
             if total_bytes > MAX_UNPACKED_BYTES {
@@ -520,15 +525,46 @@ mod archive_roundtrip_tests {
         assert!(extract_archive(&traversal, &sandbox.path("out-traversal")).is_err());
         assert!(!sandbox.path("escape.txt").exists());
 
+        // zip 2.x deliberately refuses to *write* duplicate names. Construct
+        // a real duplicate-entry fixture by writing two distinct, equal-length
+        // names and changing only the second filename in both ZIP headers.
+        // Filenames are not covered by the entry CRC.
         let duplicate = sandbox.path("duplicate.zip");
         {
             let mut zip = ZipWriter::new(File::create(&duplicate).unwrap());
-            for _ in 0..2 {
-                zip.start_file("Game.rxproj", SimpleFileOptions::default()).unwrap();
+            for name in ["Game.rxproj", "Fake.rxproj"] {
+                zip.start_file(name, SimpleFileOptions::default()).unwrap();
                 zip.write_all(b"duplicate").unwrap();
             }
             zip.finish().unwrap();
         }
+        let mut bytes = fs::read(&duplicate).unwrap();
+        let old_name = b"Fake.rxproj";
+        let new_name = b"Game.rxproj";
+        let offsets: Vec<_> = bytes.windows(old_name.len())
+            .enumerate()
+            .filter_map(|(offset, window)| (window == old_name).then_some(offset))
+            .collect();
+        assert_eq!(offsets.len(), 2, "expected local and central ZIP filenames");
+        for offset in offsets {
+            bytes[offset..offset + old_name.len()].copy_from_slice(new_name);
+        }
+        fs::write(&duplicate, bytes).unwrap();
+        let zip = ZipArchive::new(File::open(&duplicate).unwrap()).unwrap();
+        assert_eq!(zip.file_names().filter(|name| *name == "Game.rxproj").count(), 2);
         assert!(extract_archive(&duplicate, &sandbox.path("out-duplicate")).is_err());
+
+        // Also reject a valid ZIP whose file entry is later used as a
+        // directory; otherwise extraction could silently drop project data.
+        let collision = sandbox.path("file-directory-collision.zip");
+        {
+            let mut zip = ZipWriter::new(File::create(&collision).unwrap());
+            zip.start_file("Data", SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"not a directory").unwrap();
+            zip.start_file("Data/Map001.rxdata", SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"map").unwrap();
+            zip.finish().unwrap();
+        }
+        assert!(extract_archive(&collision, &sandbox.path("out-collision")).is_err());
     }
 }
