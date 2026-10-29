@@ -21,6 +21,7 @@ import {
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
 import { importProjectZip, exportProjectZip } from "./services/archiveApi";
+import { saveThenMarkClean } from "./services/saveGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -126,10 +127,15 @@ function AppContent() {
     if (!proj || !md) return;
     setLoading(true);
     try {
-      await saveMap(proj.path, md.id, md.tiles, md.width, md.height);
-      updateMapDirty(false);
+      await saveThenMarkClean(
+        () => saveMap(proj.path, md.id, md.tiles, md.width, md.height),
+        () => updateMapDirty(false),
+      );
     } catch (err) {
       setError(`Save failed: ${err}`);
+      // ProjectSaveContext aggregates rejected saves. Never report a successful
+      // Save All or allow ZIP export when the map is still dirty on disk.
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -189,7 +195,9 @@ function AppContent() {
         await handleSelectMap(proj.edit_map_id, true);
       }
     } catch (err) {
-      setError(String(err));
+      // Import callers must know when open_project rejects an invalid RXDATA
+      // project; swallowing this error previously made import look successful.
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -201,7 +209,7 @@ function AppContent() {
       const selected = await showFolderPicker();
       if (selected) await handleOpenProject(selected);
     } catch (err) {
-      setError(`Dialog error: ${err}`);
+      setError(`Could not open project: ${err}`);
     }
   }, [handleOpenProject]);
 
@@ -540,7 +548,7 @@ function AppContent() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        saveAll();
+        void saveAll().catch((err) => setError(`Save all failed: ${err}`));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "o") {
         e.preventDefault();
