@@ -123,7 +123,10 @@ pub async fn abort_project_archive_import(app: AppHandle, import_id: String) -> 
 }
 
 fn clean_zip_path(name: &str) -> Result<PathBuf, String> {
-    if name.is_empty() || name.contains('\\') || name.contains('\0') || name.contains(':') {
+    if name.is_empty() || name.contains('\\') || name.contains('\0') || name.contains(':')
+        || name.trim_end_matches('/').split('/').any(|part| part.is_empty() || part == "." || part == "..")
+        || name.ends_with("//")
+    {
         return Err("Archive contains an invalid filename".into());
     }
     let path = Path::new(name);
@@ -169,6 +172,73 @@ fn declared_zip_entry_count(path: &Path) -> Result<usize, String> {
     Err("ZIP end-of-central-directory record is missing or invalid".into())
 }
 
+/// Preflight the entire archive before creating any files. Android's filesystem
+/// is case-sensitive, while most desktop XP projects are reopened on Windows:
+/// names that differ only by case, DOS device names, or invalid Windows path
+/// components would otherwise be silently merged or become inaccessible.
+/// Track implicit parent directories too, to catch file/directory collisions.
+fn validate_zip_manifest(zip: &mut ZipArchive<File>) -> Result<(), String> {
+    use std::collections::HashMap;
+    // lowercase path -> (original spelling, is_directory, explicitly listed)
+    let mut paths: HashMap<String, (String, bool, bool)> = HashMap::new();
+    let mut total_size = 0u64;
+    for index in 0..zip.len() {
+        let entry = zip.by_index(index).map_err(|e| e.to_string())?;
+        clean_zip_path(entry.name())?;
+        if let Some(mode) = entry.unix_mode() {
+            let kind = mode & 0o170000;
+            if kind != 0 && kind != 0o100000 && kind != 0o040000 {
+                return Err("Archive contains a symbolic link or special file".into());
+            }
+        }
+        if entry.size() > MAX_FILE_BYTES {
+            return Err("Archive entry exceeds size limit".into());
+        }
+        total_size = total_size.checked_add(entry.size()).ok_or("Archive size overflow")?;
+        if total_size > MAX_UNPACKED_BYTES {
+            return Err("Archive expands beyond 2 GiB limit".into());
+        }
+        let name = entry.name().trim_end_matches('/');
+        let components: Vec<&str> = name.split('/').collect();
+        for (i, part) in components.iter().enumerate() {
+            if part.ends_with('.') || part.ends_with(' ')
+                || part.chars().any(|c| c.is_control() || "<>\"|?*".contains(c))
+            {
+                return Err(format!("ZIP contains a non-portable filename: {name}"));
+            }
+            let device = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+            if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                || (device.len() == 4
+                    && (device.starts_with("COM") || device.starts_with("LPT"))
+                    && matches!(device.as_bytes()[3], b'1'..=b'9'))
+            {
+                return Err(format!("ZIP contains a reserved Windows filename: {name}"));
+            }
+            let spelling = components[..=i].join("/");
+            let key = spelling.to_lowercase();
+            let final_component = i + 1 == components.len();
+            let is_dir = !final_component || entry.is_dir();
+            match paths.get_mut(&key) {
+                Some((existing, was_dir, explicit)) => {
+                    if existing != &spelling || *was_dir != is_dir {
+                        return Err(format!("ZIP contains colliding project paths: {name}"));
+                    }
+                    if final_component {
+                        if *explicit {
+                            return Err(format!("ZIP contains duplicate project paths: {name}"));
+                        }
+                        *explicit = true;
+                    }
+                }
+                None => {
+                    paths.insert(key, (spelling, is_dir, final_component));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, String> {
     let src = File::open(archive_path).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(src).map_err(|e| format!("Not a valid ZIP: {e}"))?;
@@ -180,6 +250,8 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
     if zip.len() > MAX_ENTRIES {
         return Err("Too many archive entries".into());
     }
+    // Refuse non-portable archives before allocating app-private extraction space.
+    validate_zip_manifest(&mut zip)?;
     fs::create_dir_all(extracted).map_err(|e| e.to_string())?;
     let mut total_unpacked = 0u64;
 
@@ -741,6 +813,52 @@ mod archive_roundtrip_tests {
         assert!(error.contains("outside its single project folder"), "{error}");
     }
 
+
+    #[test]
+    fn rejects_nonportable_names_and_case_collisions_before_extraction() {
+        let sandbox = Sandbox::new();
+        for (index, names) in [
+            vec!["Game.rxproj", "Data/Map001.rxdata", "data/Map002.rxdata"],
+            vec!["Game.rxproj", "Data/CON.txt"],
+            vec!["Game.rxproj", "Graphics/Bad?.png"],
+            vec!["Game.rxproj", "Data/Map001.rxdata", "Data/map001.rxdata"],
+            vec!["Game.rxproj", "Data/./Map001.rxdata"],
+            vec!["Game.rxproj", "Data//Map001.rxdata"],
+            vec!["Game.rxproj", "Data/Map001.rxdata", "DATA/"],
+            vec!["Game.rxproj", "Data", "Data/Map001.rxdata"],
+        ].iter().enumerate() {
+            let archive = sandbox.path(&format!("invalid-{index}.zip"));
+            let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+            for name in names {
+                if name.ends_with('/') {
+                    writer.add_directory(*name, SimpleFileOptions::default()).unwrap();
+                } else {
+                    writer.start_file(*name, SimpleFileOptions::default()).unwrap();
+                    writer.write_all(b"fixture").unwrap();
+                }
+            }
+            writer.finish().unwrap();
+            let output = sandbox.path(&format!("output-{index}"));
+            let result = extract_archive(&archive, &output);
+            assert!(result.is_err(), "accepted nonportable archive {names:?}");
+            assert!(!output.exists(), "preflight created files for {names:?}");
+        }
+    }
+
+    #[test]
+    fn portable_mixed_case_project_and_explicit_directories_are_accepted() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("portable.zip");
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        writer.add_directory("Data/", SimpleFileOptions::default()).unwrap();
+        for name in ["Game.rxproj", "Data/Map001.rxdata", "Data/Scripts.rxdata"] {
+            writer.start_file(name, SimpleFileOptions::default()).unwrap();
+            writer.write_all(b"fixture").unwrap();
+        }
+        writer.finish().unwrap();
+        let extracted = extract_archive(&archive, &sandbox.path("portable-project")).unwrap();
+        assert_eq!(fs::read(extracted.join("Data/Map001.rxdata")).unwrap(), b"fixture");
+    }
 
     #[test]
     fn private_image_lookup_is_scoped_to_imported_projects() {
