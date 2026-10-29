@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "feature/android-saf-zip-export-20261029",
+  "current_work_branch": "fix/portable-zip-preflight-20261029",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -81,7 +81,9 @@
         "PR #6 adds WebView ZIP upload source-length and Rust acknowledgement checks; frontend build and five chunk-regression tests passed in run 40855698471 (Android APK still in progress at queue update). Real-project import remains unverified.",
         "PR #6 merged as 064995b4c55864edc284ed0f94a5462390a1ddd1 on 2026-10-29. Five frontend binary/chunk framing tests and Android ARM64 debug APK passed in run 40855698471: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40855698471. Upload now rejects truncated reads and mismatched native byte acknowledgements; real v21.1 import not verified.",
         "Draft PR #14 (2026-10-29) adds offset-acknowledged import chunks and native replay/out-of-order/empty-write regression tests, commits c1989986 and f60d9b7d. CI and genuine v21.1/device import pending: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/14 . Do not mark import complete on synthetic tests.",
-        "PR #14 merged as a96cc41540e7323f6b5e83b2ddcbe75c0c972b1c on 2026-10-29. Native 31/31 archive/Marshal tests passed, including rejected replay/out-of-order/empty import chunks (run 40862192696); frontend and Android ARM64 APK passed with artifact 12892576528 (36,263,012 bytes) in run 40862192819. Still lacks real Essentials v21.1 on-device import/desktop reopen: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/14 ."
+        "PR #14 merged as a96cc41540e7323f6b5e83b2ddcbe75c0c972b1c on 2026-10-29. Native 31/31 archive/Marshal tests passed, including rejected replay/out-of-order/empty import chunks (run 40862192696); frontend and Android ARM64 APK passed with artifact 12892576528 (36,263,012 bytes) in run 40862192819. Still lacks real Essentials v21.1 on-device import/desktop reopen: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/14 .",
+        "Draft PR #16, commit cd05827c262e182aedd69b7514e6c29dcb98427c: preflight portable ZIP path manifest (case collisions, DOS reserved names, directory/file conflicts) before extraction, with invalid archive regression fixtures. CI pending: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/16. Real v21.1 import/device gate still open.",
+        "Draft PR #17, commit 4e374524c40a8bb8b43407379cfff2beef055a7c: read-only initial XP map/tileset preflight before switching active projects, and deferred map selection until assets load; four Node regression tests passed in Actions 40869336789, frontend/ARM64 still pending: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/17."
       ]
     },
     {
@@ -249,7 +251,8 @@
       ],
       "evidence": [
         "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded.",
-        "Draft PR #15 (2026-10-29), commit f42864d6, removes 11 unsafe XP database-list casts, a redundant project-open catch/rethrow, and an unused animation catch binding; TypeScript/ESLint/ARM64 CI pending. Remaining inherited lint issues still outstanding: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/15 ."
+        "Draft PR #15 (2026-10-29), commit f42864d6, removes 11 unsafe XP database-list casts, a redundant project-open catch/rethrow, and an unused animation catch binding; TypeScript/ESLint/ARM64 CI pending. Remaining inherited lint issues still outstanding: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/15 .",
+        "PR #15 merged as 33136696f9fad3db2413b7575c0f39ba32f785b2 on 2026-10-29. Frontend TypeScript, Android ARM64 APK and save regression CI passed: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40863375878 and https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40863375952. Removed 13 inherited ESLint errors (41 to 28); ASM-014 remains in_progress because lint is not yet clean or blocking."
       ]
     },
     {
@@ -277,7 +280,7 @@
   "progress": {
     "estimated_total_completion_percent": 20,
     "updated_at": "2026-10-29",
-    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%. PR #14 is now merged with 31/31 native tests and Android ARM64 APK, but no genuine project/device validation; estimated total remains 20%. Independent ASM-014 draft PR #15 removes 13 inherited lint errors (41 to 28 in CI); Android CI pending and no Android fidelity gate closed.",
+    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%. PR #14 is now merged with 31/31 native tests and Android ARM64 APK, but no genuine project/device validation; estimated total remains 20%. Independent ASM-014 draft PR #15 removes 13 inherited lint errors (41 to 28 in CI); Android CI pending and no Android fidelity gate closed. PR #15 merged and CI passed, improving inherited lint without closing ASM-014. Draft PRs #16 and #17 add ZIP preflight and project-open guards, but native/Android CI and genuine device/project acceptance remain pending. Watchdog CI failure on main after PR #15 is under repair in draft PR #18; do not count any pending work toward completion.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }
