@@ -10,6 +10,7 @@ on:
       - 'src-tauri/src/commands/project_archive.rs'
       - 'src-tauri/src/commands/project.rs'
       - 'src-tauri/src/commands/scripts.rs'
+      - 'src-tauri/src/commands/pbs.rs'
       - 'src-tauri/src/commands/event_fidelity.rs'
       - 'src-tauri/src/marshal/**'
       - 'src-tauri/Cargo.toml'

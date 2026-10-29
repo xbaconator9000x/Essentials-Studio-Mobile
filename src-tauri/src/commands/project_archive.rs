@@ -68,10 +68,38 @@ pub async fn begin_project_archive_import(app: AppHandle) -> Result<String, Stri
     Err("Unable to allocate a unique import ID".into())
 }
 
+/// Append only at the byte offset acknowledged by the preceding upload.
+/// This rejects a replayed chunk after a lost response and an out-of-order
+/// chunk rather than silently creating an invalid project archive.
+fn append_chunk_at_offset(path: &Path, expected_offset: u64, bytes: &[u8]) -> Result<u64, String> {
+    if bytes.is_empty() || bytes.len() > MAX_CHUNK_BYTES {
+        return Err("Invalid archive chunk size".into());
+    }
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    if size != expected_offset {
+        return Err(format!(
+            "Archive upload offset mismatch: expected {size}, received {expected_offset}"
+        ));
+    }
+    let next = size
+        .checked_add(bytes.len() as u64)
+        .ok_or("Project archive size overflow")?;
+    if next > MAX_ARCHIVE_BYTES {
+        return Err("Project archive exceeds 512 MiB limit".into());
+    }
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+    Ok(next)
+}
+
 #[tauri::command]
 pub async fn append_project_archive_chunk(
     app: AppHandle,
     import_id: String,
+    expected_offset: u64,
     chunk_base64: String,
 ) -> Result<u64, String> {
     // A cap on encoded data also limits temporary memory use before decoding.
@@ -81,17 +109,8 @@ pub async fn append_project_archive_chunk(
     let bytes = STANDARD
         .decode(chunk_base64.as_bytes())
         .map_err(|_| "Invalid Base64 archive chunk".to_string())?;
-    if bytes.is_empty() || bytes.len() > MAX_CHUNK_BYTES {
-        return Err("Invalid archive chunk size".into());
-    }
     let path = staging_path(&import_root(&app)?, &import_id)?;
-    let mut file = OpenOptions::new().append(true).open(&path).map_err(|e| e.to_string())?;
-    let size = file.metadata().map_err(|e| e.to_string())?.len();
-    if size.checked_add(bytes.len() as u64).is_none_or(|sum| sum > MAX_ARCHIVE_BYTES) {
-        return Err("Project archive exceeds 512 MiB limit".into());
-    }
-    file.write_all(&bytes).map_err(|e| e.to_string())?;
-    Ok(size + bytes.len() as u64)
+    append_chunk_at_offset(&path, expected_offset, &bytes)
 }
 
 #[tauri::command]
@@ -104,7 +123,10 @@ pub async fn abort_project_archive_import(app: AppHandle, import_id: String) -> 
 }
 
 fn clean_zip_path(name: &str) -> Result<PathBuf, String> {
-    if name.is_empty() || name.contains('\\') || name.contains('\0') || name.contains(':') {
+    if name.is_empty() || name.contains('\\') || name.contains('\0') || name.contains(':')
+        || name.trim_end_matches('/').split('/').any(|part| part.is_empty() || part == "." || part == "..")
+        || name.ends_with("//")
+    {
         return Err("Archive contains an invalid filename".into());
     }
     let path = Path::new(name);
@@ -150,6 +172,73 @@ fn declared_zip_entry_count(path: &Path) -> Result<usize, String> {
     Err("ZIP end-of-central-directory record is missing or invalid".into())
 }
 
+/// Preflight the entire archive before creating any files. Android's filesystem
+/// is case-sensitive, while most desktop XP projects are reopened on Windows:
+/// names that differ only by case, DOS device names, or invalid Windows path
+/// components would otherwise be silently merged or become inaccessible.
+/// Track implicit parent directories too, to catch file/directory collisions.
+fn validate_zip_manifest(zip: &mut ZipArchive<File>) -> Result<(), String> {
+    use std::collections::HashMap;
+    // lowercase path -> (original spelling, is_directory, explicitly listed)
+    let mut paths: HashMap<String, (String, bool, bool)> = HashMap::new();
+    let mut total_size = 0u64;
+    for index in 0..zip.len() {
+        let entry = zip.by_index(index).map_err(|e| e.to_string())?;
+        clean_zip_path(entry.name())?;
+        if let Some(mode) = entry.unix_mode() {
+            let kind = mode & 0o170000;
+            if kind != 0 && kind != 0o100000 && kind != 0o040000 {
+                return Err("Archive contains a symbolic link or special file".into());
+            }
+        }
+        if entry.size() > MAX_FILE_BYTES {
+            return Err("Archive entry exceeds size limit".into());
+        }
+        total_size = total_size.checked_add(entry.size()).ok_or("Archive size overflow")?;
+        if total_size > MAX_UNPACKED_BYTES {
+            return Err("Archive expands beyond 2 GiB limit".into());
+        }
+        let name = entry.name().trim_end_matches('/');
+        let components: Vec<&str> = name.split('/').collect();
+        for (i, part) in components.iter().enumerate() {
+            if part.ends_with('.') || part.ends_with(' ')
+                || part.chars().any(|c| c.is_control() || "<>\"|?*".contains(c))
+            {
+                return Err(format!("ZIP contains a non-portable filename: {name}"));
+            }
+            let device = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+            if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                || (device.len() == 4
+                    && (device.starts_with("COM") || device.starts_with("LPT"))
+                    && matches!(device.as_bytes()[3], b'1'..=b'9'))
+            {
+                return Err(format!("ZIP contains a reserved Windows filename: {name}"));
+            }
+            let spelling = components[..=i].join("/");
+            let key = spelling.to_lowercase();
+            let final_component = i + 1 == components.len();
+            let is_dir = !final_component || entry.is_dir();
+            match paths.get_mut(&key) {
+                Some((existing, was_dir, explicit)) => {
+                    if existing != &spelling || *was_dir != is_dir {
+                        return Err(format!("ZIP contains colliding project paths: {name}"));
+                    }
+                    if final_component {
+                        if *explicit {
+                            return Err(format!("ZIP contains duplicate project paths: {name}"));
+                        }
+                        *explicit = true;
+                    }
+                }
+                None => {
+                    paths.insert(key, (spelling, is_dir, final_component));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, String> {
     let src = File::open(archive_path).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(src).map_err(|e| format!("Not a valid ZIP: {e}"))?;
@@ -161,6 +250,8 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
     if zip.len() > MAX_ENTRIES {
         return Err("Too many archive entries".into());
     }
+    // Refuse non-portable archives before allocating app-private extraction space.
+    validate_zip_manifest(&mut zip)?;
     fs::create_dir_all(extracted).map_err(|e| e.to_string())?;
     let mut total_unpacked = 0u64;
 
@@ -258,10 +349,79 @@ pub async fn finish_project_archive_import(
         .map_err(|e| format!("Import worker failed: {e}"))?
 }
 
+/// Remove only an abandoned, directly imported app-private project.
+/// Never accept arbitrary project paths or follow a symlink outside the root.
+fn discard_imported_project_in(root: &Path, requested: &Path) -> Result<(), String> {
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    // Canonicalizing the requested directory before checking its file type
+    // would turn a sibling symlink into the *target* path, potentially
+    // deleting a different, active import inside this same projects root.
+    let entry = fs::symlink_metadata(requested).map_err(|e| e.to_string())?;
+    if entry.file_type().is_symlink() || !entry.is_dir() {
+        return Err("Imported project cleanup refuses links and non-directories".into());
+    }
+    let project = requested.canonicalize().map_err(|e| e.to_string())?;
+    if project.parent() != Some(root.as_path()) {
+        return Err("Only direct imported app-private projects may be discarded".into());
+    }
+    let name = project.file_name().and_then(|n| n.to_str())
+        .ok_or("Invalid imported project name")?;
+    safe_id(name)?;
+    if !project.join("Game.rxproj").is_file() {
+        return Err("Not an imported RPG Maker XP project".into());
+    }
+    fs::remove_dir_all(project).map_err(|e| format!("Could not discard failed import: {e}"))
+}
+
+/// Called only when frontend preflight rejects a newly imported project.
+/// Existing open projects and the user's original ZIP are not touched.
+#[tauri::command]
+pub async fn discard_failed_project_import(
+    app: AppHandle,
+    project_path: String,
+) -> Result<(), String> {
+    discard_imported_project_in(&projects_root(&app)?, Path::new(&project_path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{clean_zip_path, BoundedArchiveWriter};
     use std::io::{Cursor, Seek, SeekFrom, Write};
+
+    #[test]
+    fn import_rejects_replayed_and_out_of_order_chunks_without_changing_staging() {
+        use super::append_chunk_at_offset;
+        use std::fs::{self, File};
+        let path = std::env::temp_dir().join(format!(
+            "essentials-upload-offset-{}-{:?}.zip",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        File::create(&path).unwrap();
+        assert_eq!(append_chunk_at_offset(&path, 0, b"first").unwrap(), 5);
+        assert!(append_chunk_at_offset(&path, 0, b"replayed").unwrap_err().contains("offset mismatch"));
+        assert!(append_chunk_at_offset(&path, 8, b"skipped").unwrap_err().contains("offset mismatch"));
+        assert_eq!(fs::read(&path).unwrap(), b"first");
+        assert_eq!(append_chunk_at_offset(&path, 5, b"second").unwrap(), 11);
+        assert_eq!(fs::read(&path).unwrap(), b"firstsecond");
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_empty_chunks_and_oversized_offsets_without_mutation() {
+        use super::append_chunk_at_offset;
+        use std::fs::{self, File};
+        let path = std::env::temp_dir().join(format!(
+            "essentials-upload-bounds-{}-{:?}.zip",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        File::create(&path).unwrap();
+        assert!(append_chunk_at_offset(&path, 0, b"").is_err());
+        assert!(append_chunk_at_offset(&path, u64::MAX, b"x").is_err());
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn bounded_export_rejects_crossing_limit_without_writing_partial_bytes() {
@@ -687,6 +847,111 @@ mod archive_roundtrip_tests {
         assert!(error.contains("outside its single project folder"), "{error}");
     }
 
+
+    #[test]
+    fn rejects_nonportable_names_and_case_collisions_before_extraction() {
+        let sandbox = Sandbox::new();
+        for (index, names) in [
+            vec!["Game.rxproj", "Data/Map001.rxdata", "data/Map002.rxdata"],
+            vec!["Game.rxproj", "Data/CON.txt"],
+            vec!["Game.rxproj", "Graphics/Bad?.png"],
+            vec!["Game.rxproj", "Data/Map001.rxdata", "Data/map001.rxdata"],
+            vec!["Game.rxproj", "Data/./Map001.rxdata"],
+            vec!["Game.rxproj", "Data//Map001.rxdata"],
+            vec!["Game.rxproj", "Data/Map001.rxdata", "DATA/"],
+            vec!["Game.rxproj", "Data", "Data/Map001.rxdata"],
+        ].iter().enumerate() {
+            let archive = sandbox.path(&format!("invalid-{index}.zip"));
+            let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+            for name in names {
+                if name.ends_with('/') {
+                    writer.add_directory(*name, SimpleFileOptions::default()).unwrap();
+                } else {
+                    writer.start_file(*name, SimpleFileOptions::default()).unwrap();
+                    writer.write_all(b"fixture").unwrap();
+                }
+            }
+            writer.finish().unwrap();
+            let output = sandbox.path(&format!("output-{index}"));
+            let result = extract_archive(&archive, &output);
+            assert!(result.is_err(), "accepted nonportable archive {names:?}");
+            assert!(!output.exists(), "preflight created files for {names:?}");
+        }
+    }
+
+    #[test]
+    fn portable_mixed_case_project_and_explicit_directories_are_accepted() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("portable.zip");
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        writer.add_directory("Data/", SimpleFileOptions::default()).unwrap();
+        for name in ["Game.rxproj", "Data/Map001.rxdata", "Data/Scripts.rxdata"] {
+            writer.start_file(name, SimpleFileOptions::default()).unwrap();
+            writer.write_all(b"fixture").unwrap();
+        }
+        writer.finish().unwrap();
+        let extracted = extract_archive(&archive, &sandbox.path("portable-project")).unwrap();
+        assert_eq!(fs::read(extracted.join("Data/Map001.rxdata")).unwrap(), b"fixture");
+    }
+
+    #[test]
+    fn failed_import_cleanup_removes_only_the_requested_direct_private_project() {
+        use super::discard_imported_project_in;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let good = root.join("import-failed");
+        let keep = root.join("import-keep");
+        let nested = keep.join("import-nested");
+        let other = root.join("manually-created");
+        let outside = sandbox.path("outside");
+        for dir in [&good, &keep, &nested, &other, &outside] {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(dir.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+        }
+        fs::write(keep.join("Data.txt"), b"must survive").unwrap();
+        assert!(discard_imported_project_in(&root, &outside).is_err());
+        assert!(discard_imported_project_in(&root, &nested).is_err());
+        assert!(discard_imported_project_in(&root, &other).is_err());
+        assert!(discard_imported_project_in(&root, &root).is_err());
+        assert!(discard_imported_project_in(&root, &good).is_ok());
+        assert!(!good.exists());
+        assert_eq!(fs::read(keep.join("Data.txt")).unwrap(), b"must survive");
+        assert!(outside.join("Game.rxproj").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_import_cleanup_does_not_follow_external_project_symlink() {
+        use super::discard_imported_project_in;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let outside = sandbox.path("external");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("Game.rxproj"), b"original").unwrap();
+        symlink(&outside, root.join("import-link")).unwrap();
+        assert!(discard_imported_project_in(&root, &root.join("import-link")).is_err());
+        assert_eq!(fs::read(outside.join("Game.rxproj")).unwrap(), b"original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_import_cleanup_rejects_symlink_to_sibling_active_project() {
+        use super::discard_imported_project_in;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let active = root.join("import-active");
+        fs::create_dir_all(&active).unwrap();
+        fs::write(active.join("Game.rxproj"), b"original").unwrap();
+        fs::write(active.join("Data.txt"), b"must survive").unwrap();
+        let alias = root.join("import-failed");
+        symlink(&active, &alias).unwrap();
+        assert!(discard_imported_project_in(&root, &alias).is_err());
+        assert_eq!(fs::read(active.join("Data.txt")).unwrap(), b"must survive");
+        assert!(alias.symlink_metadata().unwrap().file_type().is_symlink());
+    }
 
     #[test]
     fn private_image_lookup_is_scoped_to_imported_projects() {

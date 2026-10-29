@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "main",
+  "current_work_branch": "feature/android-saf-zip-export-20261029",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -79,7 +79,15 @@
         "PR #2 CI run 40840333736 compiled native Rust but failed a duplicate-ZIP test fixture because zip 2.x refuses duplicate names at write time; commit 017600e replaces fixture with a true duplicate-header archive and adds export directory-entry limits. Rerun pending.",
         "PR #2 commit 06eea530: 5/5 native archive tests passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847121085; PR #3 integrated branch: 7/7 passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847130068. Real Essentials import still unverified.",
         "PR #6 adds WebView ZIP upload source-length and Rust acknowledgement checks; frontend build and five chunk-regression tests passed in run 40855698471 (Android APK still in progress at queue update). Real-project import remains unverified.",
-        "PR #6 merged as 064995b4c55864edc284ed0f94a5462390a1ddd1 on 2026-10-29. Five frontend binary/chunk framing tests and Android ARM64 debug APK passed in run 40855698471: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40855698471. Upload now rejects truncated reads and mismatched native byte acknowledgements; real v21.1 import not verified."
+        "PR #6 merged as 064995b4c55864edc284ed0f94a5462390a1ddd1 on 2026-10-29. Five frontend binary/chunk framing tests and Android ARM64 debug APK passed in run 40855698471: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40855698471. Upload now rejects truncated reads and mismatched native byte acknowledgements; real v21.1 import not verified.",
+        "Draft PR #14 (2026-10-29) adds offset-acknowledged import chunks and native replay/out-of-order/empty-write regression tests, commits c1989986 and f60d9b7d. CI and genuine v21.1/device import pending: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/14 . Do not mark import complete on synthetic tests.",
+        "PR #14 merged as a96cc41540e7323f6b5e83b2ddcbe75c0c972b1c on 2026-10-29. Native 31/31 archive/Marshal tests passed, including rejected replay/out-of-order/empty import chunks (run 40862192696); frontend and Android ARM64 APK passed with artifact 12892576528 (36,263,012 bytes) in run 40862192819. Still lacks real Essentials v21.1 on-device import/desktop reopen: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/14 .",
+        "PR #16 merged as 683d880a55d0f2b85efbcb7bab01718057f71fcb on 2026-10-29. ZIP manifest preflight rejects nonportable names/case collisions before extraction. Native archive suite 33/33 passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40869210082; TypeScript and Android ARM64 APK passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40869210094. Synthetic-only; real v21.1 import/device gate remains open.",
+        "PR #17 merged as 8ddecb205acaaf477edb23e561615c7d45085254 on 2026-10-29. Read-only initial XP map/tileset preflight and deferred map selection, with four Node regression tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40869336789; TypeScript and Android ARM64 APK passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40869336793. No real v21.1/device validation.",
+        "Draft PR #20 (2026-10-29) adds scoped cleanup of a newly extracted app-private import only when project-open preflight rejects it, with canonical direct-child import-ID validation and outside/symlink regression tests. Native, frontend, Android CI pending: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/20 . Do not count as complete or as device verification.",
+        "PR #20 merged as 709d2d4449af84a79c1b0ccddc43a55b1f325273 on 2026-10-29. Failed-import cleanup rejects external and same-root sibling symlinks before canonicalization (regression fix 462877897); native archive suite passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40877923558, Node lifecycle tests in run 40877923914 and Android ARM64 debug APK/frontend in run 40877923730. Original ZIP and previously active project are preserved in synthetic tests. Genuine v21.1/device import still unverified; ASM-004 remains in_progress.",
+        "PR #25 merged as 17210a2940ca1e8ca4397cab0bb197b34184f95b on 2026-10-29: read-only project-open preflight now rejects invalid map IDs, dimensions, non-i16 tiles and mismatched tileset IDs before activating a new import. 13/13 editor lifecycle/save tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887202979; frontend and ARM64 APK passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887202838. No real v21.1/device validation.",
+        "PR #24 merged as 47d6b579e413c1b06f617904800216f99824462c on 2026-10-29: native XP Table parser rejects missing/forged/corrupt 3-layer headers and invalid dimensions before allocating or replacing tiles; map create/save also bounds dimensions. 39/39 Rust native archive/Marshal tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887611787; TypeScript and ARM64 APK passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887611826 (artifact 12904021134). Real v21.1/device import still unverified."
       ]
     },
     {
@@ -103,7 +111,10 @@
         "Pending review: PR #4 proposes atomic Android/Unix .rxdata saves and failure-path native regression tests; not yet validated by CI and does not close export or device acceptance gates.",
         "PR #6 checks native export chunk lengths, Base64 and final Blob size; PR #7 propagates failed map writes and open_project errors. Save-guard tests passed in run 40855847755. Both draft; Android document destination and desktop reopening still unverified.",
         "PR #6 merged as 064995b4: export now checks exact native Base64 chunk lengths, declared size and final Blob size (frontend+ARM64 CI 40855698471). PR #7 merged as 3b11efc07a9740619d441220eb549fc04464d89d: failed map saves remain dirty, failed opens propagate; 2/2 save tests run 40855847755 and ARM64/frontend run 40855847315 passed. PR #9 proposes bounded ZIP disk writes; native/ARM64 CI pending. Android SAF destination and desktop reopen still outstanding.",
-        "PR #9 merged as 8af439cfa2d414db0df32e99f6ae341ddb82ab9d on 2026-10-29. Export ZIP compressed writes now stop before exceeding 512 MiB rather than filling app-private disk and checking after finish. Native full suite 29/29 passed (run 40856248648) and frontend+Android ARM64 debug APK passed (run 40856248690). Still requires Android document destination and genuine v21.1 desktop reopen."
+        "PR #9 merged as 8af439cfa2d414db0df32e99f6ae341ddb82ab9d on 2026-10-29. Export ZIP compressed writes now stop before exceeding 512 MiB rather than filling app-private disk and checking after finish. Native full suite 29/29 passed (run 40856248648) and frontend+Android ARM64 debug APK passed (run 40856248690). Still requires Android document destination and genuine v21.1 desktop reopen.",
+        "Draft PR #12 implements Android scoped content-URI save picker, JNI ContentResolver streaming and full byte-for-byte readback of destination ZIP, avoiding WebView Blob export. Native 31/31 tests passed run 40857477364 and Android ARM64 APK/frontend compiled run 40857477274. NOT merged or device-verified: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/12 . Physical Android SAF provider tests and genuine Essentials v21.1 desktop reopening are mandatory before acceptance.",
+        "Draft PR #12 branch head 1fc5265897f03b2cea9a3f4801779948ce9650c3: native archive suite, ARM64 APK and five SAF handoff tests all passed on 2026-10-29 in runs 40879425550, 40879425542 and 40879425552. Still draft and unmerged pending latest-main integration, physical Android document-provider write/readback and real Essentials v21.1 desktop reopen.",
+        "PR #28 merged as 3e99d208927ab47d82975294ce110b644b703b8b on 2026-10-29. Independent streaming ZIP SHA-256/CRC verifier checks unchanged RXDATA, PBS, graphics and explicit directories and requires allowlisting intentional edits. Six Python tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40888016461; frontend CI passed in run 40888016366, Android APK job was still in progress at merge. Genuine v21.1 desktop reopening/device export remain unverified."
       ]
     },
     {
@@ -121,7 +132,9 @@
       ],
       "evidence": [
         "Draft PR #3 branch feature/android-private-image-loading-20261029 proposes scoped Android image data URLs for private-project tilesets/autotiles/characters, with traversal, outside-root and symlink tests. Not yet CI/device verified; task remains todo until ASM-004 acceptance.",
-        "PR #3 native scoped-image tests passed 7/7 in run 40847130068, and Android ARM64 APK compilation succeeded in run 40847130040 (artifact 12885373720, 36,221,901 bytes). Real phone rendering not verified; remains todo."
+        "PR #3 native scoped-image tests passed 7/7 in run 40847130068, and Android ARM64 APK compilation succeeded in run 40847130040 (artifact 12885373720, 36,221,901 bytes). Real phone rendering not verified; remains todo.",
+        "PR #21 merged as 7d719cb7b2f225d9d6f5689b52426a5534071d1a on 2026-10-29. Decoded graphics LRU is bounded to 96 images and 12 million pixels (~48 MiB RGBA approximation), with five Node tests passing in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40878231903 and frontend/ARM64 APK passing in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40878231921. Earlier CI Node strip-types failure was fixed in commit 1dc8cd28. No physical Android tileset/sprite validation, so ASM-006 remains todo: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/21 .",
+        "PR #26 merged as f4202f93c848aab9221d3cb680fc4eefd3a05eb4 on 2026-10-29. Android tileset/autotile data-URL loads now use two concurrent transfers and preserve slot order; nine Node regression tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887485521; frontend and ARM64 APK passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40887485708 (artifact 12904350246). Device asset rendering and peak memory unverified, so ASM-006 remains todo."
       ]
     },
     {
@@ -237,7 +250,7 @@
       "title": "Audit and resolve inherited upstream ESLint errors",
       "area": "quality",
       "priority": 3,
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [],
       "acceptance": [
         "All inherited ESLint errors categorized as pre-existing",
@@ -245,7 +258,9 @@
         "Lint job reinstated as blocking when baseline is clean"
       ],
       "evidence": [
-        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded."
+        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded.",
+        "Draft PR #15 (2026-10-29), commit f42864d6, removes 11 unsafe XP database-list casts, a redundant project-open catch/rethrow, and an unused animation catch binding; TypeScript/ESLint/ARM64 CI pending. Remaining inherited lint issues still outstanding: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/15 .",
+        "PR #15 merged as 33136696f9fad3db2413b7575c0f39ba32f785b2 on 2026-10-29. Frontend TypeScript, Android ARM64 APK and save regression CI passed: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40863375878 and https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40863375952. Removed 13 inherited ESLint errors (41 to 28); ASM-014 remains in_progress because lint is not yet clean or blocking."
       ]
     },
     {
@@ -268,12 +283,55 @@
         "PR #5 merged as db607def93858e211fc7fdc4561aefc9dff8eb01 on 2026-10-29; native full fidelity suite 27/27 passed (run 40854511681), including three-layer Table, opaque map/event ivars, Script.rxdata, PBS/ZIP byte preservation and failed-save rollback: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40854511681",
         "PR #5 Android ARM64 APK and frontend build succeeded in run 40854511753: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40854511753. Synthetic-only gate; no real Essentials v21.1/device claim."
       ]
+    },
+    {
+      "id": "ASM-016",
+      "title": "Bound Ruby script decompression and prevent lossy legacy-encoding saves",
+      "area": "native",
+      "priority": 1,
+      "status": "done",
+      "depends_on": [
+        "ASM-001"
+      ],
+      "acceptance": [
+        "Reject oversized decompressed script sources without unbounded allocation",
+        "Refuse non-UTF-8 script source rather than replacing original bytes with Unicode replacement characters",
+        "Preserve untouched compressed Ruby script bytes and opaque Marshal entries in native roundtrip tests",
+        "Native regression CI and Android ARM64 build pass; real Essentials v21.1 device/desktop verification remains separate"
+      ],
+      "evidence": [
+        "Branch fix/bounded-lossless-ruby-script-decode-20261030 commit 452c187897b737f688675a52ff1172be9859c3fe adds bounded strict-UTF8 zlib decode and two regression tests; CI pending. This does not close ASM-008 or any real-project/device gate.",
+        "2026-10-29: 41/41 native Rust tests passed including strict UTF-8, 32 MiB bounded zlib decode, original Marshal preservation: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40896300338",
+        "2026-10-29: TypeScript frontend and ARM64 debug APK passed; artifact 12906797931 (36,315,846 bytes): https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40896300625"
+      ]
+    },
+    {
+      "id": "ASM-017",
+      "title": "Preserve raw PBS comments, line endings and unknown lines on structured edits",
+      "area": "native",
+      "priority": 1,
+      "status": "done",
+      "depends_on": [
+        "ASM-001"
+      ],
+      "acceptance": [
+        "Unchanged structured PBS save produces byte-identical content including CRLF and comments",
+        "Targeted field-value edit retains unknown lines, spacing and other values",
+        "Append-only fields/sections preserved while removal/reordering is rejected with raw-editor guidance",
+        "Native Rust and Android ARM64 CI pass; real Essentials v21.1 PBS acceptance remains separately open"
+      ],
+      "evidence": [
+        "Draft branch fix/pbs-structured-save-preserve-raw-20261030 commits cf460072, 5ad90ebb, 0963b3f add lossless field-only PBS merge and three Rust regression tests; CI pending. ASM-009 remains todo until genuine v21.1 source roundtrip.",
+        "Follow-up commits 090e11d and 688395e add append-only fields/sections and equality-based parse/reopen fixture checks; native/Android CI pending.",
+        "2026-10-29: 43/43 native Rust tests passed including four PBS no-op, targeted edit, append and refusal fixtures: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40896804072",
+        "2026-10-29: Frontend and Android ARM64 debug APK succeeded; artifact 12907557308 (36,321,272 bytes): https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40896803954"
+      ]
     }
   ],
   "progress": {
-    "estimated_total_completion_percent": 20,
+    "estimated_total_completion_percent": 21,
     "updated_at": "2026-10-29",
-    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only.",
+    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%. PR #14 is now merged with 31/31 native tests and Android ARM64 APK, but no genuine project/device validation; estimated total remains 20%. Independent ASM-014 draft PR #15 removes 13 inherited lint errors (41 to 28 in CI); Android CI pending and no Android fidelity gate closed. PR #15 merged and CI passed, improving inherited lint without closing ASM-014. PRs #16 and #17 merged after 33/33 native archive tests, four Node editor preflight tests, and both TypeScript/Android ARM64 CI suites passed. This improves import portability and failure handling; genuine v21.1/device acceptance remains pending. Conservative total completion 20% -> 21% for these tested merged improvements. Watchdog handoff regression after PR #15 repaired in merged PR #18 (b1f152b0475b1ddcb4830b5d63f6d47c337e4701), with targeted Node handoff test passing in the frontend job of run 40869584884; main watchdog revalidation pending. No additional project-completion credit for workflow-only changes. Draft PR #20 proposes failed-import private-storage cleanup; CI pending, so no further increase beyond 21%. PR #20 merged with verified failed-import cleanup and symlink safety regression; 21% remains unchanged because real v21.1 import/device validation is still missing. PR #21 merged with five passing Node cache tests, frontend and Android ARM64 APK CI; no real device rendering or asset fidelity gate closed, so no completion credit. PR #12 remains the active native SAF export stream. 2026-10-29: PR #25 merged with 13/13 editor regression tests and ARM64 APK; invalid map IDs, dimensions, tiles and tileset mismatches now fail read-only preflight. Draft PR #24 native map Table preflight, #26 bounded graphics transfers and #28 independent ZIP manifest verification have passing focused tests but pending integration/Android or merge gates. No new genuine v21.1/physical-device or licensing acceptance; conservative total remains 21% (change +0). PR #26 subsequently merged with nine graphics tests and ARM64 APK; Android device graphics still unverified, so completion remains 21%. PR #24 native XP map preflight merged after 39/39 Rust tests and ARM64 APK; PR #28 ZIP source-integrity verifier merged after six Python tests. Neither closes genuine v21.1/device acceptance; completion stays 21% (+0). 2026-10-30: ASM-016 bounded strict Ruby script decode in independent PR branch; native and Android CI pending. Estimated completion remains 21%, no acceptance gate credited. 2026-10-29: ASM-016 narrowly complete on native regression and ARM64 build evidence (41/41); no real v21.1/device gate closed, so completion stays 21%. 2026-10-29: ASM-017 PBS source-preserving field edits, append-only support and 43/43 native regression tests + ARM64 APK passed in PR #32; no real v21.1/device gate closed, estimate unchanged 21%.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }

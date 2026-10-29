@@ -73,7 +73,7 @@ export function AnimationPreviewCanvas({
           setSpriteSheet(img);
           setLoadError(null);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setLoadError(`Failed to load: ${animationName}`);
           setSpriteSheet(null);

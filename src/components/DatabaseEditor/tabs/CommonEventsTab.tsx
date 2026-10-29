@@ -35,7 +35,7 @@ export function CommonEventsTab({ projectPath }: Props) {
   return (
     <>
       <div className="db-content">
-        <DatabaseListPanel items={db.items as any} selectedId={db.selectedId} onSelect={db.select}
+        <DatabaseListPanel items={db.items} selectedId={db.selectedId} onSelect={db.select}
           onAdd={() => db.addNew(DEFAULT)} label="common events" />
         {ce ? (
           <div className="db-detail-panel">

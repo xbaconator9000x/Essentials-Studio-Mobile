@@ -20,8 +20,10 @@ import {
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
-import { importProjectZip, exportProjectZip } from "./services/archiveApi";
+import { importProjectZip, exportProjectZip, discardFailedProjectImport } from "./services/archiveApi";
+import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
+import { inspectProjectBeforeOpen } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -160,7 +162,11 @@ function AppContent() {
     try {
       setLoading(true);
       setError(null);
-      const proj = await openProject(path);
+      // Validate the candidate's initial XP map and tileset before clearing
+      // the current project. A corrupt ZIP must not replace a working editor.
+      const proj = await inspectProjectBeforeOpen(path, {
+        openProject, loadMap, loadTileset,
+      });
 
       // Update ref immediately so handleSelectMap sees the new project path.
       projectRef.current = proj;
@@ -194,11 +200,9 @@ function AppContent() {
         // skipGuard=true: dirty state was cleared above; no need to prompt.
         await handleSelectMap(proj.edit_map_id, true);
       }
-    } catch (err) {
-      // Import callers must know when open_project rejects an invalid RXDATA
-      // project; swallowing this error previously made import look successful.
-      throw err;
     } finally {
+      // Let project-open errors propagate to the import caller; only clear
+      // the loading state here, including when RXDATA validation fails.
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,8 +227,12 @@ function AppContent() {
     setArchiveProgress(0);
     setError(null);
     try {
-      const privatePath = await importProjectZip(file, setArchiveProgress);
-      await handleOpenProject(privatePath);
+      await importAndOpenProject(file, {
+        importArchive: importProjectZip,
+        openProject: handleOpenProject,
+        discardFailedImport: discardFailedProjectImport,
+        isActiveProject: (path) => projectRef.current?.path === path,
+      }, setArchiveProgress);
     } catch (err) {
       setError(`Project ZIP import failed: ${String(err)}`);
     } finally {
@@ -290,9 +298,6 @@ function AppContent() {
     try {
       setLoading(true);
       setError(null);
-      setCurrentMapId(mapId);
-      currentMapIdRef.current = mapId;
-
       const data = await loadMap(path, mapId);
       setMapData(data);
       mapDataRef.current = data;
@@ -308,6 +313,10 @@ function AppContent() {
       });
       setTilesetImage(images.tileset);
       setAutotileImages(images.autotiles);
+      // Commit selection only after the map, tileset and graphics loaded.
+      // Failed loads must not leave a map ID pointing to the previous map.
+      setCurrentMapId(mapId);
+      currentMapIdRef.current = mapId;
 
       mapIsDirtyRef.current = false;
       setMapIsDirty(false);

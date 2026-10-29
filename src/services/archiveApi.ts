@@ -33,6 +33,7 @@ export async function importProjectZip(
       const nextOffset = offset + expectedLength;
       const acknowledged = await invoke<number>("append_project_archive_chunk", {
         importId: id,
+        expectedOffset: offset,
         chunkBase64: encodeArchiveChunk(bytes),
       });
       verifyImportChunkAcknowledgement(acknowledged, nextOffset);
@@ -46,6 +47,13 @@ export async function importProjectZip(
     await invoke("abort_project_archive_import", { importId: id }).catch(() => {});
     throw error;
   }
+}
+
+/** Discard only a rejected, newly imported app-private project directory.
+ * Never invoke this for a project that has become the active editor project.
+ */
+export async function discardFailedProjectImport(projectPath: string): Promise<void> {
+  await invoke("discard_failed_project_import", { projectPath });
 }
 
 type ProjectArchiveExport = { export_id: string; size: number };

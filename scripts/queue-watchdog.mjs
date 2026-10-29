@@ -9,6 +9,9 @@ const tasks = new Map(queue.tasks.map(t => [t.id, t]));
 const eligible = queue.tasks
   .filter(t => t.status === "todo" && t.depends_on.every(id => tasks.get(id)?.status === "done"))
   .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+const active = queue.tasks
+  .filter(t => t.status === "in_progress")
+  .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
 const blocked = queue.tasks.filter(t => t.status === "blocked");
 const summary = {
   total: queue.tasks.length,
@@ -44,11 +47,22 @@ function appendHandoffSummary(note) {
       "  - Depends on: " + (task.depends_on.join(", ") || "nothing"),
       ...task.acceptance.map(criterion => "  - [ ] " + criterion),
     ]),
+    ...(eligible.length === 0 ? [
+      "No new todo task is eligible. Continue the in-progress workstreams below; a pending acceptance gate is not a completed task.",
+      "",
+      "#### In-progress implementation streams",
+      "",
+      ...active.flatMap(task => [
+        "- **" + task.id + "** [P" + task.priority + "] " + task.title,
+        "  - Remaining acceptance:",
+        ...task.acceptance.map(criterion => "    - [ ] " + criterion),
+      ]),
+      ...(active.length === 0 ? ["No active streams; inspect blockers and task dependencies."] : []),
+    ] : []),
     "",
     "Only actual code/test results can advance task states. This workflow is a handoff, not a coding agent.",
     "",
   ];
-  if (eligible.length === 0) lines.splice(4, 0, "No new task is eligible; inspect in-progress work and CI failures.");
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n", "utf8");
 }
 let existing;

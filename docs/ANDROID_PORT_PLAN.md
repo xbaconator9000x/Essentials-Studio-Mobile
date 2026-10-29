@@ -1,6 +1,6 @@
 # Essentials Studio Mobile — Android Port Plan
 
-> Work branch: `feature/android-ci-bootstrap`
+> Active SAF export branch: `feature/android-saf-zip-export-20261029` (draft PR #12)
 > Upstream: [doranteseduardo/rmxp-editor](https://github.com/doranteseduardo/rmxp-editor)
 > Goal: edit an **existing**, unchanged Pokémon Essentials v21.1 / RPG Maker XP project on Android and safely export a project that desktop editors can reopen.
 
@@ -90,6 +90,10 @@ Task states are `todo`, `in_progress`, `blocked`, `done`. Promote only on tested
 
 ## Important current limitations
 
-The original `src/App.tsx` project picker expects a native directory path. Android may return a document URI; do not pass that URI directly into `std::path::PathBuf`. The initial ZIP approach is not implemented yet.
+Project ZIP import now uses bounded WebView chunks and app-private extraction with path, entry, size, collision and symlink guards. Synthetic native ZIP roundtrips and editor preflight tests pass, but a **genuine Essentials v21.1 project** has not yet been imported, edited, exported and reopened on desktop. Android SAF export through a scoped `content://` document picker is implemented in **draft PR #12**, with passing CI but no physical-device provider readback evidence; do not treat this as completed ASM-005.
+
+For an independent source-integrity comparison of a real input ZIP and exported ZIP, merged PR #28 adds `python3 scripts/verify_project_roundtrip.py original.zip exported.zip --allow-changed Data/Map001.rxdata`. This checks CRC/SHA-256 of unchanged PBS, Ruby, graphics and other members and reports missing files/directories. It does not replace desktop reopening or device testing.
+
+Initial XP map preflight is read-only and rejects invalid map IDs, dimensions, tile cell values and tileset mismatches before activating an imported project (merged PR #25). Native corrupt Table rejection and bounded map dimensions are merged in PR #24 (39/39 native tests and ARM64 APK). Android graphics cache budgeting and bounded concurrent graphics transfer are merged in PR #26 (nine Node tests and ARM64 APK). None of these synthetic or compile-only checks establishes physical Android fidelity.
 
 Audio preview is temporarily unavailable on Android; desktop continues using rodio. The upstream playtest launcher is already a stub and does **not** launch an Android Pokémon Essentials runtime. No gameplay compatibility is implied by a successful editor APK build.
