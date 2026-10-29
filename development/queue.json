@@ -73,7 +73,8 @@
         "Original ZIP remains unchanged"
       ],
       "evidence": [
-        "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending"
+        "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending",
+        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding."
       ]
     },
     {
@@ -91,7 +92,8 @@
         "Save failure does not overwrite original"
       ],
       "evidence": [
-        "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending"
+        "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending",
+        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding."
       ]
     },
     {
@@ -237,7 +239,7 @@
   "progress": {
     "estimated_total_completion_percent": 15,
     "updated_at": "2026-10-29",
-    "basis": "Verified ARM64 APK build and frontend compile; native ZIP project editing implementation is unverified and excluded from completion estimate.",
+    "basis": "Verified ARM64 APK build and frontend compile in PR #1; ZIP hardening and automated native regression tests proposed in stacked PR #2, pending CI and real Essentials project/device validation. No additional completion credit yet.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }
