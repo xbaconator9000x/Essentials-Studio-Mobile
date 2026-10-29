@@ -68,10 +68,38 @@ pub async fn begin_project_archive_import(app: AppHandle) -> Result<String, Stri
     Err("Unable to allocate a unique import ID".into())
 }
 
+/// Append only at the byte offset acknowledged by the preceding upload.
+/// This rejects a replayed chunk after a lost response and an out-of-order
+/// chunk rather than silently creating an invalid project archive.
+fn append_chunk_at_offset(path: &Path, expected_offset: u64, bytes: &[u8]) -> Result<u64, String> {
+    if bytes.is_empty() || bytes.len() > MAX_CHUNK_BYTES {
+        return Err("Invalid archive chunk size".into());
+    }
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    if size != expected_offset {
+        return Err(format!(
+            "Archive upload offset mismatch: expected {size}, received {expected_offset}"
+        ));
+    }
+    let next = size
+        .checked_add(bytes.len() as u64)
+        .ok_or("Project archive size overflow")?;
+    if next > MAX_ARCHIVE_BYTES {
+        return Err("Project archive exceeds 512 MiB limit".into());
+    }
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+    Ok(next)
+}
+
 #[tauri::command]
 pub async fn append_project_archive_chunk(
     app: AppHandle,
     import_id: String,
+    expected_offset: u64,
     chunk_base64: String,
 ) -> Result<u64, String> {
     // A cap on encoded data also limits temporary memory use before decoding.
@@ -81,17 +109,8 @@ pub async fn append_project_archive_chunk(
     let bytes = STANDARD
         .decode(chunk_base64.as_bytes())
         .map_err(|_| "Invalid Base64 archive chunk".to_string())?;
-    if bytes.is_empty() || bytes.len() > MAX_CHUNK_BYTES {
-        return Err("Invalid archive chunk size".into());
-    }
     let path = staging_path(&import_root(&app)?, &import_id)?;
-    let mut file = OpenOptions::new().append(true).open(&path).map_err(|e| e.to_string())?;
-    let size = file.metadata().map_err(|e| e.to_string())?.len();
-    if size.checked_add(bytes.len() as u64).is_none_or(|sum| sum > MAX_ARCHIVE_BYTES) {
-        return Err("Project archive exceeds 512 MiB limit".into());
-    }
-    file.write_all(&bytes).map_err(|e| e.to_string())?;
-    Ok(size + bytes.len() as u64)
+    append_chunk_at_offset(&path, expected_offset, &bytes)
 }
 
 #[tauri::command]
@@ -262,6 +281,41 @@ pub async fn finish_project_archive_import(
 mod tests {
     use super::{clean_zip_path, BoundedArchiveWriter};
     use std::io::{Cursor, Seek, SeekFrom, Write};
+
+    #[test]
+    fn import_rejects_replayed_and_out_of_order_chunks_without_changing_staging() {
+        use super::append_chunk_at_offset;
+        use std::fs::{self, File};
+        let path = std::env::temp_dir().join(format!(
+            "essentials-upload-offset-{}-{:?}.zip",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        File::create(&path).unwrap();
+        assert_eq!(append_chunk_at_offset(&path, 0, b"first").unwrap(), 5);
+        assert!(append_chunk_at_offset(&path, 0, b"replayed").unwrap_err().contains("offset mismatch"));
+        assert!(append_chunk_at_offset(&path, 8, b"skipped").unwrap_err().contains("offset mismatch"));
+        assert_eq!(fs::read(&path).unwrap(), b"first");
+        assert_eq!(append_chunk_at_offset(&path, 5, b"second").unwrap(), 11);
+        assert_eq!(fs::read(&path).unwrap(), b"firstsecond");
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_empty_chunks_and_oversized_offsets_without_mutation() {
+        use super::append_chunk_at_offset;
+        use std::fs::{self, File};
+        let path = std::env::temp_dir().join(format!(
+            "essentials-upload-bounds-{}-{:?}.zip",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        File::create(&path).unwrap();
+        assert!(append_chunk_at_offset(&path, 0, b"").is_err());
+        assert!(append_chunk_at_offset(&path, u64::MAX, b"x").is_err());
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn bounded_export_rejects_crossing_limit_without_writing_partial_bytes() {
