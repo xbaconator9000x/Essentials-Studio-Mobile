@@ -60,3 +60,25 @@ test("cleanup failures preserve both the import and cleanup errors", async () =>
     && error.message.includes("permission denied")
     && error.cause?.message === "invalid map");
 });
+
+test("native bridge errors remain verbatim and rejected private imports are discarded", async () => {
+  const uploadError = "ZIP contains files outside its single project folder";
+  const uploadCalls = [];
+  await assert.rejects(importAndOpenProject(file, {
+    importArchive: async () => { throw uploadError; },
+    openProject: async () => { uploadCalls.push("open"); },
+    discardFailedImport: async () => { uploadCalls.push("discard"); },
+    isActiveProject: () => false,
+  }), (error) => error === uploadError);
+  assert.deepEqual(uploadCalls, []);
+
+  const preflightError = "Failed to parse map: invalid Ruby Marshal stream";
+  const openCalls = [];
+  await assert.rejects(importAndOpenProject(file, {
+    importArchive: async () => "/private/import-malformed",
+    openProject: async () => { throw preflightError; },
+    discardFailedImport: async (path) => { openCalls.push(["discard", path]); },
+    isActiveProject: () => false,
+  }), (error) => error === preflightError);
+  assert.deepEqual(openCalls, [["discard", "/private/import-malformed"]]);
+});

@@ -33,18 +33,25 @@ def _members(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], set[
             name[: -len("Game.rxproj")]
             for name in names
             if name.endswith("/Game.rxproj")
-            and name.count("/") == 1
         }
         if len(candidates) != 1:
             raise ValueError("ZIP must contain exactly one project root with Game.rxproj")
         prefix = candidates.pop()
+        if prefix.count("/") > 4:
+            raise ValueError("ZIP project root exceeds four wrapper directories")
 
     files: dict[str, zipfile.ZipInfo] = {}
     dirs: set[str] = set()
     folded: set[str] = set()
+    wrapper_dirs = {
+        "/".join(prefix.rstrip("/").split("/")[:depth]) + "/"
+        for depth in range(1, prefix.count("/"))
+    }
     for info in infos:
         name = info.filename
         if not name.startswith(prefix):
+            if info.is_dir() and name in wrapper_dirs:
+                continue
             raise ValueError(f"ZIP contains files outside its project root: {name}")
         relative = name[len(prefix):]
         if not relative:
