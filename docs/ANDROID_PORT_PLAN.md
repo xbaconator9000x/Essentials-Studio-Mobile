@@ -38,6 +38,14 @@ Android-specific adaptations:
 
 The first compile may fail. Read the actual compiler/Gradle logs and fix the earliest *root cause* on this branch; do not disable editor features as a shortcut without recording it in the queue.
 
+## Scoped Android graphics loading (draft PR #3)
+
+The original desktop image loader resolves `Graphics/Tilesets`, `Graphics/Autotiles` and `Graphics/Characters` through Tauri's asset URL protocol. Android WebView asset protocol support for app-private imported projects is not yet verified.
+
+The Android-specific path now requests a named image through `read_private_project_image`. Rust checks the canonical imported project directory, known graphics asset type, flat filename, symlink confinement and a 32 MiB per-image limit, then returns an image `data:` URL. The browser caches decoded images by a short project/asset key rather than by a large base64 string. Desktop remains on its existing asset protocol path.
+
+**Remaining gates:** Confirm on an actual Android ARM64 device that tilesets, autotiles and event characters render correctly from a real Essentials v21.1 project, that memory remains bounded for large graphics, and that all other asset access paths are similarly confined. Until then ASM-006 is not complete. This is a temporary correctness-first transport, not a claim of efficient streaming for every asset size.
+
 ## Acceptance gates
 
 **Gate A — Build:** Android ARM64 debug APK compiles; frontend build passes. Evidence: GitHub Actions run and APK artifact.
