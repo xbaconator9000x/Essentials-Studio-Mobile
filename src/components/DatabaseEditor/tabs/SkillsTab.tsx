@@ -35,7 +35,7 @@ export function SkillsTab({ projectPath }: Props) {
   return (
     <>
       <div className="db-content">
-        <DatabaseListPanel items={db.items as any} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_SKILL)} label="skills" />
+        <DatabaseListPanel items={db.items} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_SKILL)} label="skills" />
         {s ? (
           <div className="db-detail-panel">
             <div className="db-columns">

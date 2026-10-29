@@ -48,7 +48,7 @@ export function ClassesTab({ projectPath }: Props) {
   return (
     <>
       <div className="db-content">
-        <DatabaseListPanel items={db.items as any} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_CLASS)} label="classes" />
+        <DatabaseListPanel items={db.items} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_CLASS)} label="classes" />
         {c ? (
           <div className="db-detail-panel">
             <div className="db-columns">

@@ -31,7 +31,7 @@ export function ArmorsTab({ projectPath }: Props) {
   return (
     <>
       <div className="db-content">
-        <DatabaseListPanel items={db.items as any} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT)} label="armors" />
+        <DatabaseListPanel items={db.items} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT)} label="armors" />
         {a ? (
           <div className="db-detail-panel">
             <div className="db-columns">

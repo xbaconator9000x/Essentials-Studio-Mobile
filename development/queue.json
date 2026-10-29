@@ -240,7 +240,7 @@
       "title": "Audit and resolve inherited upstream ESLint errors",
       "area": "quality",
       "priority": 3,
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [],
       "acceptance": [
         "All inherited ESLint errors categorized as pre-existing",
@@ -248,7 +248,8 @@
         "Lint job reinstated as blocking when baseline is clean"
       ],
       "evidence": [
-        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded."
+        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded.",
+        "Draft PR #15 (2026-10-29), commit f42864d6, removes 11 unsafe XP database-list casts, a redundant project-open catch/rethrow, and an unused animation catch binding; TypeScript/ESLint/ARM64 CI pending. Remaining inherited lint issues still outstanding: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/15 ."
       ]
     },
     {
@@ -276,7 +277,7 @@
   "progress": {
     "estimated_total_completion_percent": 20,
     "updated_at": "2026-10-29",
-    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%. PR #14 is now merged with 31/31 native tests and Android ARM64 APK, but no genuine project/device validation; estimated total remains 20%.",
+    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%. PR #14 is now merged with 31/31 native tests and Android ARM64 APK, but no genuine project/device validation; estimated total remains 20%. Independent ASM-014 draft PR #15 removes 13 inherited lint errors (41 to 28 in CI); Android CI pending and no Android fidelity gate closed.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }

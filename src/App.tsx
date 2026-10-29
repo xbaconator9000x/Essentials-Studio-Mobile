@@ -194,11 +194,9 @@ function AppContent() {
         // skipGuard=true: dirty state was cleared above; no need to prompt.
         await handleSelectMap(proj.edit_map_id, true);
       }
-    } catch (err) {
-      // Import callers must know when open_project rejects an invalid RXDATA
-      // project; swallowing this error previously made import look successful.
-      throw err;
     } finally {
+      // Let project-open errors propagate to the import caller; only clear
+      // the loading state here, including when RXDATA validation fails.
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

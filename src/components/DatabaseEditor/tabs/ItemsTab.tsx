@@ -37,7 +37,7 @@ export function ItemsTab({ projectPath }: Props) {
   return (
     <>
       <div className="db-content">
-        <DatabaseListPanel items={db.items as any} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_ITEM)} label="items" />
+        <DatabaseListPanel items={db.items} selectedId={db.selectedId} onSelect={db.select} onAdd={() => db.addNew(DEFAULT_ITEM)} label="items" />
         {item ? (
           <div className="db-detail-panel">
             <div className="db-columns">
