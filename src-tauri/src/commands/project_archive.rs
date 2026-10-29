@@ -260,7 +260,29 @@ pub async fn finish_project_archive_import(
 
 #[cfg(test)]
 mod tests {
-    use super::clean_zip_path;
+    use super::{clean_zip_path, BoundedArchiveWriter};
+    use std::io::{Cursor, Seek, SeekFrom, Write};
+
+    #[test]
+    fn bounded_export_rejects_crossing_limit_without_writing_partial_bytes() {
+        let mut output = BoundedArchiveWriter::new(Cursor::new(Vec::<u8>::new()), 8);
+        output.write_all(&[1, 2, 3, 4]).unwrap();
+        output.seek(SeekFrom::Start(7)).unwrap();
+        assert!(output.write_all(&[5, 6]).is_err());
+        assert_eq!(output.into_inner().into_inner(), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn bounded_export_allows_exact_limit_and_safe_header_rewrites() {
+        let mut output = BoundedArchiveWriter::new(Cursor::new(Vec::<u8>::new()), 8);
+        output.write_all(&[1, 2, 3, 4]).unwrap();
+        output.seek(SeekFrom::Start(4)).unwrap();
+        output.write_all(&[5, 6, 7, 8]).unwrap();
+        output.seek(SeekFrom::Start(0)).unwrap();
+        output.write_all(&[9, 10]).unwrap();
+        assert_eq!(output.into_inner().into_inner(), vec![9, 10, 3, 4, 5, 6, 7, 8]);
+    }
+
     #[test]
     fn blocks_absolute_and_traversal_paths() {
         for bad in ["../x", "/root/x", "a/../b", "C:/Users/x", "x\\y", "."] {
@@ -300,13 +322,57 @@ fn exports_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Bound compressed ZIP bytes as they are written, not only after finish().
+/// A poorly compressible project must not consume unbounded app-private disk
+/// space before the post-export size check can run.
+struct BoundedArchiveWriter<W> {
+    inner: W,
+    max_len: u64,
+}
+
+impl<W> BoundedArchiveWriter<W> {
+    fn new(inner: W, max_len: u64) -> Self {
+        Self { inner, max_len }
+    }
+
+    fn into_inner(self) -> W {
+        self.inner
+    }
+}
+
+impl<W: Write + Seek> Write for BoundedArchiveWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let offset = self.inner.stream_position()?;
+        if offset
+            .checked_add(buf.len() as u64)
+            .is_none_or(|end| end > self.max_len)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Exported ZIP exceeds 512 MiB archive limit",
+            ));
+        }
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<W: Seek> Seek for BoundedArchiveWriter<W> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(target)
         .map_err(|e| e.to_string())?;
-    let mut writer = zip::ZipWriter::new(file);
+    let mut writer = zip::ZipWriter::new(BoundedArchiveWriter::new(file, MAX_ARCHIVE_BYTES));
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
     let mut directories = vec![project_dir.to_path_buf()];
@@ -366,7 +432,7 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
             io::copy(&mut source, &mut writer).map_err(|e| e.to_string())?;
         }
     }
-    let file = writer.finish().map_err(|e| e.to_string())?;
+    let file = writer.finish().map_err(|e| e.to_string())?.into_inner();
     let size = file.metadata().map_err(|e| e.to_string())?.len();
     if size > MAX_ARCHIVE_BYTES {
         return Err("Exported ZIP exceeds 512 MiB archive limit".into());
