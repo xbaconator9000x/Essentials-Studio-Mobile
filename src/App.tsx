@@ -130,6 +130,9 @@ function AppContent() {
       updateMapDirty(false);
     } catch (err) {
       setError(`Save failed: ${err}`);
+      // ProjectSaveContext aggregates rejected saves. Never report a successful
+      // Save All or allow ZIP export when the map is still dirty on disk.
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -189,7 +192,9 @@ function AppContent() {
         await handleSelectMap(proj.edit_map_id, true);
       }
     } catch (err) {
-      setError(String(err));
+      // Import callers must know when open_project rejects an invalid RXDATA
+      // project; swallowing this error previously made import look successful.
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -201,7 +206,7 @@ function AppContent() {
       const selected = await showFolderPicker();
       if (selected) await handleOpenProject(selected);
     } catch (err) {
-      setError(`Dialog error: ${err}`);
+      setError(`Could not open project: ${err}`);
     }
   }, [handleOpenProject]);
 
@@ -540,7 +545,7 @@ function AppContent() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        saveAll();
+        void saveAll().catch((err) => setError(`Save all failed: ${err}`));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "o") {
         e.preventDefault();
