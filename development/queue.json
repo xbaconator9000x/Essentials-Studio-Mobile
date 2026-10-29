@@ -62,7 +62,7 @@
       "title": "Implement safe project ZIP import into app-private storage",
       "area": "storage",
       "priority": 1,
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "ASM-001"
       ],
@@ -72,14 +72,16 @@
         "Opening a genuine Essentials v21.1 project succeeds",
         "Original ZIP remains unchanged"
       ],
-      "evidence": []
+      "evidence": [
+        "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending"
+      ]
     },
     {
       "id": "ASM-005",
       "title": "Implement project ZIP export with lossless file preservation",
       "area": "storage",
       "priority": 1,
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "ASM-004"
       ],
@@ -88,7 +90,9 @@
         "Unmodified files preserved byte-for-byte",
         "Save failure does not overwrite original"
       ],
-      "evidence": []
+      "evidence": [
+        "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending"
+      ]
     },
     {
       "id": "ASM-006",
@@ -229,5 +233,11 @@
         "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded."
       ]
     }
-  ]
+  ],
+  "progress": {
+    "estimated_total_completion_percent": 15,
+    "updated_at": "2026-10-29",
+    "basis": "Verified ARM64 APK build and frontend compile; native ZIP project editing implementation is unverified and excluded from completion estimate.",
+    "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
+  }
 }
