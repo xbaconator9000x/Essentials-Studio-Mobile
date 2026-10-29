@@ -18,6 +18,7 @@ pub fn run() {
             abort_project_archive_import,
             begin_project_archive_export,
             read_project_archive_export_chunk,
+            save_project_archive_to_document,
             discard_project_archive_export,
             read_private_project_image,
             load_map,
