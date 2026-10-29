@@ -151,7 +151,9 @@
         "Three map layers and autotiles round-trip",
         "Passages and priorities remain identical unless edited"
       ],
-      "evidence": []
+      "evidence": [
+        "Draft PR #38 (2026-10-30), commits bcbf3964, 496d8770 and bb51b878: preflights XP map Table and MapInfos before map-property writes, rejects ambiguous IDs and out-of-bounds events, preserves opaque Table tail bytes during resize. Five synthetic/native regression tests committed; latest native and ARM64 CI pending. Not accepted as real Shattered/device/desktop reopen evidence: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/38"
+      ]
     },
     {
       "id": "ASM-008",

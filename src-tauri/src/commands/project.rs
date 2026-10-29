@@ -821,6 +821,12 @@ pub async fn save_map_properties(
     // Update map file — modify instance variables on the raw RubyValue
     let mut value = marshal::load_file(&map_file)
         .map_err(|e| format!("Failed to read map: {}", e))?;
+    // Check both source files before writing either one: a missing MapInfos
+    // entry must not leave an edited map behind after reporting an error.
+    let map_infos_path = path.join("Data").join("MapInfos.rxdata");
+    let mut infos_value = marshal::load_file(&map_infos_path)
+        .map_err(|e| format!("Failed to read MapInfos: {}", e))?;
+    validate_map_properties_preflight(&value, &infos_value, props.id, props.width, props.height)?;
 
     if let marshal::types::RubyValue::Object(ref mut obj) = value {
         // Capture the original dimensions BEFORE we overwrite @width/@height below,
@@ -870,8 +876,16 @@ pub async fn save_map_properties(
                     if let marshal::types::RubyValue::UserDefined { class_name, data } = val {
                         if class_name == "Table" {
                             if let Some(mut table) = Table::from_bytes(data) {
+                                // Preserve opaque trailing bytes from custom XP Table
+                                // serializers; resizing known cells must not discard them.
+                                let table_bytes = 20 + table.data.len() * 2;
+                                let extension = data[table_bytes..].to_vec();
                                 table.resize(props.width as u32, props.height as u32, 3);
-                                *data = table.to_bytes();
+                                let mut resized = table.to_bytes();
+                                resized.extend_from_slice(&extension);
+                                *data = resized;
+                            } else {
+                                return Err("Cannot resize malformed XP Table".into());
                             }
                         }
                     }
@@ -884,11 +898,7 @@ pub async fn save_map_properties(
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {}", e))?;
 
-    // Update MapInfos.rxdata with the new name
-    let map_infos_path = path.join("Data").join("MapInfos.rxdata");
-    let mut infos_value = marshal::load_file(&map_infos_path)
-        .map_err(|e| format!("Failed to read MapInfos: {}", e))?;
-
+    // MapInfos was already parsed and validated before the map write.
     if let marshal::types::RubyValue::Hash(ref mut pairs) = infos_value {
         for (key, val) in pairs.iter_mut() {
             if let Some(id) = key.as_int() {
@@ -916,6 +926,164 @@ pub async fn save_map_properties(
 
     eprintln!("[save_map_properties] Saved map {} properties", props.id);
     Ok(())
+}
+
+/// Reject invalid map/Table and MapInfos sources before the first disk write.
+/// Without this check a failed resize can change @width/@height but silently
+/// leave the old Table, producing an unplayable XP map.
+fn validate_map_properties_preflight(
+    map_value: &marshal::types::RubyValue,
+    infos_value: &marshal::types::RubyValue,
+    map_id: i64,
+    new_width: i64,
+    new_height: i64,
+) -> Result<(), String> {
+    use marshal::types::RubyValue;
+    if map_id <= 0 {
+        return Err("Invalid map ID".into());
+    }
+    crate::models::map::checked_map_tile_dimensions(new_width, new_height)
+        .ok_or("Invalid destination map dimensions")?;
+    let map = RpgMap::from_ruby_value(map_value)
+        .ok_or("Cannot edit properties of a malformed XP map or Table")?;
+    let obj = map_value.as_object().ok_or("Expected RPG::Map object")?;
+    for field in ["@width", "@height", "@data"] {
+        if !obj.instance_vars.iter().any(|(name, _)| name == field) {
+            return Err(format!("Map is missing required {field}"));
+        }
+    }
+    if map.events.values().any(|event| {
+        event.x < 0 || event.y < 0 || event.x >= new_width || event.y >= new_height
+    }) {
+        return Err("Cannot resize map while an event would be outside the new bounds".into());
+    }
+    let RubyValue::Hash(pairs) = infos_value else {
+        return Err("MapInfos is not a Ruby Hash".into());
+    };
+    let mut matching = pairs.iter().filter(|(key, _)| key.as_int() == Some(map_id));
+    let (_, info) = matching.next().ok_or("Map ID is missing from MapInfos")?;
+    if matching.next().is_some() {
+        return Err("MapInfos contains duplicate map IDs".into());
+    }
+    let RubyValue::Object(info_obj) = info else {
+        return Err("MapInfos entry is not a Ruby object".into());
+    };
+    if info_obj.class_name != "RPG::MapInfo"
+        || !info_obj.instance_vars.iter().any(|(name, value)| {
+            name == "@name" && matches!(value, RubyValue::String(_))
+        })
+    {
+        return Err("MapInfos entry lacks a valid map name".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod map_properties_preflight_tests {
+    use super::*;
+    use marshal::types::RubyValue;
+
+    fn sources() -> (RubyValue, RubyValue) {
+        let map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let info = MapInfo {
+            name: "Fixture".into(), parent_id: 0, order: 1,
+            expanded: true, scroll_x: 0, scroll_y: 0,
+        }.to_ruby_value();
+        (map, RubyValue::Hash(vec![(RubyValue::Integer(1), info)]))
+    }
+
+    #[test]
+    fn valid_three_layer_map_and_mapinfos_can_be_edited() {
+        let (map, infos) = sources();
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 3, 3).is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_or_duplicate_mapinfos_before_map_mutation() {
+        let (map, mut infos) = sources();
+        assert!(validate_map_properties_preflight(&map, &RubyValue::Hash(vec![]), 1, 2, 2).is_err());
+        let RubyValue::Hash(ref mut pairs) = infos else { panic!("hash") };
+        pairs.push(pairs[0].clone());
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 2, 2).is_err());
+    }
+
+    #[test]
+    fn rejects_corrupt_table_and_missing_dimensions_without_touching_sources() {
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        let (_, table) = obj.instance_vars.iter_mut().find(|(n, _)| n == "@data").unwrap();
+        let RubyValue::UserDefined { ref mut data, .. } = table else { panic!("table") };
+        data[12..16].copy_from_slice(&1u32.to_le_bytes());
+        let before = map.clone();
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 4, 4).is_err());
+        assert_eq!(map, before);
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        obj.instance_vars.retain(|(name, _)| name != "@width");
+        assert!(validate_map_properties_preflight(&map, &infos, 1, 4, 4).is_err());
+    }
+
+    fn temp_project() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xp-map-properties-{}-{unique}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        root
+    }
+
+    fn edited_properties() -> MapProperties {
+        MapProperties {
+            id: 1, name: "Renamed".into(), tileset_id: 1, width: 3, height: 3,
+            autoplay_bgm: false, bgm_name: String::new(), bgm_volume: 100,
+            bgm_pitch: 100, autoplay_bgs: false, bgs_name: String::new(),
+            bgs_volume: 100, bgs_pitch: 100, encounter_step: 30,
+            scroll_type: 0, disable_dashing: false, parallax_name: String::new(),
+            parallax_loop_x: false, parallax_loop_y: false, parallax_sx: 0,
+            parallax_sy: 0, parallax_show: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_mapinfos_does_not_partially_save_map_properties() {
+        let root = temp_project();
+        let (map, _) = sources();
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        marshal::dump_file(&root.join("Data/MapInfos.rxdata"), &RubyValue::Nil).unwrap();
+        let before = std::fs::read(&map_path).unwrap();
+        let result = save_map_properties(root.to_string_lossy().into_owned(), edited_properties()).await;
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&map_path).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn valid_map_property_resize_preserves_layers_and_updates_name() {
+        let root = temp_project();
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        let (_, raw) = obj.instance_vars.iter_mut().find(|(n, _)| n == "@data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw else { panic!("Table") };
+        data.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        let infos_path = root.join("Data/MapInfos.rxdata");
+        marshal::dump_file(&infos_path, &infos).unwrap();
+        save_map_properties(root.to_string_lossy().into_owned(), edited_properties())
+            .await.unwrap();
+        let loaded = marshal::load_file(&map_path).unwrap();
+        let resized = RpgMap::from_ruby_value(&loaded).expect("valid resized three-layer Table");
+        assert_eq!((resized.width, resized.height, resized.data.z_size), (3, 3, 3));
+        assert_eq!(resized.data.get(0, 0, 0), 384);
+        let raw_table = loaded.as_object().unwrap().get("data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw_table else { panic!("Table") };
+        assert!(data.ends_with(&[0xde, 0xad, 0xbe, 0xef]));
+        let updated = load_map_infos(&infos_path).unwrap();
+        assert_eq!(updated.get(&1).unwrap().name, "Renamed");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Create a new blank map. Returns the new map ID and updated map_infos.
