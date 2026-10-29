@@ -135,15 +135,10 @@ pub async fn load_map(project_path: String, map_id: i64) -> Result<MapRenderData
         map.data.data.len(),
         &map.data.data[..std::cmp::min(20, map.data.data.len())]);
 
-    // Flatten tile data for frontend: 3 layers × width × height
-    let mut tiles = Vec::with_capacity((map.width * map.height * 3) as usize);
-    for z in 0..3u32 {
-        for y in 0..map.height as u32 {
-            for x in 0..map.width as u32 {
-                tiles.push(map.data.get(x, y, z));
-            }
-        }
-    }
+    // RpgMap::from_ruby_value has validated the three XP Table dimensions
+    // and element count before allocating. Table storage is already in the
+    // exact z/y/x layer order consumed by the frontend.
+    let tiles = map.data.data.clone();
 
     // Debug: count non-zero tiles per layer + tile type distribution
     let layer_size = (map.width * map.height) as usize;
@@ -544,13 +539,9 @@ fn replace_map_tile_data(
     width: i64,
     height: i64,
 ) -> Result<(), String> {
-    let w = usize::try_from(width).map_err(|_| "Invalid map width")?;
-    let h = usize::try_from(height).map_err(|_| "Invalid map height")?;
-    if w == 0 || h == 0 {
-        return Err("Map dimensions must be positive".into());
-    }
-    let expected = w.checked_mul(h).and_then(|n| n.checked_mul(3))
-        .ok_or("Map dimensions overflow")?;
+    let (w, h, expected) = crate::models::map::checked_map_tile_dimensions(width, height)
+        .ok_or("Map dimensions are invalid or exceed the XP editor cell limit")?;
+    let (w, h) = (w as usize, h as usize);
     if tiles.len() != expected {
         return Err(format!("Tile count {} does not match {}x{}x3 = {}",
             tiles.len(), width, height, expected));
@@ -735,6 +726,10 @@ pub async fn save_map_properties(
     project_path: String,
     props: MapProperties,
 ) -> Result<(), String> {
+    // Reject invalid dimensions before touching the source RXDATA. Casting a
+    // negative dimension to u32 during Table::resize could exhaust memory.
+    crate::models::map::checked_map_tile_dimensions(props.width, props.height)
+        .ok_or("Map dimensions are invalid or exceed the XP editor cell limit")?;
     let path = PathBuf::from(&project_path);
     let map_file = path.join("Data").join(format!("Map{:03}.rxdata", props.id));
 
@@ -848,6 +843,9 @@ pub async fn create_map(
     height: i64,
     tileset_id: i64,
 ) -> Result<(i64, HashMap<i64, MapInfo>), String> {
+    // A malformed or oversized map must never be allocated or written.
+    crate::models::map::checked_map_tile_dimensions(width, height)
+        .ok_or("Map dimensions are invalid or exceed the XP editor cell limit")?;
     let path = PathBuf::from(&project_path);
     let map_infos_path = path.join("Data").join("MapInfos.rxdata");
 
