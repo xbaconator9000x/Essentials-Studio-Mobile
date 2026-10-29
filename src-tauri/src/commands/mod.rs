@@ -7,6 +7,7 @@ pub mod database;
 pub mod pbs;
 pub mod playtest;
 pub mod project;
+pub mod project_archive;
 pub mod scripts;
 pub mod util;
 
@@ -15,4 +16,5 @@ pub use database::*;
 pub use pbs::*;
 pub use playtest::*;
 pub use project::*;
+pub use project_archive::*;
 pub use scripts::*;
