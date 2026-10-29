@@ -37,19 +37,37 @@ fn load_scripts_raw(project_path: &str) -> Result<Vec<RubyValue>, String> {
         .ok_or_else(|| "Scripts.rxdata is not an array".to_string())
 }
 
-fn decompress_zlib(data: &[u8]) -> Result<String, String> {
+// A single compressed Ruby script can expand far beyond the size of the
+// project ZIP. Bound decoding before allocating the complete source in the
+// WebView/editor, and never replace non-UTF-8 Ruby bytes with U+FFFD.
+const MAX_SCRIPT_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
+
+fn decompress_zlib_with_limit(data: &[u8], limit: u64) -> Result<String, String> {
     if data.is_empty() {
         return Ok(String::new());
     }
-    let mut decoder = ZlibDecoder::new(data);
+    let decoder = ZlibDecoder::new(data);
     let mut output = Vec::new();
     decoder
+        .take(limit.saturating_add(1))
         .read_to_end(&mut output)
-        .map_err(|e| format!("Zlib decompression failed: {}", e))?;
-    Ok(String::from_utf8_lossy(&output).into_owned())
+        .map_err(|e| format!("Zlib decompression failed: {e}"))?;
+    if output.len() as u64 > limit {
+        return Err(format!("Ruby script source exceeds {limit} decompressed bytes"));
+    }
+    String::from_utf8(output).map_err(|_| {
+        "Ruby script source is not UTF-8; refusing lossy decoding or save".to_string()
+    })
+}
+
+fn decompress_zlib(data: &[u8]) -> Result<String, String> {
+    decompress_zlib_with_limit(data, MAX_SCRIPT_SOURCE_BYTES)
 }
 
 fn compress_zlib(source: &str) -> Result<Vec<u8>, String> {
+    if source.len() as u64 > MAX_SCRIPT_SOURCE_BYTES {
+        return Err(format!("Ruby script source exceeds {MAX_SCRIPT_SOURCE_BYTES} bytes"));
+    }
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder
         .write_all(source.as_bytes())
@@ -375,4 +393,31 @@ mod fidelity_tests {
         ];
         assert!(merge_script_entries(&corrupt, &[source(1, "Original", "safe")]).is_err());
     }
+    #[test]
+    fn non_utf8_ruby_script_is_rejected_without_replacement_characters() {
+        // Ruby XP scripts can contain legacy-encoded bytes. An editor that
+        // only accepts UTF-8 must refuse them, not silently rewrite them.
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&[0xff, 0xfe, b'R', b'G', b'S', b'S']).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let original = vec![RubyValue::Array(vec![
+            RubyValue::Integer(7),
+            RubyValue::String(RubyString::new(b"Legacy".to_vec())),
+            RubyValue::String(RubyString::new(compressed.clone())),
+        ])];
+        assert!(decompress_zlib(&compressed).unwrap_err().contains("not UTF-8"));
+        assert!(merge_script_entries(&original, &[source(7, "Legacy", "replacement")]).is_err());
+        assert_eq!(parse_script_entry(&original[0]).unwrap().2, compressed.as_slice());
+    }
+
+    #[test]
+    fn compressed_script_expansion_and_new_source_are_bounded() {
+        let compressed = compress_zlib("012345").unwrap();
+        assert_eq!(decompress_zlib_with_limit(&compressed, 6).unwrap(), "012345");
+        assert!(decompress_zlib_with_limit(&compressed, 5)
+            .unwrap_err().contains("exceeds"));
+        let oversized = "x".repeat(MAX_SCRIPT_SOURCE_BYTES as usize + 1);
+        assert!(compress_zlib(&oversized).unwrap_err().contains("exceeds"));
+    }
+
 }
