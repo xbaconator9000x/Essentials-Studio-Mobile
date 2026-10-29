@@ -26,8 +26,14 @@ function validLayer(layer: number): boolean {
   return Number.isInteger(layer) && layer >= 0 && layer < 3;
 }
 
+// Existing XP Tables may contain signed i16 sentinel values. Preserve those
+// exactly for clipboard/undo; only new paint selections must be nonnegative.
+function validStoredTileId(tileId: number): boolean {
+  return Number.isInteger(tileId) && tileId >= -32768 && tileId <= 32767;
+}
+
 function validTileId(tileId: number): boolean {
-  return Number.isInteger(tileId) && tileId >= 0 && tileId <= 32767;
+  return validStoredTileId(tileId) && tileId >= 0;
 }
 
 function validCell(map: MapRenderData, x: number, y: number): boolean {
@@ -124,7 +130,7 @@ function setTile(
   value: number
 ) {
   // Guard undo/redo against invalid layers and fractional array keys.
-  if (!validLayer(layer) || !validTileId(value)
+  if (!validLayer(layer) || !validStoredTileId(value)
     || !Number.isInteger(x) || !Number.isInteger(y)
     || x < 0 || x >= width || y < 0 || y >= height
     || tiles.length !== width * height * 3) return;
@@ -649,7 +655,7 @@ export function pasteTileRegion(
     const values = clipboard.layers[l];
     if (!Array.isArray(values)) return [];
     if (values.length > 0 && (values.length !== clipboard.width * clipboard.height
-      || !values.every(validTileId))) return [];
+      || !values.every(validStoredTileId))) return [];
   }
 
   const changes: TileChange[] = [];
