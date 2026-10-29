@@ -21,6 +21,7 @@ import {
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
 import { importProjectZip, exportProjectZip } from "./services/archiveApi";
+import { saveThenMarkClean } from "./services/saveGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -126,8 +127,10 @@ function AppContent() {
     if (!proj || !md) return;
     setLoading(true);
     try {
-      await saveMap(proj.path, md.id, md.tiles, md.width, md.height);
-      updateMapDirty(false);
+      await saveThenMarkClean(
+        () => saveMap(proj.path, md.id, md.tiles, md.width, md.height),
+        () => updateMapDirty(false),
+      );
     } catch (err) {
       setError(`Save failed: ${err}`);
       // ProjectSaveContext aggregates rejected saves. Never report a successful
