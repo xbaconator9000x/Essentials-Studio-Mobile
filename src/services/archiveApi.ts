@@ -4,6 +4,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { exportAndroidDocument } from "./androidDocumentExport";
 import {
   ARCHIVE_CHUNK_BYTES,
   decodeArchiveChunk,
@@ -71,24 +72,15 @@ export async function exportProjectZip(
     // the document to verify every byte. Avoid the WebView Blob/share fallback
     // (and its 512 MiB JS memory cost) on Android.
     if (/Android/i.test(navigator.userAgent)) {
-      const destination = await save({
-        defaultPath: name,
-        filters: [{ name: "ZIP archives", extensions: ["zip"] }],
-      });
-      if (destination === null) return; // user cancelled, no success reported
-      if (!destination.startsWith("content://")) {
-        throw new Error("Android picker did not return a document content URI");
-      }
-      onProgress?.(95);
-      const verifiedBytes = await invoke<number>("save_project_archive_to_document", {
-        exportId: exported.export_id,
-        documentUri: destination,
-      });
-      if (verifiedBytes !== exported.size) {
-        throw new Error("Android ZIP export readback size mismatch");
-      }
-      onProgress?.(100);
-      return;
+      await exportAndroidDocument(exported.export_id, exported.size, name, {
+        pickDestination: (filename) => save({
+          defaultPath: filename,
+          filters: [{ name: "ZIP archives", extensions: ["zip"] }],
+        }),
+        writeAndVerify: (exportId, documentUri) =>
+          invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
+      }, onProgress);
+      return; // includes cancellation; never reports 100% unless readback passes
     }
 
     const chunks: BlobPart[] = [];
