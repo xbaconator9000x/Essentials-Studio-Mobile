@@ -20,7 +20,8 @@ import {
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
-import { importProjectZip, exportProjectZip } from "./services/archiveApi";
+import { importProjectZip, exportProjectZip, discardFailedProjectImport } from "./services/archiveApi";
+import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
 import { inspectProjectBeforeOpen } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
@@ -226,8 +227,12 @@ function AppContent() {
     setArchiveProgress(0);
     setError(null);
     try {
-      const privatePath = await importProjectZip(file, setArchiveProgress);
-      await handleOpenProject(privatePath);
+      await importAndOpenProject(file, {
+        importArchive: importProjectZip,
+        openProject: handleOpenProject,
+        discardFailedImport: discardFailedProjectImport,
+        isActiveProject: (path) => projectRef.current?.path === path,
+      }, setArchiveProgress);
     } catch (err) {
       setError(`Project ZIP import failed: ${String(err)}`);
     } finally {

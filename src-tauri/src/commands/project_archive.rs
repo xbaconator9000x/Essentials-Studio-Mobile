@@ -349,6 +349,40 @@ pub async fn finish_project_archive_import(
         .map_err(|e| format!("Import worker failed: {e}"))?
 }
 
+/// Remove only an abandoned, directly imported app-private project.
+/// Never accept arbitrary project paths or follow a symlink outside the root.
+fn discard_imported_project_in(root: &Path, requested: &Path) -> Result<(), String> {
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    // Canonicalizing the requested directory before checking its file type
+    // would turn a sibling symlink into the *target* path, potentially
+    // deleting a different, active import inside this same projects root.
+    let entry = fs::symlink_metadata(requested).map_err(|e| e.to_string())?;
+    if entry.file_type().is_symlink() || !entry.is_dir() {
+        return Err("Imported project cleanup refuses links and non-directories".into());
+    }
+    let project = requested.canonicalize().map_err(|e| e.to_string())?;
+    if project.parent() != Some(root.as_path()) {
+        return Err("Only direct imported app-private projects may be discarded".into());
+    }
+    let name = project.file_name().and_then(|n| n.to_str())
+        .ok_or("Invalid imported project name")?;
+    safe_id(name)?;
+    if !project.join("Game.rxproj").is_file() {
+        return Err("Not an imported RPG Maker XP project".into());
+    }
+    fs::remove_dir_all(project).map_err(|e| format!("Could not discard failed import: {e}"))
+}
+
+/// Called only when frontend preflight rejects a newly imported project.
+/// Existing open projects and the user's original ZIP are not touched.
+#[tauri::command]
+pub async fn discard_failed_project_import(
+    app: AppHandle,
+    project_path: String,
+) -> Result<(), String> {
+    discard_imported_project_in(&projects_root(&app)?, Path::new(&project_path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{clean_zip_path, BoundedArchiveWriter};
@@ -858,6 +892,65 @@ mod archive_roundtrip_tests {
         writer.finish().unwrap();
         let extracted = extract_archive(&archive, &sandbox.path("portable-project")).unwrap();
         assert_eq!(fs::read(extracted.join("Data/Map001.rxdata")).unwrap(), b"fixture");
+    }
+
+    #[test]
+    fn failed_import_cleanup_removes_only_the_requested_direct_private_project() {
+        use super::discard_imported_project_in;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let good = root.join("import-failed");
+        let keep = root.join("import-keep");
+        let nested = keep.join("import-nested");
+        let other = root.join("manually-created");
+        let outside = sandbox.path("outside");
+        for dir in [&good, &keep, &nested, &other, &outside] {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(dir.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+        }
+        fs::write(keep.join("Data.txt"), b"must survive").unwrap();
+        assert!(discard_imported_project_in(&root, &outside).is_err());
+        assert!(discard_imported_project_in(&root, &nested).is_err());
+        assert!(discard_imported_project_in(&root, &other).is_err());
+        assert!(discard_imported_project_in(&root, &root).is_err());
+        assert!(discard_imported_project_in(&root, &good).is_ok());
+        assert!(!good.exists());
+        assert_eq!(fs::read(keep.join("Data.txt")).unwrap(), b"must survive");
+        assert!(outside.join("Game.rxproj").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_import_cleanup_does_not_follow_external_project_symlink() {
+        use super::discard_imported_project_in;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let outside = sandbox.path("external");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("Game.rxproj"), b"original").unwrap();
+        symlink(&outside, root.join("import-link")).unwrap();
+        assert!(discard_imported_project_in(&root, &root.join("import-link")).is_err());
+        assert_eq!(fs::read(outside.join("Game.rxproj")).unwrap(), b"original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_import_cleanup_rejects_symlink_to_sibling_active_project() {
+        use super::discard_imported_project_in;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let active = root.join("import-active");
+        fs::create_dir_all(&active).unwrap();
+        fs::write(active.join("Game.rxproj"), b"original").unwrap();
+        fs::write(active.join("Data.txt"), b"must survive").unwrap();
+        let alias = root.join("import-failed");
+        symlink(&active, &alias).unwrap();
+        assert!(discard_imported_project_in(&root, &alias).is_err());
+        assert_eq!(fs::read(active.join("Data.txt")).unwrap(), b"must survive");
+        assert!(alias.symlink_metadata().unwrap().file_type().is_symlink());
     }
 
     #[test]

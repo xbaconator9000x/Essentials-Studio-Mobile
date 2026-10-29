@@ -16,6 +16,7 @@ pub fn run() {
             append_project_archive_chunk,
             finish_project_archive_import,
             abort_project_archive_import,
+            discard_failed_project_import,
             begin_project_archive_export,
             read_project_archive_export_chunk,
             discard_project_archive_export,

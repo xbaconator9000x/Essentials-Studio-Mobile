@@ -47,6 +47,13 @@ export async function importProjectZip(
   }
 }
 
+/** Discard only a rejected, newly imported app-private project directory.
+ * Never invoke this for a project that has become the active editor project.
+ */
+export async function discardFailedProjectImport(projectPath: string): Promise<void> {
+  await invoke("discard_failed_project_import", { projectPath });
+}
+
 type ProjectArchiveExport = { export_id: string; size: number };
 
 /** Export all project files without altering the app-private project.
