@@ -6,6 +6,7 @@
  */
 
 import { getAssetPath } from "./tauriApi";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 // Bounded LRU cache. Without a cap this grew for the whole session as the user
 // browsed maps/tilesets/characters, retaining every decoded image. Map preserves
@@ -46,6 +47,35 @@ async function getConvertFileSrc(): Promise<ConvertFn | null> {
   return _convertResolving;
 }
 
+/** Android WebView asset URLs are not guaranteed to resolve sandbox files.
+ * Request only named images from a validated imported project instead.
+ * The native endpoint enforces project-root confinement and image size limits.
+ */
+function isAndroidTauri(): boolean {
+  return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent) && isTauri();
+}
+
+async function loadProjectImage(
+  projectPath: string,
+  assetType: string,
+  assetName: string,
+): Promise<HTMLImageElement> {
+  if (isAndroidTauri()) {
+    const cacheKey = `private:${projectPath}:${assetType}:${assetName}`;
+    const cached = imageCache.get(cacheKey);
+    if (cached) {
+      cacheImage(cacheKey, cached);
+      return cached;
+    }
+    const dataUrl = await invoke<string>("read_private_project_image", {
+      projectPath, assetType, assetName,
+    });
+    return loadImage(dataUrl, cacheKey);
+  }
+  const path = await getAssetPath(projectPath, assetType, assetName);
+  return loadImage(path);
+}
+
 async function convertFilePathToUrl(filePath: string): Promise<string> {
   const convert = await getConvertFileSrc();
   if (convert) {
@@ -67,10 +97,10 @@ async function convertFilePathToUrl(filePath: string): Promise<string> {
  * Caches loaded images for reuse.
  * Falls back to alternate URL encoding if the first attempt fails (handles spaces in filenames).
  */
-export async function loadImage(path: string): Promise<HTMLImageElement> {
-  if (imageCache.has(path)) {
-    const cached = imageCache.get(path)!;
-    cacheImage(path, cached); // mark most-recently-used
+export async function loadImage(path: string, cacheKey = path): Promise<HTMLImageElement> {
+  if (imageCache.has(cacheKey)) {
+    const cached = imageCache.get(cacheKey)!;
+    cacheImage(cacheKey, cached); // mark most-recently-used
     return cached;
   }
 
@@ -82,7 +112,7 @@ export async function loadImage(path: string): Promise<HTMLImageElement> {
     new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        cacheImage(path, img);
+        cacheImage(cacheKey, img);
         resolve(img);
       };
       img.onerror = (e) => {
@@ -156,11 +186,11 @@ export async function loadTilesetImage(
   if (!tilesetName) return null;
 
   try {
-    const path = await getAssetPath(projectPath, "tileset", tilesetName);
-    console.log(`[imageLoader] Loading tileset: ${tilesetName} → ${path}`);
-    return await loadImage(path);
+    return await loadProjectImage(projectPath, "tileset", tilesetName);
   } catch (err) {
     console.warn(`[imageLoader] Failed to load tileset image: ${tilesetName}`, err);
+    // Do not silently replace real project art with mock tiles on Android.
+    if (isAndroidTauri()) throw err;
     return createPlaceholderTileset();
   }
 }
@@ -179,9 +209,7 @@ export async function loadAutotileImage(
 
   try {
     console.log(`[imageLoader] Requesting asset path for autotile: '${autotileName}'`);
-    const path = await getAssetPath(projectPath, "autotile", autotileName);
-    console.log(`[imageLoader] Loading autotile: '${autotileName}' → ${path}`);
-    const img = await loadImage(path);
+    const img = await loadProjectImage(projectPath, "autotile", autotileName);
     console.log(`[imageLoader] ✓ Autotile '${autotileName}' loaded: ${img.width}x${img.height}`);
     return img;
   } catch (err) {
@@ -269,9 +297,7 @@ export async function loadCharacterImage(
   if (!characterName) return null;
 
   try {
-    const path = await getAssetPath(projectPath, "character", characterName);
-    console.log(`[imageLoader] Loading character: '${characterName}' → ${path}`);
-    const img = await loadImage(path);
+    const img = await loadProjectImage(projectPath, "character", characterName);
     console.log(`[imageLoader] ✓ Character '${characterName}' loaded: ${img.width}x${img.height}`);
     return img;
   } catch (err) {
