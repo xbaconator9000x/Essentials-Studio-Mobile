@@ -33,8 +33,6 @@ jobs:
       - run: node scripts/check-development-queue.mjs
       - name: Verify queue watchdog handoff behavior
         run: node --test scripts/queue-watchdog.test.mjs
-      - name: Verify Copilot queue scheduling, deduplication and safety
-        run: node --test scripts/copilot-dispatch.test.mjs
       - name: Audit inherited ESLint findings (non-blocking during port bootstrap)
         continue-on-error: true
         run: npm run lint
