@@ -39,6 +39,21 @@ class ProjectRoundtripTests(unittest.TestCase):
         self.assertEqual(report["unchanged_files"], 5)
         self.assertEqual(report["preserved_explicit_directories"], 1)
 
+    def test_three_level_wrapped_input_reopens_as_flat_export(self):
+        prefix = "Repository/Essentials/Project/"
+        original = self.make_zip(
+            "original.zip",
+            [
+                ("Repository/", b""),
+                ("Repository/Essentials/", b""),
+                *self.sample(prefix),
+            ],
+        )
+        exported = self.make_zip("export.zip", self.sample())
+        report = verify_roundtrip(original, exported)
+        self.assertEqual(report["status"], "verified")
+        self.assertEqual(report["unchanged_files"], 5)
+
     def test_targeted_map_edit_requires_explicit_allowance_and_preserves_other_files(self):
         original = self.make_zip("original.zip", self.sample())
         modified = [

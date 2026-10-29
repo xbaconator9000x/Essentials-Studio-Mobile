@@ -29,6 +29,9 @@ rodio = { version = "0.19", features = ["mp3", "vorbis", "wav", "flac"] }
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+sha2 = "0.10.9"
+
 [lib]
 name = "essentials_studio_lib"
 crate-type = ["lib", "cdylib", "staticlib"]

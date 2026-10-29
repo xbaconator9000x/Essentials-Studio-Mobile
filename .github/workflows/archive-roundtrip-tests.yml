@@ -13,6 +13,7 @@ on:
       - 'src-tauri/Cargo.lock'
       - 'scripts/run_project_roundtrip.py'
       - 'scripts/verify_project_roundtrip.py'
+      - 'tests/test_project_roundtrip.py'
       - '.github/workflows/archive-roundtrip-tests.yml'
   pull_request:
     branches:
@@ -26,7 +27,9 @@ on:
       - 'src-tauri/Cargo.lock'
       - 'scripts/run_project_roundtrip.py'
       - 'scripts/verify_project_roundtrip.py'
+      - 'tests/test_project_roundtrip.py'
       - '.github/workflows/archive-roundtrip-tests.yml'
+
 
 permissions:
   contents: read
