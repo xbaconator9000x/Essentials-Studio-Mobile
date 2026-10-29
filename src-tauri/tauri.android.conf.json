@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Essentials Studio Mobile",
+  "identifier": "com.xbaconator.essentialsstudiomobile",
+  "bundle": {
+    "android": {
+      "minSdkVersion": 26
+    }
+  }
+}

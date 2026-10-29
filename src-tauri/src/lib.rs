@@ -12,6 +12,13 @@ pub fn run() {
         .manage(Mutex::new(AudioHandle::new()))
         .invoke_handler(tauri::generate_handler![
             open_project,
+            begin_project_archive_import,
+            append_project_archive_chunk,
+            finish_project_archive_import,
+            abort_project_archive_import,
+            begin_project_archive_export,
+            read_project_archive_export_chunk,
+            discard_project_archive_export,
             load_map,
             load_tileset,
             get_asset_path,

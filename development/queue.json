@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "project": "Essentials Studio Mobile",
+  "upstream": "doranteseduardo/rmxp-editor",
+  "authoritative_branch": "main",
+  "current_work_branch": "feature/android-ci-bootstrap",
+  "workflow": "Android APK probe",
+  "policy": {
+    "max_parallel_native_workstreams": 1,
+    "non_destructive_roundtrip_required": true,
+    "do_not_publish_binary_until_license_reviewed": true,
+    "completion_requires": "Merged source, passing tests, and recorded evidence; UI-only or stub implementations do not count.",
+    "task_claims": "When starting a task mark in_progress; use base commit/PR review to avoid duplicated edits."
+  },
+  "tasks": [
+    {
+      "id": "ASM-001",
+      "title": "Prepare Android CI and compile probe",
+      "area": "build",
+      "priority": 0,
+      "status": "done",
+      "depends_on": [],
+      "acceptance": [
+        "GitHub Actions completes Android ARM64 debug APK build",
+        "APK artifact exists",
+        "Pipeline runs on PR"
+      ],
+      "evidence": [
+        "GitHub Actions run 40835076628: frontend and Android ARM64 debug APK jobs succeeded",
+        "Artifact 12880885972 (34,640,077 bytes) produced by run 40835076628",
+        "https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40835076628"
+      ]
+    },
+    {
+      "id": "ASM-002",
+      "title": "Verify upstream code licensing before public binary release",
+      "area": "governance",
+      "priority": 0,
+      "status": "blocked",
+      "depends_on": [],
+      "blocker": "Upstream README labels MIT but no LICENSE file was found; confirm applicable licence with upstream maintainer.",
+      "acceptance": [
+        "Distribution rights documented"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-003",
+      "title": "Separate desktop native dependencies from Android",
+      "area": "native",
+      "priority": 0,
+      "status": "in_progress",
+      "depends_on": [],
+      "acceptance": [
+        "Android target compiles without desktop audio libraries",
+        "Desktop audio remains functional"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-004",
+      "title": "Implement safe project ZIP import into app-private storage",
+      "area": "storage",
+      "priority": 1,
+      "status": "in_progress",
+      "depends_on": [
+        "ASM-001"
+      ],
+      "acceptance": [
+        "Validated ZIP paths, size and entry limits",
+        "No path traversal or symlink extraction",
+        "Opening a genuine Essentials v21.1 project succeeds",
+        "Original ZIP remains unchanged"
+      ],
+      "evidence": [
+        "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending"
+      ]
+    },
+    {
+      "id": "ASM-005",
+      "title": "Implement project ZIP export with lossless file preservation",
+      "area": "storage",
+      "priority": 1,
+      "status": "in_progress",
+      "depends_on": [
+        "ASM-004"
+      ],
+      "acceptance": [
+        "Exported project reopens in desktop Essentials Studio",
+        "Unmodified files preserved byte-for-byte",
+        "Save failure does not overwrite original"
+      ],
+      "evidence": [
+        "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending"
+      ]
+    },
+    {
+      "id": "ASM-006",
+      "title": "Android content URI and app storage image-loading compatibility",
+      "area": "native",
+      "priority": 1,
+      "status": "todo",
+      "depends_on": [
+        "ASM-004"
+      ],
+      "acceptance": [
+        "Tilesets, autotiles and sprites display on phone",
+        "No unscoped filesystem access"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-007",
+      "title": "Verify complete XP map editing and layered tile roundtrip",
+      "area": "editor",
+      "priority": 1,
+      "status": "todo",
+      "depends_on": [
+        "ASM-005",
+        "ASM-006"
+      ],
+      "acceptance": [
+        "Three map layers and autotiles round-trip",
+        "Passages and priorities remain identical unless edited"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-008",
+      "title": "Verify event pages, conditional commands and script roundtrip",
+      "area": "editor",
+      "priority": 1,
+      "status": "todo",
+      "depends_on": [
+        "ASM-005"
+      ],
+      "acceptance": [
+        "Events retain conditions, triggers and page order",
+        "Custom Essentials scripts remain intact"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-009",
+      "title": "Verify Pokémon Essentials PBS data preservation",
+      "area": "editor",
+      "priority": 1,
+      "status": "todo",
+      "depends_on": [
+        "ASM-005"
+      ],
+      "acceptance": [
+        "Pokémon forms, moves and item files round-trip",
+        "No unrecognised fields or comments lost without explicit approval"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-010",
+      "title": "Phone-friendly gestures and responsive editing controls",
+      "area": "ui",
+      "priority": 2,
+      "status": "todo",
+      "depends_on": [
+        "ASM-007",
+        "ASM-008"
+      ],
+      "acceptance": [
+        "Map editing works without hover/right-click",
+        "Event panels scroll correctly on phone",
+        "Back navigation never discards unsaved work"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-011",
+      "title": "Android on-device smoke test and crash evidence",
+      "area": "qa",
+      "priority": 2,
+      "status": "todo",
+      "depends_on": [
+        "ASM-007",
+        "ASM-008",
+        "ASM-009"
+      ],
+      "acceptance": [
+        "Launch, edit, save, export, reopen on Android ARM64",
+        "Logs and device/OS version captured"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-012",
+      "title": "Select compatible Android Essentials playtest integration",
+      "area": "runtime",
+      "priority": 3,
+      "status": "todo",
+      "depends_on": [
+        "ASM-011"
+      ],
+      "acceptance": [
+        "Game launch either documented through an external runtime or clearly marked unsupported"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-013",
+      "title": "Web target feasibility review, no implementation until Android gate",
+      "area": "research",
+      "priority": 4,
+      "status": "todo",
+      "depends_on": [
+        "ASM-011"
+      ],
+      "acceptance": [
+        "WebAssembly vs server-backend tradeoff and effort captured"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ASM-014",
+      "title": "Audit and resolve inherited upstream ESLint errors",
+      "area": "quality",
+      "priority": 3,
+      "status": "todo",
+      "depends_on": [],
+      "acceptance": [
+        "All inherited ESLint errors categorized as pre-existing",
+        "Fixes reviewed without breaking XP UI",
+        "Lint job reinstated as blocking when baseline is clean"
+      ],
+      "evidence": [
+        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded."
+      ]
+    }
+  ],
+  "progress": {
+    "estimated_total_completion_percent": 15,
+    "updated_at": "2026-10-29",
+    "basis": "Verified ARM64 APK build and frontend compile; native ZIP project editing implementation is unverified and excluded from completion estimate.",
+    "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
+  }
+}

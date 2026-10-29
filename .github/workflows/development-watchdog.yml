@@ -1,0 +1,57 @@
+name: Development queue watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - development/queue.json
+      - scripts/check-development-queue.mjs
+      - scripts/queue-watchdog.mjs
+  workflow_run:
+    workflows: ["Android APK probe"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: essentials-mobile-queue-watchdog
+  cancel-in-progress: false
+
+jobs:
+  enqueue:
+    name: Check and automatically hand off next eligible tasks
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate durable queue and show next tasks
+        run: |
+          node scripts/check-development-queue.mjs
+          node scripts/queue-watchdog.mjs
+      - name: Chain eligible implementation handoffs to tracked issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/queue-watchdog.mjs --create-issues
+      - name: Report queue state
+        run: |
+          {
+            echo "### Essentials Studio Mobile development queue"
+            echo ""
+            echo "The watchdog surfaces new eligible work and deduplicates implementation issues."
+            echo "A GitHub Actions runner **cannot write new implementation code** without a connected coding agent."
+            echo ""
+            node scripts/queue-watchdog.mjs | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
