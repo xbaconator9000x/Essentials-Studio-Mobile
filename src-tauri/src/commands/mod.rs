@@ -4,6 +4,7 @@ pub mod audio;
 #[path = "audio_android.rs"]
 pub mod audio;
 pub mod database;
+pub(crate) mod event_merge;
 pub mod pbs;
 pub mod playtest;
 pub mod project;

@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "fix/queue-handoff-and-atomic-rxdata-20261029",
+  "current_work_branch": "test/xp-event-opaque-field-preservation-20261029",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -248,7 +248,7 @@
       "title": "Create independent XP map, event, script and PBS preservation fixture gate",
       "area": "native",
       "priority": 1,
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "ASM-001"
       ],
@@ -258,13 +258,15 @@
         "Unedited RXDATA and PBS text remain byte-identical through archive import/export",
         "CI runs the fidelity fixture suite; synthetic success is not substituted for real v21.1 or Android-device validation"
       ],
-      "evidence": []
+      "evidence": [
+        "Draft implementation on test/xp-event-opaque-field-preservation-20261029: event-aware Ruby Marshal field merge + three regression tests; CI not yet passed; XP map/PBS/real project gates still open."
+      ]
     }
   ],
   "progress": {
     "estimated_total_completion_percent": 16,
     "updated_at": "2026-10-29",
-    "basis": "PR #1 ARM64 APK verified; PR #2 archive security/lossless synthetic fixture tests 5/5 passed; PR #3 integrated native image/ZIP tests 7/7, frontend and ARM64 APK build passed with artifact. No genuine Essentials v21.1 project or physical Android image/export roundtrip verified; all relevant acceptance tasks remain open. PR #4 proposes watchdog fallback for disabled GitHub Issues and interrupted-save protection; these changes await CI, so estimated completion remains unchanged. ASM-015 separates synthetic XP fidelity testing from later real-device gates so independent validation can run without misrepresenting ASM-004/005 as finished.",
+    "basis": "PR #1 ARM64 APK verified; PR #2 archive security/lossless synthetic fixture tests 5/5 passed; PR #3 integrated native image/ZIP tests 7/7, frontend and ARM64 APK build passed with artifact. No genuine Essentials v21.1 project or physical Android image/export roundtrip verified; all relevant acceptance tasks remain open. PR #4 proposes watchdog fallback for disabled GitHub Issues and interrupted-save protection; these changes await CI, so estimated completion remains unchanged. ASM-015 separates synthetic XP fidelity testing from later real-device gates so independent validation can run without misrepresenting ASM-004/005 as finished. Event fidelity work started (ASM-015); no test result yet and estimated completion stays 16%.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }

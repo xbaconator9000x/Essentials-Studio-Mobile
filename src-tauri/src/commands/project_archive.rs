@@ -717,4 +717,76 @@ mod archive_roundtrip_tests {
         }
         assert!(extract_archive(&collision, &sandbox.path("out-collision")).is_err());
     }
+    #[test]
+    fn genuine_marshal_shaped_project_zip_roundtrip_keeps_layers_scripts_and_pbs_bytes() {
+        use crate::marshal::{self, RubyString, RubyValue};
+        use crate::models::map::RpgMap;
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+
+        let sandbox = Sandbox::new();
+        let project = sandbox.path("xp-fixture");
+        fs::create_dir_all(project.join("Data")).unwrap();
+        fs::create_dir_all(project.join("PBS")).unwrap();
+        fs::create_dir_all(project.join("Graphics/Characters")).unwrap();
+        fs::write(project.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+
+        let mut map = RpgMap::new_blank(2, 2, 1);
+        for z in 0..3 {
+            for y in 0..2 {
+                for x in 0..2 {
+                    map.data.set(x, y, z, [384, 48, 1024][z as usize] + (y * 2 + x) as i16);
+                }
+            }
+        }
+        let mut map_raw = map.to_ruby_value();
+        let RubyValue::Object(ref mut obj) = map_raw else { panic!("map") };
+        obj.instance_vars.push(("@essentials_custom".into(), RubyValue::Symbol("opaque".into())));
+        marshal::dump_file(&project.join("Data/Map001.rxdata"), &map_raw).unwrap();
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"def pbFixture; :ok; end\n").unwrap();
+        let compressed = encoder.finish().unwrap();
+        let scripts = RubyValue::Array(vec![
+            RubyValue::Nil,
+            RubyValue::Array(vec![
+                RubyValue::Integer(1),
+                RubyValue::String(RubyString::new(b"Fixture".to_vec())),
+                RubyValue::String(RubyString::new(compressed)),
+                RubyValue::Integer(991),
+            ]),
+        ]);
+        marshal::dump_file(&project.join("Data/Scripts.rxdata"), &scripts).unwrap();
+        fs::write(project.join("PBS/pokemon.txt"),
+            b"# preserve this comment\r\n[TEST]\r\nName = Example\r\nCustomField = untouched\r\n").unwrap();
+        fs::write(project.join("Graphics/Characters/NPC.png"), [137, 80, 78, 71, 0, 1, 2]).unwrap();
+
+        let filenames = [
+            "Game.rxproj", "Data/Map001.rxdata", "Data/Scripts.rxdata",
+            "PBS/pokemon.txt", "Graphics/Characters/NPC.png",
+        ];
+        let originals: Vec<_> = filenames.iter()
+            .map(|name| fs::read(project.join(name)).unwrap()).collect();
+        let archive = sandbox.path("xp-fixture.zip");
+        export_zip(&project, &archive).unwrap();
+        let extracted = extract_archive(&archive, &sandbox.path("xp-reimport")).unwrap();
+        for (i, name) in filenames.iter().enumerate() {
+            assert_eq!(fs::read(extracted.join(name)).unwrap(), originals[i],
+                "archive changed {name}");
+        }
+        let reloaded = marshal::load_file(&extracted.join("Data/Map001.rxdata")).unwrap();
+        assert_eq!(reloaded.as_object().unwrap().get("essentials_custom"),
+            Some(&RubyValue::Symbol("opaque".into())));
+        let reloaded_map = RpgMap::from_ruby_value(&reloaded).unwrap();
+        for z in 0..3 {
+            for y in 0..2 {
+                for x in 0..2 {
+                    assert_eq!(reloaded_map.data.get(x, y, z),
+                        [384, 48, 1024][z as usize] + (y * 2 + x) as i16);
+                }
+            }
+        }
+        assert_eq!(marshal::load_file(&extracted.join("Data/Scripts.rxdata")).unwrap(), scripts);
+    }
+
 }
