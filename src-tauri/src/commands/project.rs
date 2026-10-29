@@ -929,6 +929,61 @@ mod map_properties_preflight_tests {
         obj.instance_vars.retain(|(name, _)| name != "@width");
         assert!(validate_map_properties_preflight(&map, &infos, 1, 4, 4).is_err());
     }
+
+    fn temp_project() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xp-map-properties-{}-{unique}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        root
+    }
+
+    fn edited_properties() -> MapProperties {
+        MapProperties {
+            id: 1, name: "Renamed".into(), tileset_id: 1, width: 3, height: 3,
+            autoplay_bgm: false, bgm_name: String::new(), bgm_volume: 100,
+            bgm_pitch: 100, autoplay_bgs: false, bgs_name: String::new(),
+            bgs_volume: 100, bgs_pitch: 100, encounter_step: 30,
+            scroll_type: 0, disable_dashing: false, parallax_name: String::new(),
+            parallax_loop_x: false, parallax_loop_y: false, parallax_sx: 0,
+            parallax_sy: 0, parallax_show: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_mapinfos_does_not_partially_save_map_properties() {
+        let root = temp_project();
+        let (map, _) = sources();
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        marshal::dump_file(&root.join("Data/MapInfos.rxdata"), &RubyValue::Nil).unwrap();
+        let before = std::fs::read(&map_path).unwrap();
+        let result = save_map_properties(root.to_string_lossy().into_owned(), edited_properties()).await;
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&map_path).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn valid_map_property_resize_preserves_layers_and_updates_name() {
+        let root = temp_project();
+        let (map, infos) = sources();
+        let map_path = root.join("Data/Map001.rxdata");
+        marshal::dump_file(&map_path, &map).unwrap();
+        let infos_path = root.join("Data/MapInfos.rxdata");
+        marshal::dump_file(&infos_path, &infos).unwrap();
+        save_map_properties(root.to_string_lossy().into_owned(), edited_properties())
+            .await.unwrap();
+        let loaded = marshal::load_file(&map_path).unwrap();
+        let resized = RpgMap::from_ruby_value(&loaded).expect("valid resized three-layer Table");
+        assert_eq!((resized.width, resized.height, resized.data.z_size), (3, 3, 3));
+        assert_eq!(resized.data.get(0, 0, 0), 384);
+        let updated = load_map_infos(&infos_path).unwrap();
+        assert_eq!(updated.get(&1).unwrap().name, "Renamed");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Create a new blank map. Returns the new map ID and updated map_infos.
