@@ -12,6 +12,7 @@ on:
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
       - 'scripts/run_project_roundtrip.py'
+      - 'tests/test_roundtrip_evidence.py'
       - 'scripts/verify_project_roundtrip.py'
       - 'tests/test_project_roundtrip.py'
       - '.github/workflows/archive-roundtrip-tests.yml'
@@ -67,4 +68,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify native import-edit-export and independent ZIP integrity
+        env:
+          PROJECT_ROUNDTRIP_EVIDENCE_DIR: ${{ runner.temp }}/essentials-synthetic-roundtrip
         run: python scripts/run_project_roundtrip.py
+      - name: Upload commit-pinned verified synthetic project ZIPs and receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-rmxp-roundtrip-${{ github.sha }}
+          path: ${{ runner.temp }}/essentials-synthetic-roundtrip/
+          if-no-files-found: error
+          retention-days: 7
