@@ -46,6 +46,28 @@ The Android-specific path now requests a named image through `read_private_proje
 
 **Remaining gates:** Confirm on an actual Android ARM64 device that tilesets, autotiles and event characters render correctly from a real Essentials v21.1 project, that memory remains bounded for large graphics, and that all other asset access paths are similarly confined. Until then ASM-006 is not complete. This is a temporary correctness-first transport, not a claim of efficient streaming for every asset size.
 
+## Android document export bridge (draft, not device-verified)
+
+The Android save dialog returns a scoped `content://` URI, not a native
+filesystem path. A native `save_project_archive_to_document` command now
+streams the already-validated app-private ZIP through Android's
+`ContentResolver.openOutputStream(uri, "wt")` in bounded chunks, closes the
+document, reopens it with `openInputStream`, and compares the saved bytes to
+the original archive before reporting success. This avoids constructing a
+512 MiB ZIP Blob inside the WebView and avoids assuming the filesystem plugin
+can write document-provider URIs reliably.
+
+The document URI is accepted only with a `content://` authority and is
+granted by the Android picker. The original imported ZIP and private project
+are not overwritten. A failed provider write may leave a partial *newly
+selected destination document*; the user must retry or remove that file.
+No broad Android external-storage permission is requested.
+
+**Remaining acceptance:** ARM64 JNI compile, physical-device document-picker
+write/readback, provider cancellation and failure handling, and independent
+desktop reopening of a real Pokémon Essentials v21.1 project. Native
+compilation and synthetic tests alone do not complete ASM-005.
+
 ## Acceptance gates
 
 **Gate A — Build:** Android ARM64 debug APK compiles; frontend build passes. Evidence: GitHub Actions run and APK artifact.
