@@ -2,25 +2,21 @@ name: Decoded graphics cache regression tests
 
 on:
   push:
-    branches: [main, 'fix/android-image-decoded-cache-budget-*', 'fix/android-image-load-concurrency-*', 'fix/android-private-image-inflight-*']
+    branches: [main, 'fix/android-image-decoded-cache-budget-*', 'fix/android-image-load-concurrency-*']
     paths:
       - 'src/services/imageCacheBudget.ts'
       - 'src/services/boundedAsyncMap.ts'
-      - 'src/services/inFlightImageLoads.ts'
       - 'src/services/imageLoader.ts'
       - 'tests/imageCacheBudget.test.mjs'
       - 'tests/boundedAsyncMap.test.mjs'
-      - 'tests/inFlightImageLoads.test.mjs'
       - '.github/workflows/image-cache-tests.yml'
   pull_request:
     paths:
       - 'src/services/imageCacheBudget.ts'
       - 'src/services/boundedAsyncMap.ts'
-      - 'src/services/inFlightImageLoads.ts'
       - 'src/services/imageLoader.ts'
       - 'tests/imageCacheBudget.test.mjs'
       - 'tests/boundedAsyncMap.test.mjs'
-      - 'tests/inFlightImageLoads.test.mjs'
       - '.github/workflows/image-cache-tests.yml'
 
 jobs:
@@ -32,4 +28,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify decoded image cache and bounded Android transfer limits
-        run: node --experimental-strip-types --test tests/imageCacheBudget.test.mjs tests/boundedAsyncMap.test.mjs tests/inFlightImageLoads.test.mjs
+        run: node --experimental-strip-types --test tests/imageCacheBudget.test.mjs tests/boundedAsyncMap.test.mjs
