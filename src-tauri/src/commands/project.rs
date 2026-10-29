@@ -791,8 +791,16 @@ pub async fn save_map_properties(
                     if let marshal::types::RubyValue::UserDefined { class_name, data } = val {
                         if class_name == "Table" {
                             if let Some(mut table) = Table::from_bytes(data) {
+                                // Preserve opaque trailing bytes from custom XP Table
+                                // serializers; resizing known cells must not discard them.
+                                let table_bytes = 20 + table.data.len() * 2;
+                                let extension = data[table_bytes..].to_vec();
                                 table.resize(props.width as u32, props.height as u32, 3);
-                                *data = table.to_bytes();
+                                let mut resized = table.to_bytes();
+                                resized.extend_from_slice(&extension);
+                                *data = resized;
+                            } else {
+                                return Err("Cannot resize malformed XP Table".into());
                             }
                         }
                     }
@@ -969,7 +977,11 @@ mod map_properties_preflight_tests {
     #[tokio::test]
     async fn valid_map_property_resize_preserves_layers_and_updates_name() {
         let root = temp_project();
-        let (map, infos) = sources();
+        let (mut map, infos) = sources();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map") };
+        let (_, raw) = obj.instance_vars.iter_mut().find(|(n, _)| n == "@data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw else { panic!("Table") };
+        data.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
         let map_path = root.join("Data/Map001.rxdata");
         marshal::dump_file(&map_path, &map).unwrap();
         let infos_path = root.join("Data/MapInfos.rxdata");
@@ -980,6 +992,9 @@ mod map_properties_preflight_tests {
         let resized = RpgMap::from_ruby_value(&loaded).expect("valid resized three-layer Table");
         assert_eq!((resized.width, resized.height, resized.data.z_size), (3, 3, 3));
         assert_eq!(resized.data.get(0, 0, 0), 384);
+        let raw_table = loaded.as_object().unwrap().get("data").unwrap();
+        let RubyValue::UserDefined { data, .. } = raw_table else { panic!("Table") };
+        assert!(data.ends_with(&[0xde, 0xad, 0xbe, 0xef]));
         let updated = load_map_infos(&infos_path).unwrap();
         assert_eq!(updated.get(&1).unwrap().name, "Renamed");
         std::fs::remove_dir_all(root).unwrap();
