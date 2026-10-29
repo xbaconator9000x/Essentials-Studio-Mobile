@@ -15,6 +15,11 @@ import {
   type MapAction,
   type TileClipboard,
 } from "../../services/mapEditor";
+import {
+  resolveMapTapTarget,
+  TouchGestureMachine,
+  type TouchGestureAction,
+} from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
@@ -62,6 +67,7 @@ export function MapEditor({
   const rendererRef = useRef<MapRenderer | null>(null);
   const animFrameRef = useRef<number>(0);
   const undoStackRef = useRef(new UndoStack());
+  const touchGesturesRef = useRef(new TouchGestureMachine());
 
   // Viewport state
   const [viewportX, setViewportX] = useState(0);
@@ -610,6 +616,233 @@ export function MapEditor({
     ]
   );
 
+  const handleTouchTap = useCallback(
+    (point: { x: number; y: number }) => {
+      if (!mapData) return;
+      const tile = screenToTile(point.x, point.y);
+      if (!tile) return;
+      const target = resolveMapTapTarget(
+        tile,
+        mapData.width,
+        mapData.height,
+        selectedLayer,
+        mapData.events,
+      );
+      setCursorTile(target.type === "outside" ? null : tile);
+
+      if (target.type === "event") {
+        onOpenEvent?.(target.event.id, target.event.name);
+        return;
+      }
+      if (target.type === "empty-event-layer") {
+        onCreateEvent?.(tile.x, tile.y);
+        return;
+      }
+      if (target.type !== "map") return;
+
+      if (paintTool === "select") {
+        setSelectionStart(tile);
+        setSelectionEnd(tile);
+        return;
+      }
+
+      if (paintTool === "bucket") {
+        const changes = floodFill(mapData, tile.x, tile.y, selectedLayer, selectedTileId);
+        if (changes.length > 0) {
+          undoStackRef.current.push({ type: "fill", changes, timestamp: Date.now() });
+          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+          setRenderTick((tick) => tick + 1);
+          onMapDirty();
+        }
+        return;
+      }
+
+      if (paintTool === "rectangle") {
+        const changes = paintRectangle(
+          mapData,
+          tile.x,
+          tile.y,
+          tile.x,
+          tile.y,
+          selectedLayer,
+          selectedTileId,
+        );
+        if (changes.length > 0) {
+          undoStackRef.current.push({ type: "rectangle", changes, timestamp: Date.now() });
+          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+          setRenderTick((tick) => tick + 1);
+          onMapDirty();
+        }
+        return;
+      }
+
+      paintChanges.current = [];
+      doPaint(tile.x, tile.y);
+      if (paintChanges.current.length > 0) {
+        undoStackRef.current.push({
+          type: paintTool === "eraser" ? "erase" : "paint",
+          changes: [...paintChanges.current],
+          timestamp: Date.now(),
+        });
+        paintChanges.current = [];
+        onMapDirty();
+      }
+    },
+    [
+      doPaint,
+      mapData,
+      onCreateEvent,
+      onMapDirty,
+      onOpenEvent,
+      paintTool,
+      screenToTile,
+      selectedLayer,
+      selectedTileId,
+    ],
+  );
+
+  const handleTouchGesture = useCallback(
+    (action: TouchGestureAction | null) => {
+      if (!action) return;
+      if (action.type === "tap") {
+        handleTouchTap(action.point);
+        return;
+      }
+      if (action.type === "long-press") {
+        if (!mapData) return;
+        const tile = screenToTile(action.point.x, action.point.y);
+        if (!tile) return;
+        const target = resolveMapTapTarget(tile, mapData.width, mapData.height, 3, mapData.events);
+        if (target.type === "event") onOpenEvent?.(target.event.id, target.event.name);
+        return;
+      }
+      if (action.type === "pan") {
+        setViewportX((value) => value - action.deltaX / (TILE_SIZE * zoom));
+        setViewportY((value) => value - action.deltaY / (TILE_SIZE * zoom));
+        return;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const oldCenterX = action.center.x - action.deltaX;
+      const oldCenterY = action.center.y - action.deltaY;
+      const worldX = (oldCenterX - rect.left) / (TILE_SIZE * zoom) + viewportX;
+      const worldY = (oldCenterY - rect.top) / (TILE_SIZE * zoom) + viewportY;
+      const nextZoom = Math.max(0.25, Math.min(4, zoom * action.scale));
+      setZoom(nextZoom);
+      setViewportX(worldX - (action.center.x - rect.left) / (TILE_SIZE * nextZoom));
+      setViewportY(worldY - (action.center.y - rect.top) / (TILE_SIZE * nextZoom));
+    },
+    [handleTouchTap, mapData, onOpenEvent, screenToTile, viewportX, viewportY, zoom],
+  );
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== "touch") return;
+    e.preventDefault();
+    e.stopPropagation();
+    touchGesturesRef.current.pointerDown(
+      e.pointerId,
+      { x: e.clientX, y: e.clientY },
+      e.timeStamp,
+    );
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer capture is unavailable in some WebViews; touch-action still prevents browser panning.
+    }
+  }, []);
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.pointerType !== "touch") return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleTouchGesture(
+        touchGesturesRef.current.pointerMove(e.pointerId, { x: e.clientX, y: e.clientY }),
+      );
+    },
+    [handleTouchGesture],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.pointerType !== "touch") return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleTouchGesture(
+        touchGesturesRef.current.pointerUp(
+          e.pointerId,
+          { x: e.clientX, y: e.clientY },
+          e.timeStamp,
+        ),
+      );
+    },
+    [handleTouchGesture],
+  );
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== "touch") return;
+    e.preventDefault();
+    e.stopPropagation();
+    touchGesturesRef.current.cancel();
+  }, []);
+
+  const handleTouchStartFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+    e.preventDefault();
+    e.stopPropagation();
+    for (const touch of Array.from(e.changedTouches)) {
+      touchGesturesRef.current.pointerDown(
+        touch.identifier,
+        { x: touch.clientX, y: touch.clientY },
+        e.timeStamp,
+      );
+    }
+  }, []);
+
+  const handleTouchMoveFallback = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if ("PointerEvent" in window) return;
+      e.preventDefault();
+      e.stopPropagation();
+      for (const touch of Array.from(e.changedTouches)) {
+        handleTouchGesture(
+          touchGesturesRef.current.pointerMove(touch.identifier, {
+            x: touch.clientX,
+            y: touch.clientY,
+          }),
+        );
+      }
+    },
+    [handleTouchGesture],
+  );
+
+  const handleTouchEndFallback = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if ("PointerEvent" in window) return;
+      e.preventDefault();
+      e.stopPropagation();
+      for (const touch of Array.from(e.changedTouches)) {
+        handleTouchGesture(
+          touchGesturesRef.current.pointerUp(
+            touch.identifier,
+            { x: touch.clientX, y: touch.clientY },
+            e.timeStamp,
+          ),
+        );
+      }
+    },
+    [handleTouchGesture],
+  );
+
+  const handleTouchCancelFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+    e.preventDefault();
+    e.stopPropagation();
+    touchGesturesRef.current.cancel();
+  }, []);
+
   // ALWAYS render the full layout — the canvas must exist at mount time
   // for the renderer creation and ResizeObserver effects to work.
   return (
@@ -635,6 +868,14 @@ export function MapEditor({
           ref={canvasRef}
           className="map-editor-canvas"
           onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onTouchStart={handleTouchStartFallback}
+          onTouchMove={handleTouchMoveFallback}
+          onTouchEnd={handleTouchEndFallback}
+          onTouchCancel={handleTouchCancelFallback}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
