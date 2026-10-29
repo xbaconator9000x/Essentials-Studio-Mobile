@@ -31,6 +31,7 @@ export async function importProjectZip(
       const nextOffset = offset + expectedLength;
       const acknowledged = await invoke<number>("append_project_archive_chunk", {
         importId: id,
+        expectedOffset: offset,
         chunkBase64: encodeArchiveChunk(bytes),
       });
       verifyImportChunkAcknowledgement(acknowledged, nextOffset);
