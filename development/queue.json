@@ -208,6 +208,22 @@
         "WebAssembly vs server-backend tradeoff and effort captured"
       ],
       "evidence": []
+    },
+    {
+      "id": "ASM-014",
+      "title": "Audit and resolve inherited upstream ESLint errors",
+      "area": "quality",
+      "priority": 3,
+      "status": "todo",
+      "depends_on": [],
+      "acceptance": [
+        "All inherited ESLint errors categorized as pre-existing",
+        "Fixes reviewed without breaking XP UI",
+        "Lint job reinstated as blocking when baseline is clean"
+      ],
+      "evidence": [
+        "PR #1 initial CI showed 40 errors and 8 warnings in inherited frontend; production TypeScript build succeeded."
+      ]
     }
   ]
 }
