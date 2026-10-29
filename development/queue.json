@@ -74,7 +74,8 @@
       ],
       "evidence": [
         "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending",
-        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding."
+        "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding.",
+        "PR #2 CI run 40840333736 compiled native Rust but failed a duplicate-ZIP test fixture because zip 2.x refuses duplicate names at write time; commit 017600e replaces fixture with a true duplicate-header archive and adds export directory-entry limits. Rerun pending."
       ]
     },
     {
@@ -109,7 +110,9 @@
         "Tilesets, autotiles and sprites display on phone",
         "No unscoped filesystem access"
       ],
-      "evidence": []
+      "evidence": [
+        "Draft PR #3 branch feature/android-private-image-loading-20261029 proposes scoped Android image data URLs for private-project tilesets/autotiles/characters, with traversal, outside-root and symlink tests. Not yet CI/device verified; task remains todo until ASM-004 acceptance."
+      ]
     },
     {
       "id": "ASM-007",
@@ -239,7 +242,7 @@
   "progress": {
     "estimated_total_completion_percent": 15,
     "updated_at": "2026-10-29",
-    "basis": "Verified ARM64 APK build and frontend compile in PR #1; ZIP hardening and automated native regression tests proposed in stacked PR #2, pending CI and real Essentials project/device validation. No additional completion credit yet.",
+    "basis": "Verified ARM64 debug APK on PR #1; PR #2 native test failure diagnosed and fixed in a new commit, CI rerun pending. PR #3 proposes private Android image access but is untested on device. Real Essentials project fidelity and Android storage roundtrip unverified.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }
