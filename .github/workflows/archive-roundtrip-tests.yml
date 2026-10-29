@@ -2,9 +2,6 @@ name: Archive roundtrip tests
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - test/archive-lossless-roundtrip-20261029
   pull_request:
     branches:
       - main
@@ -35,6 +32,14 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
             patchelf libasound2-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build frontend resources for Tauri build context
+        run: |
+          npm ci
+          npm run build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
