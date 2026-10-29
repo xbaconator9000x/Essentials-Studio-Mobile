@@ -6,8 +6,11 @@ on:
     paths:
       - 'src/services/inFlightImageLoads.ts'
       - 'src/services/imageLoader.ts'
+      - 'src/services/privateImageRequests.ts'
+      - 'src/services/imageCacheBudget.ts'
       - 'src/App.tsx'
       - 'tests/inFlightImageLoads.test.mjs'
+      - 'tests/privateImageRequests.test.mjs'
       - '.github/workflows/private-image-inflight-tests.yml'
 
 permissions:
@@ -22,4 +25,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify concurrent private image request deduplication and retry
-        run: node --experimental-strip-types --test tests/inFlightImageLoads.test.mjs
+        run: node --experimental-strip-types --test tests/inFlightImageLoads.test.mjs tests/privateImageRequests.test.mjs
