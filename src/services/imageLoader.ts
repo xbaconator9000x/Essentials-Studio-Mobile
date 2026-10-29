@@ -7,21 +7,15 @@
 
 import { getAssetPath } from "./tauriApi";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { DecodedImageCache } from "./imageCacheBudget";
 
-// Bounded LRU cache. Without a cap this grew for the whole session as the user
-// browsed maps/tilesets/characters, retaining every decoded image. Map preserves
-// insertion order, so the oldest entry is evicted once we exceed the cap, and a
-// cache hit re-inserts to mark the entry most-recently-used.
-const MAX_CACHED_IMAGES = 256;
-const imageCache = new Map<string, HTMLImageElement>();
+// Count-only LRU limits are insufficient for large RPG Maker XP tilesets.
+// Approximate decoded RGBA memory at 4 bytes/pixel: 12M pixels ~48 MiB.
+// Oversized individual assets may render but are never retained in this cache.
+const imageCache = new DecodedImageCache<HTMLImageElement>(96, 12_000_000);
 
 function cacheImage(path: string, img: HTMLImageElement) {
-  imageCache.delete(path);
   imageCache.set(path, img);
-  if (imageCache.size > MAX_CACHED_IMAGES) {
-    const oldest = imageCache.keys().next().value;
-    if (oldest !== undefined) imageCache.delete(oldest);
-  }
 }
 
 // Lazy-loaded convertFileSrc from Tauri — same pattern as tauriApi.ts
@@ -63,10 +57,7 @@ async function loadProjectImage(
   if (isAndroidTauri()) {
     const cacheKey = `private:${projectPath}:${assetType}:${assetName}`;
     const cached = imageCache.get(cacheKey);
-    if (cached) {
-      cacheImage(cacheKey, cached);
-      return cached;
-    }
+    if (cached) return cached;
     const dataUrl = await invoke<string>("read_private_project_image", {
       projectPath, assetType, assetName,
     });
@@ -98,11 +89,8 @@ async function convertFilePathToUrl(filePath: string): Promise<string> {
  * Falls back to alternate URL encoding if the first attempt fails (handles spaces in filenames).
  */
 export async function loadImage(path: string, cacheKey = path): Promise<HTMLImageElement> {
-  if (imageCache.has(cacheKey)) {
-    const cached = imageCache.get(cacheKey)!;
-    cacheImage(cacheKey, cached); // mark most-recently-used
-    return cached;
-  }
+  const cached = imageCache.get(cacheKey);
+  if (cached) return cached;
 
   // In Tauri, convert filesystem path to asset protocol URL
   const isFilePath =
