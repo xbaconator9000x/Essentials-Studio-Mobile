@@ -122,17 +122,17 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
     }) {
         return Err("Structured PBS sections/keys changed; use the raw PBS editor for additions, removals or reordering to preserve comments and unknown data".into());
     }
-    if edited.iter().any(|section| section.header.contains(['\\r', '\\n', ']'])
+    if edited.iter().any(|section| section.header.contains(['\r', '\n', ']'])
         || section.fields.iter().any(|field| {
-            field.key.contains(['=', '\\r', '\\n']) || field.value.contains(['\\r', '\\n'])
+            field.key.contains(['=', '\r', '\n']) || field.value.contains(['\r', '\n'])
         })) {
         return Err("PBS field/header contains an invalid delimiter or newline".into());
     }
     let mut out = String::with_capacity(original.len());
     let mut section_index: Option<usize> = None;
     let mut field_index = 0usize;
-    for raw_line in original.split_inclusive('\\n') {
-        let bare = raw_line.trim_end_matches(['\\r', '\\n']);
+    for raw_line in original.split_inclusive('\n') {
+        let bare = raw_line.trim_end_matches(['\r', '\n']);
         let trimmed = bare.trim_end();
         if pbs_header(trimmed).is_some() {
             section_index = Some(section_index.map_or(0, |i| i + 1));
@@ -151,8 +151,8 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
             // the original line ending; only replace the parsed value.
             let after_equals = &bare[eq + 1..];
             let leading_len = after_equals.len()
-                - after_equals.trim_start_matches([' ', '\\t']).len();
-            let trimmed_end = after_equals.trim_end_matches([' ', '\\t']);
+                - after_equals.trim_start_matches([' ', '\t']).len();
+            let trimmed_end = after_equals.trim_end_matches([' ', '\t']);
             let trailing = if trimmed_end.len() <= leading_len {
                 ""
             } else {
@@ -275,7 +275,7 @@ mod pbs_preservation_tests {
 
     #[test]
     fn no_op_and_targeted_edit_preserve_comments_unknown_lines_and_crlf() {
-        let original = "# header\\r\\n[PIKACHU] # section note\\r\\nName   =  Pikachu  \\r\\n# preserve me\\r\\nUnknown directive\\r\\nTypes=ELECTRIC\\r\\nCustom = A=B\\r\\n";
+        let original = "# header\r\n[PIKACHU] # section note\r\nName   =  Pikachu  \r\n# preserve me\r\nUnknown directive\r\nTypes=ELECTRIC\r\nCustom = A=B\r\n";
         let mut sections = parse_pbs_content(original);
         assert_eq!(merge_pbs_existing(original, &sections).unwrap(), original);
         sections[0].fields[2].value = "ELECTRIC,FAIRY".into();
@@ -286,7 +286,7 @@ mod pbs_preservation_tests {
 
     #[test]
     fn structured_save_refuses_dropping_unknown_fields_or_sections() {
-        let original = "[ONE]\\nKnown = yes\\nCustom = keep\\n[TWO]\\nName = safe\\n";
+        let original = "[ONE]\nKnown = yes\nCustom = keep\n[TWO]\nName = safe\n";
         let mut sections = parse_pbs_content(original);
         sections[0].fields.pop();
         assert!(merge_pbs_existing(original, &sections).unwrap_err().contains("raw PBS editor"));
@@ -297,12 +297,12 @@ mod pbs_preservation_tests {
 
     #[test]
     fn refuses_newline_injected_values_and_preserves_duplicate_field_order() {
-        let original = "[ONE]\\nTag = first\\nTag = second\\n";
+        let original = "[ONE]\nTag = first\nTag = second\n";
         let mut sections = parse_pbs_content(original);
         sections[0].fields[1].value = "changed".into();
         assert_eq!(merge_pbs_existing(original, &sections).unwrap(),
-            "[ONE]\\nTag = first\\nTag = changed\\n");
-        sections[0].fields[1].value = "changed\\nInjected = true".into();
+            "[ONE]\nTag = first\nTag = changed\n");
+        sections[0].fields[1].value = "changed\nInjected = true".into();
         assert!(merge_pbs_existing(original, &sections).is_err());
     }
 }
