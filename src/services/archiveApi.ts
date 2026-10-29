@@ -44,3 +44,58 @@ export async function importProjectZip(
     throw error;
   }
 }
+
+type ProjectArchiveExport = { export_id: string; size: number };
+
+/** Export all project files without altering the app-private project.
+ * Uses native file sharing when available; browser download otherwise.
+ * Android WebView download support needs on-device verification.
+ */
+export async function exportProjectZip(
+  projectPath: string,
+  projectName: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  const exported = await invoke<ProjectArchiveExport>("begin_project_archive_export", {
+    projectPath,
+  });
+  try {
+    const chunks: BlobPart[] = [];
+    for (let offset = 0; offset < exported.size; offset += CHUNK_SIZE) {
+      const encoded = await invoke<string>("read_project_archive_export_chunk", {
+        exportId: exported.export_id,
+        offset,
+      });
+      const binary = atob(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      // Copy into a normal ArrayBuffer so DOM Blob types accept the chunk.
+      const plain = new Uint8Array(bytes).buffer;
+      chunks.push(plain);
+      onProgress?.(Math.round(Math.min(95, ((offset + binary.length) / exported.size) * 95)));
+    }
+    const blob = new Blob(chunks, { type: "application/zip" });
+    const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 70) || "EssentialsProject";
+    const name = `${safeName}.zip`;
+    const file = new File([blob], name, { type: "application/zip" });
+    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+      await navigator.share({ files: [file], title: name });
+    } else {
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        // Allow browsers that enqueue the download after a click to resolve it.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+    }
+    onProgress?.(100);
+  } finally {
+    await invoke("discard_project_archive_export", { exportId: exported.export_id }).catch(() => {});
+  }
+}
