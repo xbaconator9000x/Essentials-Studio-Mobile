@@ -3,7 +3,7 @@ name: Development queue watchdog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+    - cron: '17 * * * *'
   push:
     branches:
       - main
@@ -50,7 +50,7 @@ jobs:
           {
             echo "### Essentials Studio Mobile development queue"
             echo ""
-            echo "The watchdog checks the queue every five minutes, after main pushes and CI completion. It publishes handoffs; GitHub Actions does not start paid Copilot or any external AI service."
+            echo "The watchdog checks the queue hourly, after main pushes and CI completion. Issue handoffs do not themselves code. It publishes handoffs; GitHub Actions does not start paid Copilot or any external AI service."
             echo "The existing ChatGPT coding watchdog performs implementation through its connected GitHub tools on its own schedule. No Copilot Pro subscription, paid agent API, or ChatGPT Work subscription is required for this GitHub workflow."
             echo ""
             node scripts/queue-watchdog.mjs | sed 's/^/    /'
