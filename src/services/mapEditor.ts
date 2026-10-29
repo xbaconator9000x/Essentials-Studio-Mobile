@@ -8,9 +8,37 @@
  * (0-47) is computed based on neighboring tiles, and neighbors are updated.
  */
 
-import type { MapRenderData } from "../types";
-import { getTile, isAutotile, getAutotileIndex } from "../types";
-import { BITMASK_TO_PATTERN, getNeighborBitmask } from "./autotileData";
+import type { MapRenderData } from "../types/index.ts";
+import { getTile, isAutotile, getAutotileIndex } from "../types/index.ts";
+import { BITMASK_TO_PATTERN, getNeighborBitmask } from "./autotileData.ts";
+
+/** XP maps have exactly three layers and signed 16-bit tile cells. Never
+ * allow an invalid gesture or clipboard value to alias a different layer. */
+function validMapShape(map: MapRenderData): boolean {
+  const { width, height, tiles } = map;
+  return Number.isSafeInteger(width) && Number.isSafeInteger(height)
+    && width > 0 && height > 0 && Array.isArray(tiles)
+    && Number.isSafeInteger(width * height * 3)
+    && tiles.length === width * height * 3;
+}
+
+function validLayer(layer: number): boolean {
+  return Number.isInteger(layer) && layer >= 0 && layer < 3;
+}
+
+function validTileId(tileId: number): boolean {
+  return Number.isInteger(tileId) && tileId >= 0 && tileId <= 32767;
+}
+
+function validCell(map: MapRenderData, x: number, y: number): boolean {
+  return Number.isInteger(x) && Number.isInteger(y)
+    && x >= 0 && x < map.width && y >= 0 && y < map.height;
+}
+
+function canPaint(map: MapRenderData, x: number, y: number, layer: number, tileId: number): boolean {
+  return validMapShape(map) && validLayer(layer) && validTileId(tileId)
+    && validCell(map, x, y);
+}
 
 /** A single tile change for undo/redo. */
 export interface TileChange {
@@ -95,10 +123,13 @@ function setTile(
   height: number,
   value: number
 ) {
+  // Guard undo/redo against invalid layers and fractional array keys.
+  if (!validLayer(layer) || !validTileId(value)
+    || !Number.isInteger(x) || !Number.isInteger(y)
+    || x < 0 || x >= width || y < 0 || y >= height
+    || tiles.length !== width * height * 3) return;
   const offset = layer * width * height + y * width + x;
-  if (offset >= 0 && offset < tiles.length) {
-    tiles[offset] = value;
-  }
+  tiles[offset] = value;
 }
 
 // ─── Autotile helpers ──────────────────────────────────────────────────
@@ -177,9 +208,7 @@ function paintTileRaw(
   layer: number,
   tileId: number
 ): TileChange | null {
-  if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) {
-    return null;
-  }
+  if (!canPaint(mapData, x, y, layer, tileId)) return null;
 
   const oldTileId = getTile(
     mapData.tiles,
@@ -210,9 +239,7 @@ export function paintTile(
   layer: number,
   tileId: number
 ): TileChange[] {
-  if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) {
-    return [];
-  }
+  if (!canPaint(mapData, x, y, layer, tileId)) return [];
 
   const changes: TileChange[] = [];
 
@@ -275,10 +302,13 @@ export function paintRectangle(
   layer: number,
   tileId: number
 ): TileChange[] {
+  if (!validMapShape(mapData) || !validLayer(layer) || !validTileId(tileId)
+    || ![x1, y1, x2, y2].every(Number.isInteger)) return [];
   const minX = Math.max(0, Math.min(x1, x2));
   const maxX = Math.min(mapData.width - 1, Math.max(x1, x2));
   const minY = Math.max(0, Math.min(y1, y2));
   const maxY = Math.min(mapData.height - 1, Math.max(y1, y2));
+  if (minX > maxX || minY > maxY) return [];
 
   if (!isAutotile(tileId)) {
     // Non-autotile: simple placement
@@ -381,14 +411,7 @@ export function floodFill(
   layer: number,
   tileId: number
 ): TileChange[] {
-  if (
-    startX < 0 ||
-    startX >= mapData.width ||
-    startY < 0 ||
-    startY >= mapData.height
-  ) {
-    return [];
-  }
+  if (!canPaint(mapData, startX, startY, layer, tileId)) return [];
 
   const targetId = getTile(
     mapData.tiles,
@@ -416,8 +439,9 @@ export function floodFill(
   const visited = new Set<string>();
   const queue: [number, number][] = [[startX, startY]];
 
-  while (queue.length > 0) {
-    const [x, y] = queue.shift()!;
+  // shift() is O(n) and freezes WebView on large map fills.
+  for (let head = 0; head < queue.length; head++) {
+    const [x, y] = queue[head];
     const key = `${x},${y}`;
 
     if (visited.has(key)) continue;
@@ -568,12 +592,17 @@ export function copyTileRegion(
   activeLayer: number
 ): TileClipboard {
   const { tiles, width, height } = mapData;
+  const empty: TileClipboard = { width: 0, height: 0, layers: [[], [], []] };
+  if (!validMapShape(mapData) || !Number.isInteger(activeLayer)
+    || (activeLayer !== -1 && !validLayer(activeLayer))
+    || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isInteger)) return empty;
   const minX = Math.max(0, Math.min(rect.x1, rect.x2));
   const maxX = Math.min(width - 1, Math.max(rect.x1, rect.x2));
   const minY = Math.max(0, Math.min(rect.y1, rect.y2));
   const maxY = Math.min(height - 1, Math.max(rect.y1, rect.y2));
   const w = maxX - minX + 1;
   const h = maxY - minY + 1;
+  if (w <= 0 || h <= 0) return empty;
 
   const layerIndices = activeLayer >= 0 && activeLayer <= 2
     ? [activeLayer]
@@ -606,9 +635,22 @@ export function pasteTileRegion(
   activeLayer: number
 ): TileChange[] {
   const { tiles, width, height } = mapData;
-  const layerIndices = activeLayer >= 0 && activeLayer <= 2
-    ? [activeLayer]
-    : [0, 1, 2];
+  if (!validMapShape(mapData) || !Number.isInteger(activeLayer)
+    || (activeLayer !== -1 && !validLayer(activeLayer))
+    || !Number.isInteger(origin.x) || !Number.isInteger(origin.y)
+    || !Number.isSafeInteger(clipboard.width) || !Number.isSafeInteger(clipboard.height)
+    || clipboard.width <= 0 || clipboard.height <= 0
+    || !Number.isSafeInteger(clipboard.width * clipboard.height)
+    || !Array.isArray(clipboard.layers)) return [];
+  const layerIndices = activeLayer >= 0 ? [activeLayer] : [0, 1, 2];
+
+  // Validate all selected layers before any write; no partial paste.
+  for (const l of layerIndices) {
+    const values = clipboard.layers[l];
+    if (!Array.isArray(values)) return [];
+    if (values.length > 0 && (values.length !== clipboard.width * clipboard.height
+      || !values.every(validTileId))) return [];
+  }
 
   const changes: TileChange[] = [];
   for (const l of layerIndices) {
