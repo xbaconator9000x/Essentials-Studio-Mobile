@@ -459,6 +459,8 @@ mod archive_roundtrip_tests {
         let original = imports.join("import-test.zip");
         sample_zip(&original, "ExampleProject/", None);
         let original_zip_bytes = fs::read(&original).unwrap();
+        let retained_original = sandbox.path("original-copy.zip");
+        fs::copy(&original, &retained_original).unwrap();
 
         let imported = finish_import(
             original.clone(), imports.clone(), projects.clone(), "import-test".into()
@@ -492,8 +494,6 @@ mod archive_roundtrip_tests {
 
         // The caller's original input archive is never modified; finish_import
         // deliberately removes only its app-private staging copy.
-        let retained_original = sandbox.path("original-copy.zip");
-        sample_zip(&retained_original, "ExampleProject/", None);
         assert_eq!(fs::read(retained_original).unwrap(), original_zip_bytes);
     }
 
