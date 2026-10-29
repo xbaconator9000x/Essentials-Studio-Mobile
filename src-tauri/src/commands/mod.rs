@@ -1,3 +1,7 @@
+#[cfg(not(target_os = "android"))]
+pub mod audio;
+#[cfg(target_os = "android")]
+#[path = "audio_android.rs"]
 pub mod audio;
 pub mod database;
 pub mod pbs;
