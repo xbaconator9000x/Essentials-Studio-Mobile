@@ -9,15 +9,16 @@
 export class DecodedImageCache<T extends { width: number; height: number }> {
   private readonly entries = new Map<string, { image: T; pixels: number }>();
   private totalPixels = 0;
+  private readonly maxEntries: number;
+  private readonly maxPixels: number;
 
-  constructor(
-    private readonly maxEntries: number,
-    private readonly maxPixels: number,
-  ) {
+  constructor(maxEntries: number, maxPixels: number) {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 ||
         !Number.isSafeInteger(maxPixels) || maxPixels < 1) {
       throw new Error("Image cache limits must be positive safe integers");
     }
+    this.maxEntries = maxEntries;
+    this.maxPixels = maxPixels;
   }
 
   get(key: string): T | undefined {
