@@ -6,9 +6,9 @@ use crate::marshal::types::{RubyObject, RubyValue};
 /// Merge edited, typed event data with the existing raw Marshal value.
 /// Recognised fields receive the edited value. Unknown Ruby ivars survive.
 /// Array deletions remain deletions; old items cannot reappear implicitly.
-pub(crate) fn preserve_unedited_event_fields(original: &RubyValue, edited: &RubyValue) -> RubyValue {
+pub(crate) fn preserve_unedited_event_fields(original: &RubyValue, edited: &RubyValue) -> Result<RubyValue, String> {
     if original == edited {
-        return original.clone();
+        return Ok(original.clone());
     }
     // A binary or typed value may have been represented as a lossy JSON
     // placeholder. If its JSON representation was not changed by the user,
@@ -16,7 +16,7 @@ pub(crate) fn preserve_unedited_event_fields(original: &RubyValue, edited: &Ruby
     if matches!(original, RubyValue::String(_) | RubyValue::Symbol(_) | RubyValue::UserDefined { .. } | RubyValue::UserMarshal { .. })
         && original.to_json_value() == edited.to_json_value()
     {
-        return original.clone();
+        return Ok(original.clone());
     }
     match (original, edited) {
         (RubyValue::Object(previous), RubyValue::Object(current))
@@ -26,13 +26,13 @@ pub(crate) fn preserve_unedited_event_fields(original: &RubyValue, edited: &Ruby
             let mut result = current.clone();
             for (name, old_value) in &previous.instance_vars {
                 if let Some((_, new_value)) = result.instance_vars.iter_mut().find(|(n, _)| n == name) {
-                    *new_value = preserve_unedited_event_fields(old_value, new_value);
+                    *new_value = preserve_unedited_event_fields(old_value, new_value)?;
                 } else {
                     // This is an extension ivar absent from the typed editor.
                     result.instance_vars.push((name.clone(), old_value.clone()));
                 }
             }
-            RubyValue::Object(result)
+            Ok(RubyValue::Object(result))
         }
         (RubyValue::Array(previous), RubyValue::Array(current)) => {
             // Event pages and commands can be inserted or reordered. Blindly
@@ -41,13 +41,13 @@ pub(crate) fn preserve_unedited_event_fields(original: &RubyValue, edited: &Ruby
             if previous.iter().chain(current.iter()).any(is_event_sequence_item) {
                 return merge_event_sequence(previous, current);
             }
-            RubyValue::Array(current.iter().enumerate().map(|(i, item)| {
+            Ok(RubyValue::Array(current.iter().enumerate().map(|(i, item)| {
                 previous.get(i)
                     .map(|old| preserve_unedited_event_fields(old, item))
-                    .unwrap_or_else(|| item.clone())
-            }).collect())
+                    .unwrap_or_else(|| Ok(item.clone()))
+            }).collect::<Result<Vec<_>, _>>()?))
         }
-        _ => edited.clone(),
+        _ => Ok(edited.clone()),
     }
 }
 
@@ -79,37 +79,96 @@ fn same_visible_fields(original: &RubyValue, edited: &RubyValue) -> bool {
     }
 }
 
-fn merge_event_sequence(previous: &[RubyValue], current: &[RubyValue]) -> RubyValue {
+/// Does the typed editor omit any original Ruby ivars? This includes nested
+/// extensions on event pages, routes and commands, not just top-level markers.
+fn has_unrepresented_fields(original: &RubyValue, edited: &RubyValue) -> bool {
+    match (original, edited) {
+        (RubyValue::Object(old), RubyValue::Object(new)) if old.class_name == new.class_name => {
+            old.instance_vars.iter().any(|(name, value)| {
+                match new.instance_vars.iter().find(|(other, _)| other == name) {
+                    Some((_, current)) => has_unrepresented_fields(value, current),
+                    None => true,
+                }
+            })
+        }
+        (RubyValue::Array(old), RubyValue::Array(new)) => old.iter().zip(new)
+            .any(|(a, b)| has_unrepresented_fields(a, b)),
+        _ => false,
+    }
+}
+
+fn same_record_kind(original: &RubyValue, edited: &RubyValue) -> bool {
+    matches!((original, edited),
+        (RubyValue::Object(old), RubyValue::Object(new))
+            if old.class_name == new.class_name && command_identity_unchanged(old, new))
+}
+
+fn merge_event_sequence(previous: &[RubyValue], current: &[RubyValue]) -> Result<RubyValue, String> {
     let mut used = vec![false; previous.len()];
     let mut matched = vec![None; current.len()];
-    // Only transfer opaque fields when there is one unambiguous old record
-    // with identical visible content. This also handles page/command moves.
+    // Match only unique visible records on BOTH sides. Greedy matching of
+    // identical commands can silently swap distinct opaque extension fields.
     for (new_index, item) in current.iter().enumerate() {
         let candidates: Vec<usize> = previous.iter().enumerate()
-            .filter(|(index, old)| !used[*index] && same_visible_fields(old, item))
+            .filter(|(_, old)| same_visible_fields(old, item))
             .map(|(index, _)| index)
             .collect();
         if candidates.len() == 1 {
             let old_index = candidates[0];
-            used[old_index] = true;
-            matched[new_index] = Some(old_index);
+            let reverse_count = current.iter()
+                .filter(|new| same_visible_fields(&previous[old_index], new))
+                .count();
+            if reverse_count == 1 {
+                used[old_index] = true;
+                matched[new_index] = Some(old_index);
+            }
         }
     }
+
     let moved = matched.iter().enumerate()
         .any(|(index, match_index)| match_index.is_some_and(|old| old != index));
-    RubyValue::Array(current.iter().enumerate().map(|(index, item)| {
+    let unmatched_old: Vec<usize> = used.iter().enumerate()
+        .filter_map(|(index, matched)| (!matched).then_some(index))
+        .collect();
+    let unmatched_new: Vec<usize> = matched.iter().enumerate()
+        .filter_map(|(index, old)| old.is_none().then_some(index))
+        .collect();
+    let single_in_place = previous.len() == 1 && current.len() == 1
+        && same_record_kind(&previous[0], &current[0]);
+
+    // An edited command and a replacement command have identical typed shapes.
+    // Without stable IDs, copying unknown ivars from an unmatched old command
+    // would corrupt the replacement. Refuse the save instead of silently
+    // misattributing or discarding extension data. Deletions alone are safe.
+    if !single_in_place && !unmatched_new.is_empty() {
+        for &old_index in &unmatched_old {
+            if unmatched_new.iter().any(|&new_index| {
+                same_record_kind(&previous[old_index], &current[new_index])
+                    && has_unrepresented_fields(&previous[old_index], &current[new_index])
+            }) {
+                return Err("Ambiguous event page/command replacement or reordered edit: opaque Ruby fields cannot be assigned safely; save aborted".into());
+            }
+        }
+    }
+
+    let mut result = Vec::with_capacity(current.len());
+    for (index, item) in current.iter().enumerate() {
         if let Some(old_index) = matched[index] {
-            return preserve_unedited_event_fields(&previous[old_index], item);
-        }
-        // Preserve extension fields for ordinary in-place edits, but never
-        // infer an index identity after a structural insert/delete/reorder.
-        if !moved && previous.len() == current.len()
+            result.push(preserve_unedited_event_fields(&previous[old_index], item)?);
+        } else if single_in_place {
+            result.push(preserve_unedited_event_fields(&previous[0], item)?);
+        } else if !moved && previous.len() == current.len()
             && index < previous.len() && !used[index]
+            && same_record_kind(&previous[index], item)
         {
-            return preserve_unedited_event_fields(&previous[index], item);
+            // No opaque fields remain to misattribute; ordinary typed edits
+            // can still be applied without losing source extensions.
+            result.push(preserve_unedited_event_fields(&previous[index], item)?);
+        } else {
+            result.push(item.clone());
         }
-        item.clone()
-    }).collect())
+    }
+    Ok(RubyValue::Array(result))
 }
 
 fn command_identity_unchanged(previous: &RubyObject, current: &RubyObject) -> bool {
@@ -162,7 +221,7 @@ mod tests {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.name = "Renamed".into();
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value());
+        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
         let event = merged.as_object().unwrap();
         assert_eq!(event.get_int("extra_event_ivar"), Some(42));
         assert_eq!(event.get_string("name").unwrap(), "Renamed");
@@ -183,7 +242,7 @@ mod tests {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.pages.clear();
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value());
+        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
         let event = merged.as_object().unwrap();
         assert!(event.get("pages").unwrap().as_array().unwrap().is_empty());
         assert_eq!(event.get_int("extra_event_ivar"), Some(42));
@@ -217,7 +276,7 @@ mod tests {
             command(101, "second", None),
             command(101, "first", None),
         ]);
-        let merged = preserve_unedited_event_fields(&original, &edited);
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
         let commands = merged.as_array().unwrap();
         assert_eq!(marker(&commands[0]), Some(22));
         assert_eq!(marker(&commands[1]), Some(11));
@@ -235,7 +294,7 @@ mod tests {
             command(101, "first", None),
             command(101, "second", None),
         ]);
-        let merged = preserve_unedited_event_fields(&original, &edited);
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
         let commands = merged.as_array().unwrap();
         assert_eq!(marker(&commands[0]), None);
         assert_eq!(marker(&commands[1]), Some(11));
@@ -246,7 +305,7 @@ mod tests {
     fn editing_command_in_place_still_preserves_extension_fields() {
         let original = RubyValue::Array(vec![command(355, "old script", Some(42))]);
         let edited = RubyValue::Array(vec![command(355, "new script", None)]);
-        let merged = preserve_unedited_event_fields(&original, &edited);
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
         let command = &merged.as_array().unwrap()[0];
         assert_eq!(marker(command), Some(42));
         let parameters = command.as_object().unwrap().get("parameters").unwrap().as_array().unwrap();
@@ -254,11 +313,66 @@ mod tests {
     }
 
     #[test]
+    fn replacing_one_of_two_commands_with_same_code_refuses_opaque_transfer() {
+        let original = RubyValue::Array(vec![
+            command(101, "A", Some(11)),
+            command(101, "B", Some(22)),
+        ]);
+        let edited = RubyValue::Array(vec![
+            command(101, "NEW", None),
+            command(101, "B", None),
+        ]);
+        let result = preserve_unedited_event_fields(&original, &edited);
+        assert!(result.is_err(), "ambiguous replacement must not inherit A's metadata");
+        assert_eq!(marker(&original.as_array().unwrap()[0]), Some(11));
+    }
+
+    #[test]
+    fn moving_a_command_while_editing_it_refuses_to_drop_opaque_fields() {
+        let original = RubyValue::Array(vec![
+            command(101, "A", Some(11)),
+            command(101, "B", Some(22)),
+        ]);
+        let edited = RubyValue::Array(vec![
+            command(101, "B", None),
+            command(101, "A edited", None),
+        ]);
+        assert!(preserve_unedited_event_fields(&original, &edited).is_err());
+    }
+
+    #[test]
+    fn duplicate_visible_commands_with_distinct_extensions_are_not_mispaired() {
+        let original = RubyValue::Array(vec![
+            command(101, "same", Some(11)),
+            command(101, "same", Some(22)),
+        ]);
+        let edited = RubyValue::Array(vec![
+            command(101, "same", None),
+            command(101, "same", None),
+        ]);
+        assert!(preserve_unedited_event_fields(&original, &edited).is_err());
+    }
+
+    #[test]
+    fn editing_a_typed_command_without_opaque_fields_still_succeeds() {
+        let original = RubyValue::Array(vec![
+            command(101, "A", None),
+            command(101, "B", None),
+        ]);
+        let edited = RubyValue::Array(vec![
+            command(101, "A edited", None),
+            command(101, "B", None),
+        ]);
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
+        assert_eq!(merged, edited);
+    }
+
+    #[test]
     fn changing_command_kind_does_not_transfer_unknown_attributes() {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.pages[0].list[0].code = 111;
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value());
+        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
         let page = &merged.as_object().unwrap().get("pages").unwrap().as_array().unwrap()[0];
         let command = &page.as_object().unwrap().get("list").unwrap().as_array().unwrap()[0];
         let command = command.as_object().unwrap();
