@@ -22,6 +22,7 @@ import {
 import { loadAllTilesetImages } from "./services/imageLoader";
 import { importProjectZip, exportProjectZip } from "./services/archiveApi";
 import { saveThenMarkClean } from "./services/saveGuards";
+import { inspectProjectBeforeOpen } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -160,7 +161,11 @@ function AppContent() {
     try {
       setLoading(true);
       setError(null);
-      const proj = await openProject(path);
+      // Validate the candidate's initial XP map and tileset before clearing
+      // the current project. A corrupt ZIP must not replace a working editor.
+      const proj = await inspectProjectBeforeOpen(path, {
+        openProject, loadMap, loadTileset,
+      });
 
       // Update ref immediately so handleSelectMap sees the new project path.
       projectRef.current = proj;
@@ -288,9 +293,6 @@ function AppContent() {
     try {
       setLoading(true);
       setError(null);
-      setCurrentMapId(mapId);
-      currentMapIdRef.current = mapId;
-
       const data = await loadMap(path, mapId);
       setMapData(data);
       mapDataRef.current = data;
@@ -306,6 +308,10 @@ function AppContent() {
       });
       setTilesetImage(images.tileset);
       setAutotileImages(images.autotiles);
+      // Commit selection only after the map, tileset and graphics loaded.
+      // Failed loads must not leave a map ID pointing to the previous map.
+      setCurrentMapId(mapId);
+      currentMapIdRef.current = mapId;
 
       mapIsDirtyRef.current = false;
       setMapIsDirty(false);
