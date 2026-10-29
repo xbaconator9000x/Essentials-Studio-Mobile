@@ -550,8 +550,12 @@ mod archive_roundtrip_tests {
             bytes[offset..offset + old_name.len()].copy_from_slice(new_name);
         }
         fs::write(&duplicate, bytes).unwrap();
-        let zip = ZipArchive::new(File::open(&duplicate).unwrap()).unwrap();
-        assert_eq!(zip.file_names().filter(|name| *name == "Game.rxproj").count(), 2);
+        let mut zip = ZipArchive::new(File::open(&duplicate).unwrap()).unwrap();
+        // file_names() is backed by a unique-name index and hides duplicates.
+        // Inspect each central-directory entry by index instead.
+        assert_eq!(zip.len(), 2);
+        assert_eq!(zip.by_index(0).unwrap().name(), "Game.rxproj");
+        assert_eq!(zip.by_index(1).unwrap().name(), "Game.rxproj");
         assert!(extract_archive(&duplicate, &sandbox.path("out-duplicate")).is_err());
 
         // Also reject a valid ZIP whose file entry is later used as a
