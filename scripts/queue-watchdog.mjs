@@ -1,76 +1,99 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-// This is a deliberately read-only GitHub queue handoff. GitHub Actions does
-// not initiate a ChatGPT conversation or call any paid external AI API.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const queue = JSON.parse(readFileSync(resolve(root, "development/queue.json"), "utf8"));
+const tasks = new Map(queue.tasks.map(t => [t.id, t]));
+const eligible = queue.tasks
+  .filter(t => t.status === "todo" && t.depends_on.every(id => tasks.get(id)?.status === "done"))
+  .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+const active = queue.tasks
+  .filter(t => t.status === "in_progress")
+  .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+const blocked = queue.tasks.filter(t => t.status === "blocked");
+const summary = {
+  total: queue.tasks.length,
+  done: queue.tasks.filter(t => t.status === "done").length,
+  in_progress: queue.tasks.filter(t => t.status === "in_progress").map(t => t.id),
+  blocked: blocked.map(t => ({ id: t.id, blocker: t.blocker })),
+  eligible: eligible.map(t => ({ id: t.id, title: t.title, priority: t.priority, acceptance: t.acceptance })),
+};
+console.log(JSON.stringify(summary, null, 2));
 
-export function summarizeQueue(queue) {
-  const tasks = new Map(queue.tasks.map(task => [task.id, task]));
-  const ordered = items => items.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-  return {
-    total: queue.tasks.length,
-    done: queue.tasks.filter(task => task.status === "done").length,
-    active: ordered(queue.tasks.filter(task => task.status === "in_progress")),
-    eligible: ordered(queue.tasks.filter(task =>
-      task.status === "todo" && task.depends_on.every(id => tasks.get(id)?.status === "done"))),
-    blocked: ordered(queue.tasks.filter(task => task.status === "blocked")),
-  };
+if (!process.argv.includes("--create-issues")) process.exit(0);
+if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+  throw new Error("GITHUB_TOKEN or GH_TOKEN is required for automatic issue creation");
 }
-
-export function renderHandoff(summary) {
+const repo = process.env.GITHUB_REPOSITORY || "xbaconator9000x/Essentials-Studio-Mobile";
+const runGh = (...args) => {
+  const result = spawnSync("gh", [...args, "--repo", repo], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`gh ${args[0]} failed: ${result.stderr}`);
+  return result.stdout.trim();
+};
+// Issue tracking is optional: this public repository currently has Issues disabled.
+// Always publish an actionable handoff in the run summary so the scheduled check
+// succeeds and an implementation agent can pick up work from queue.json.
+function appendHandoffSummary(note) {
+  if (!process.env.GITHUB_STEP_SUMMARY) return;
   const lines = [
-    "### Essentials Studio Mobile — ChatGPT coding handoff",
+    "### Next eligible Essentials Studio Mobile work",
     "",
-    "GitHub performs free queue validation, CI tests and APK builds. The already configured ChatGPT watchdog is the coding agent; this workflow cannot wake ChatGPT or perform autonomous AI coding.",
+    note,
     "",
-    "#### Active workstreams (continue before starting duplicates)",
+    ...eligible.flatMap(task => [
+      "- **" + task.id + "** [P" + task.priority + "] " + task.title,
+      "  - Depends on: " + (task.depends_on.join(", ") || "nothing"),
+      ...task.acceptance.map(criterion => "  - [ ] " + criterion),
+    ]),
+    ...(eligible.length === 0 ? [
+      "No new todo task is eligible. Continue the in-progress workstreams below; a pending acceptance gate is not a completed task.",
+      "",
+      "#### In-progress implementation streams",
+      "",
+      ...active.flatMap(task => [
+        "- **" + task.id + "** [P" + task.priority + "] " + task.title,
+        "  - Remaining acceptance:",
+        ...task.acceptance.map(criterion => "    - [ ] " + criterion),
+      ]),
+      ...(active.length === 0 ? ["No active streams; inspect blockers and task dependencies."] : []),
+    ] : []),
+    "",
+    "Only actual code/test results can advance task states. This workflow is a handoff, not a coding agent.",
     "",
   ];
-  if (summary.active.length === 0) lines.push("No task is currently marked in progress.");
-  for (const task of summary.active) {
-    lines.push("- **" + task.id + "** [P" + task.priority + "] " + task.title);
-    lines.push("  - Existing work: inspect open pull requests and latest main before editing");
-    for (const criterion of task.acceptance) lines.push("  - [ ] " + criterion);
-  }
-  lines.push("", "#### Next dependency-ready tasks", "");
-  if (!summary.eligible.length) lines.push("None currently; continue active work or investigate blocked dependencies.");
-  for (const task of summary.eligible) {
-    lines.push("- **" + task.id + "** [P" + task.priority + "] " + task.title);
-    lines.push("  - Depends on: " + (task.depends_on.join(", ") || "none"));
-    for (const criterion of task.acceptance) lines.push("  - [ ] " + criterion);
-  }
-  lines.push("", "#### Blockers", "");
-  if (!summary.blocked.length) lines.push("No explicitly blocked tasks.");
-  for (const task of summary.blocked) {
-    lines.push("- **" + task.id + "** " + task.title + ": " + (task.blocker || "Unspecified blocker"));
-  }
-  lines.push("",
-    "#### Implementation rules",
-    "",
-    "- Only the existing ChatGPT automation or an authorised developer may edit source. GitHub Actions does not dispatch to Copilot, Jules, Work, or an AI API.",
-    "- Work through independent eligible tasks in substantial batches, avoid overlapping open PRs, and preserve original RPG Maker XP, event, Ruby Marshal and PBS data.",
-    "- Record actual commits and test evidence in development/queue.json. Do not mark a task done on a mere compile, synthetic test, or handoff.",
-    "- Continue non-conflicting work while affected CI checks run; never merge unverified changes or claim on-device validation without evidence.",
-    "",
-    "**No Copilot Pro, ChatGPT Work, paid token, external AI API key or GitHub Issues are required to run this queue.**",
-    "",
-  );
-  return lines.join("\n");
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n", "utf8");
 }
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const queue = JSON.parse(readFileSync(resolve(root, "development/queue.json"), "utf8"));
-  const summary = summarizeQueue(queue);
-  console.log(JSON.stringify({
-    total: summary.total,
-    done: summary.done,
-    in_progress: summary.active.map(task => task.id),
-    eligible: summary.eligible.map(task => task.id),
-    blocked: summary.blocked.map(task => task.id),
-  }, null, 2));
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderHandoff(summary), "utf8");
+let existing;
+try {
+  existing = JSON.parse(runGh("issue", "list", "--state", "all", "--limit", "500", "--json", "title,number"));
+} catch (error) {
+  if (/has disabled issues|issues (?:are|is) disabled/i.test(String(error))) {
+    console.warn("Repository issues are disabled; handoff recorded in Actions summary instead.");
+    appendHandoffSummary("GitHub Issues are disabled for this repository. Work remains queued in development/queue.json.");
+    process.exit(0);
   }
+  throw error;
+}
+appendHandoffSummary("Eligible tasks are also tracked as deduplicated GitHub Issues.");
+for (const task of eligible) {
+  if (existing.some(issue => issue.title.startsWith(`${task.id}:`))) continue;
+  const body = [
+    "Automatically surfaced from the durable development queue.",
+    "",
+    `Task: **${task.id}** — ${task.title}`,
+    `Priority: ${task.priority}`,
+    `Dependencies: ${task.depends_on.length ? task.depends_on.join(", ") : "none"}`,
+    "",
+    "### Required acceptance criteria",
+    ...task.acceptance.map(x => `- [ ] ${x}`),
+    "",
+    "### Implementation handoff",
+    "Read current main and open PRs first. Implement real code and verify tests on a development branch.",
+    "Update development/queue.json only with evidence. Do not auto-mark complete merely because this issue exists.",
+    "No live source-code agent is installed in GitHub Actions; this issue is a queued handoff for connected coding agents.",
+  ].join("\n");
+  const issue = runGh("issue", "create", "--title", `${task.id}: ${task.title}`, "--body", body);
+  console.log(`Queued ${task.id}: ${issue}`);
 }
