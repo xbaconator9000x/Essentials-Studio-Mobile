@@ -82,3 +82,18 @@ test("large flood fill changes only the chosen XP layer and remains undoable", (
   revertAction(data, { type: "fill", changes, timestamp: 0 });
   assert.ok(data.tiles.every(v => v === 0));
 });
+
+test("signed i16 sentinel cells survive undo and clipboard without being paintable", () => {
+  const data = map();
+  data.tiles[0] = -1;
+  const changes = paintTile(data, 0, 0, 0, 384);
+  assert.equal(data.tiles[0], 384);
+  revertAction(data, { type: "paint", changes, timestamp: 0 });
+  assert.equal(data.tiles[0], -1);
+  const clip = copyTileRegion(data, { x1: 0, y1: 0, x2: 0, y2: 0 }, 0);
+  const dest = map();
+  const pasted = pasteTileRegion(dest, clip, { x: 2, y: 1 }, 0);
+  assert.equal(pasted.length, 1);
+  assert.equal(dest.tiles[5], -1);
+  assert.deepEqual(paintTile(dest, 2, 1, 0, -1), []);
+});
