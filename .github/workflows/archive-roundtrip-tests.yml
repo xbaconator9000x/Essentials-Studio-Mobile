@@ -2,16 +2,25 @@ name: Archive roundtrip tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src-tauri/src/commands/**'
+      - 'src-tauri/src/models/**'
+      - 'src-tauri/src/marshal/**'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'scripts/run_project_roundtrip.py'
+      - 'scripts/verify_project_roundtrip.py'
+      - '.github/workflows/archive-roundtrip-tests.yml'
   pull_request:
     branches:
       - main
       - feature/android-ci-bootstrap
     paths:
-      - 'src-tauri/src/commands/project_archive.rs'
-      - 'src-tauri/src/commands/project.rs'
-      - 'src-tauri/src/commands/scripts.rs'
-      - 'src-tauri/src/commands/pbs.rs'
-      - 'src-tauri/src/commands/event_fidelity.rs'
+      - 'src-tauri/src/commands/**'
+      - 'src-tauri/src/models/**'
       - 'src-tauri/src/marshal/**'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
