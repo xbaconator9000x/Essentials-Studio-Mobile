@@ -740,6 +740,12 @@ pub async fn read_private_project_image(
 #[cfg(test)]
 mod archive_roundtrip_tests {
     use super::{extract_archive, export_zip, finish_import, unique_id};
+    use crate::marshal::types::{RubyObject, RubyString, RubyValue};
+    use crate::models::{
+        EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveRoute, RpgEvent,
+        RpgMap,
+    };
+    use sha2::{Digest, Sha256};
     use std::fs::{self, File};
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
@@ -795,6 +801,179 @@ mod archive_roundtrip_tests {
         let mut contents = Vec::new();
         zip.by_name(name).unwrap().read_to_end(&mut contents).unwrap();
         contents
+    }
+
+    fn ruby_string(text: &str) -> RubyValue {
+        RubyValue::String(RubyString::with_encoding(text.as_bytes().to_vec(), "UTF-8".into()))
+    }
+
+    fn synthetic_rxdata_members() -> Vec<(String, Vec<u8>)> {
+        let mut map = RpgMap::new_blank(2, 2, 1);
+        map.data.set(1, 0, 1, 48);
+        map.data.set(0, 1, 2, 1024);
+        map.events.insert(
+            7,
+            RpgEvent {
+                id: 7,
+                name: "Synthetic Guide".into(),
+                x: 1,
+                y: 1,
+                pages: vec![EventPage {
+                    condition: EventCondition::default(),
+                    graphic: EventGraphic {
+                        character_name: "SyntheticGuide".into(),
+                        ..EventGraphic::default()
+                    },
+                    move_type: 0,
+                    move_speed: 3,
+                    move_frequency: 3,
+                    move_route: MoveRoute::default(),
+                    walk_anime: true,
+                    step_anime: false,
+                    direction_fix: false,
+                    through: false,
+                    always_on_top: false,
+                    trigger: 0,
+                    list: vec![EventCommand {
+                        code: 101,
+                        indent: 0,
+                        parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
+                    }],
+                }],
+            },
+        );
+        let mut map_value = map.to_ruby_value();
+        let RubyValue::Object(map_object) = &mut map_value else {
+            panic!("RPG::Map fixture must serialize as an object")
+        };
+        map_object
+            .instance_vars
+            .push(("@plugin_metadata".into(), RubyValue::Symbol("keep-map".into())));
+        let events = map_object
+            .instance_vars
+            .iter_mut()
+            .find(|(name, _)| name == "@events")
+            .map(|(_, value)| value)
+            .expect("map event hash");
+        let RubyValue::Hash(events) = events else {
+            panic!("RPG::Map @events must serialize as a hash")
+        };
+        let RubyValue::Object(event) = &mut events[0].1 else {
+            panic!("RPG::Event fixture must serialize as an object")
+        };
+        event
+            .instance_vars
+            .push(("@plugin_metadata".into(), RubyValue::Symbol("keep-event".into())));
+
+        let map_infos = RubyValue::Hash(vec![(
+            RubyValue::Integer(1),
+            MapInfo {
+                name: "Synthetic Map".into(),
+                parent_id: 0,
+                order: 1,
+                expanded: true,
+                scroll_x: 0,
+                scroll_y: 0,
+            }
+            .to_ruby_value(),
+        )]);
+        let mut system = RubyObject::new("RPG::System".into());
+        system
+            .instance_vars
+            .push(("@edit_map_id".into(), RubyValue::Integer(1)));
+
+        let mut tileset = RubyObject::new("RPG::Tileset".into());
+        tileset.instance_vars.extend([
+            ("@id".into(), RubyValue::Integer(1)),
+            ("@name".into(), ruby_string("Synthetic Tileset")),
+            ("@tileset_name".into(), ruby_string("Synthetic")),
+            (
+                "@autotile_names".into(),
+                RubyValue::Array(vec![ruby_string(""); 7]),
+            ),
+        ]);
+        let tilesets = RubyValue::Array(vec![
+            RubyValue::Nil,
+            RubyValue::Object(tileset),
+        ]);
+
+        [
+            (
+                "Data/MapInfos.rxdata".into(),
+                crate::marshal::dump(&map_infos).unwrap(),
+            ),
+            (
+                "Data/System.rxdata".into(),
+                crate::marshal::dump(&RubyValue::Object(system)).unwrap(),
+            ),
+            (
+                "Data/Tilesets.rxdata".into(),
+                crate::marshal::dump(&tilesets).unwrap(),
+            ),
+            (
+                "Data/Map001.rxdata".into(),
+                crate::marshal::dump(&map_value).unwrap(),
+            ),
+            (
+                "Data/Scripts.rxdata".into(),
+                crate::marshal::dump(&RubyValue::Array(vec![RubyValue::Nil])).unwrap(),
+            ),
+        ]
+        .into_iter()
+        .chain([
+            ("Game.rxproj".into(), b"RPGXP 1.02".to_vec()),
+            (
+                "Game.ini".into(),
+                b"[Game]\r\nTitle=Synthetic RMXP\r\n".to_vec(),
+            ),
+            (
+                "PBS/pokemon.txt".into(),
+                b"# synthetic PBS\r\n[TEST]\r\nName = Test\r\n".to_vec(),
+            ),
+            (
+                "Graphics/Tilesets/Synthetic.png".into(),
+                b"rights-cleared synthetic image bytes".to_vec(),
+            ),
+        ])
+        .collect()
+    }
+
+    fn write_synthetic_project_zip(path: &Path, prefix: &str, malformed_map: bool) {
+        let mut writer = ZipWriter::new(File::create(path).unwrap());
+        let options = SimpleFileOptions::default();
+        for (name, mut bytes) in synthetic_rxdata_members() {
+            if malformed_map && name == "Data/Map001.rxdata" {
+                bytes = b"not a Ruby Marshal stream".to_vec();
+            }
+            writer
+                .start_file(format!("{prefix}{name}"), options)
+                .unwrap();
+            writer.write_all(&bytes).unwrap();
+        }
+        writer
+            .add_directory(format!("{prefix}Graphics/Empty/"), options)
+            .unwrap();
+        writer.finish().unwrap();
+    }
+
+    fn member_sha256(zip_path: &Path, prefix: &str) -> std::collections::BTreeMap<String, String> {
+        let mut zip = ZipArchive::new(File::open(zip_path).unwrap()).unwrap();
+        let mut hashes = std::collections::BTreeMap::new();
+        for index in 0..zip.len() {
+            let mut member = zip.by_index(index).unwrap();
+            if member.is_dir() {
+                continue;
+            }
+            let name = member
+                .name()
+                .strip_prefix(prefix)
+                .expect("ZIP member is under expected project root")
+                .to_string();
+            let mut bytes = Vec::new();
+            member.read_to_end(&mut bytes).unwrap();
+            hashes.insert(name, format!("{:x}", Sha256::digest(&bytes)));
+        }
+        hashes
     }
 
     #[test]
@@ -884,6 +1063,169 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
+    fn wrapped_rxdata_project_opens_edits_and_reads_back_without_losing_source_members() {
+        let sandbox = Sandbox::new();
+        let source_archive = sandbox.path("original-rxdata.zip");
+        let wrapper = "Repository/Essentials/Project/";
+        write_synthetic_project_zip(&source_archive, wrapper, false);
+        let original_zip_bytes = fs::read(&source_archive).unwrap();
+        let original_hashes = member_sha256(&source_archive, wrapper);
+
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let staged_archive = imports.join("import-rxdata.zip");
+        fs::copy(&source_archive, &staged_archive).unwrap();
+        let imported = PathBuf::from(
+            finish_import(
+                staged_archive,
+                imports.clone(),
+                projects.clone(),
+                "import-rxdata".into(),
+            )
+            .expect("publish valid wrapped project into app-private storage"),
+        );
+        assert_eq!(imported, projects.join("import-rxdata"));
+        assert!(imported.join("Game.rxproj").is_file());
+        assert!(imported.join("Graphics/Empty").is_dir());
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let project = crate::commands::project::open_project(
+                imported.to_string_lossy().into_owned(),
+            )
+            .await
+            .expect("open imported RXDATA project");
+            assert_eq!(project.name, "Synthetic RMXP");
+            assert_eq!(project.edit_map_id, 1);
+            assert_eq!(project.map_infos.get(&1).unwrap().name, "Synthetic Map");
+
+            let map = crate::commands::project::load_map(project.path.clone(), 1)
+                .await
+                .expect("load genuine Marshal map");
+            assert_eq!((map.width, map.height, map.tileset_id), (2, 2, 1));
+            assert_eq!(map.events.len(), 1);
+            let tileset = crate::commands::project::load_tileset(project.path.clone(), 1)
+                .await
+                .expect("load genuine Marshal tileset");
+            assert_eq!(tileset.name, "Synthetic Tileset");
+
+            let event =
+                crate::commands::project::load_event(project.path.clone(), 1, 7)
+                    .await
+                    .expect("load genuine Marshal event");
+            assert_eq!(event.name, "Synthetic Guide");
+            assert_eq!(event.pages[0].list[0].code, 101);
+            assert_eq!(
+                event.pages[0].list[0].parameters[0],
+                serde_json::Value::String("Synthetic dialogue".into())
+            );
+
+            let mut edited_tiles = map.tiles.clone();
+            edited_tiles[4] = 777;
+            crate::commands::project::save_map(
+                project.path.clone(),
+                1,
+                edited_tiles.clone(),
+                2,
+                2,
+            )
+            .await
+            .expect("save one bounded XP tile edit");
+            let readback = crate::commands::project::load_map(project.path.clone(), 1)
+                .await
+                .expect("read edited map back");
+            assert_eq!(readback.tiles, edited_tiles);
+            let event_readback =
+                crate::commands::project::load_event(project.path.clone(), 1, 7)
+                    .await
+                    .expect("read untouched event back");
+            assert_eq!(event_readback.name, "Synthetic Guide");
+            assert_eq!(event_readback.pages[0].list[0].code, 101);
+        });
+
+        let saved_map = crate::marshal::load_file(&imported.join("Data/Map001.rxdata")).unwrap();
+        let RubyValue::Object(saved_map) = saved_map else {
+            panic!("saved map remains an RPG::Map object")
+        };
+        assert_eq!(
+            saved_map.get("plugin_metadata"),
+            Some(&RubyValue::Symbol("keep-map".into()))
+        );
+        let saved_events = saved_map.get("events").and_then(RubyValue::as_hash).unwrap();
+        let RubyValue::Object(saved_event) = &saved_events[0].1 else {
+            panic!("saved event remains an RPG::Event object")
+        };
+        assert_eq!(
+            saved_event.get("plugin_metadata"),
+            Some(&RubyValue::Symbol("keep-event".into()))
+        );
+
+        let exported = sandbox.path("exported-rxdata.zip");
+        export_zip(&imported, &exported).unwrap();
+        let exported_hashes = member_sha256(&exported, "");
+        assert_eq!(original_hashes.keys().collect::<Vec<_>>(), exported_hashes.keys().collect::<Vec<_>>());
+        for (name, original_hash) in &original_hashes {
+            if name == "Data/Map001.rxdata" {
+                assert_ne!(exported_hashes.get(name), Some(original_hash));
+            } else {
+                assert_eq!(exported_hashes.get(name), Some(original_hash), "SHA-256 mismatch in {name}");
+            }
+        }
+        if let Some(directory) = std::env::var_os("PROJECT_ROUNDTRIP_ARTIFACT_DIR") {
+            let directory = PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap();
+            fs::copy(&source_archive, directory.join("original.zip")).unwrap();
+            fs::copy(&exported, directory.join("exported.zip")).unwrap();
+        }
+        assert_eq!(fs::read(&source_archive).unwrap(), original_zip_bytes);
+        assert!(!imports.join("import-rxdata-extracted").exists());
+    }
+
+    #[test]
+    fn malformed_rxdata_is_rejected_and_failed_private_import_is_removed() {
+        let sandbox = Sandbox::new();
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let archive = sandbox.path("malformed-rxdata.zip");
+        write_synthetic_project_zip(&archive, "Repository/Essentials/Project/", true);
+        let staged_archive = imports.join("import-malformed.zip");
+        fs::copy(&archive, &staged_archive).unwrap();
+        let imported = PathBuf::from(
+            finish_import(
+                staged_archive,
+                imports.clone(),
+                projects.clone(),
+                "import-malformed".into(),
+            )
+            .expect("ZIP extraction completes before editor preflight"),
+        );
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let project = runtime
+            .block_on(crate::commands::project::open_project(
+                imported.to_string_lossy().into_owned(),
+            ))
+            .expect("project metadata is readable before invalid initial map rejection");
+        let error = runtime
+            .block_on(crate::commands::project::load_map(project.path, project.edit_map_id))
+            .unwrap_err();
+        assert!(error.contains("Failed to parse map"), "{error}");
+        super::discard_imported_project_in(&projects, &imported).unwrap();
+        assert!(!projects.join("import-malformed").exists());
+        assert!(!imports.join("import-malformed-extracted").exists());
+    }
+
+    #[test]
     fn rejects_siblings_at_every_wrapper_level_without_publishing_partial_project() {
         for sibling in ["Repository/README.md", "Repository/Essentials/notes.txt"] {
             let sandbox = Sandbox::new();
@@ -893,11 +1235,16 @@ mod archive_roundtrip_tests {
             fs::create_dir_all(&projects).unwrap();
             let archive = imports.join("import-test.zip");
             sample_zip(&archive, "Repository/Essentials/Shattered/", Some(sibling));
+            let original = sandbox.path("original-with-sibling.zip");
+            fs::copy(&archive, &original).unwrap();
+            let original_bytes = fs::read(&original).unwrap();
             let error = finish_import(archive, imports.clone(), projects.clone(), "import-test".into())
                 .unwrap_err();
             assert!(error.contains("outside its single project folder"), "{error}");
             assert!(!projects.join("import-test").exists());
             assert!(!imports.join("import-test-extracted").exists());
+            assert_eq!(fs::read(&original).unwrap(), original_bytes);
+            assert_eq!(read_zip_file(&original, sibling), b"unrelated");
         }
     }
 
