@@ -9,11 +9,14 @@ import { getAssetPath } from "./tauriApi";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { DecodedImageCache } from "./imageCacheBudget";
 import { boundedAsyncMap } from "./boundedAsyncMap";
+import { InFlightImageLoads } from "./inFlightImageLoads";
 
 // Count-only LRU limits are insufficient for large RPG Maker XP tilesets.
 // Approximate decoded RGBA memory at 4 bytes/pixel: 12M pixels ~48 MiB.
 // Oversized individual assets may render but are never retained in this cache.
 const imageCache = new DecodedImageCache<HTMLImageElement>(96, 12_000_000);
+const privateImageLoads = new InFlightImageLoads<HTMLImageElement>();
+let imageGeneration = 0;
 
 function cacheImage(path: string, img: HTMLImageElement) {
   imageCache.set(path, img);
@@ -56,13 +59,19 @@ async function loadProjectImage(
   assetName: string,
 ): Promise<HTMLImageElement> {
   if (isAndroidTauri()) {
-    const cacheKey = `private:${projectPath}:${assetType}:${assetName}`;
+    const generation = imageGeneration;
+    const cacheKey = `private:${generation}:${projectPath}:${assetType}:${assetName}`;
     const cached = imageCache.get(cacheKey);
     if (cached) return cached;
-    const dataUrl = await invoke<string>("read_private_project_image", {
-      projectPath, assetType, assetName,
+    // Concurrent map/event render requests for one private asset share one
+    // native IPC transfer and image decode, not multiple large Base64 copies.
+    return privateImageLoads.run(cacheKey, async () => {
+      const dataUrl = await invoke<string>("read_private_project_image", {
+        projectPath, assetType, assetName,
+      });
+      // Do not repopulate the cache if a project switch happened mid-request.
+      return loadImage(dataUrl, cacheKey, () => generation === imageGeneration);
     });
-    return loadImage(dataUrl, cacheKey);
   }
   const path = await getAssetPath(projectPath, assetType, assetName);
   return loadImage(path);
@@ -89,7 +98,11 @@ async function convertFilePathToUrl(filePath: string): Promise<string> {
  * Caches loaded images for reuse.
  * Falls back to alternate URL encoding if the first attempt fails (handles spaces in filenames).
  */
-export async function loadImage(path: string, cacheKey = path): Promise<HTMLImageElement> {
+export async function loadImage(
+  path: string,
+  cacheKey = path,
+  shouldCache: () => boolean = () => true,
+): Promise<HTMLImageElement> {
   const cached = imageCache.get(cacheKey);
   if (cached) return cached;
 
@@ -101,7 +114,7 @@ export async function loadImage(path: string, cacheKey = path): Promise<HTMLImag
     new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        cacheImage(cacheKey, img);
+        if (shouldCache()) cacheImage(cacheKey, img);
         resolve(img);
       };
       img.onerror = (e) => {
@@ -304,5 +317,6 @@ export async function loadCharacterImage(
 
 /** Clear the image cache. */
 export function clearImageCache() {
+  imageGeneration++;
   imageCache.clear();
 }
