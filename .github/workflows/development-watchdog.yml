@@ -3,7 +3,7 @@ name: Development queue watchdog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
   push:
     branches:
       - main
@@ -13,8 +13,9 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: read
 
 concurrency:
   group: essentials-mobile-queue-watchdog
@@ -38,6 +39,8 @@ jobs:
           node scripts/queue-watchdog.mjs
       - name: Regression test queue fallback when GitHub Issues are disabled
         run: node --test scripts/queue-watchdog.test.mjs
+      - name: Verify automatic coding-agent selection and receipt safety
+        run: node --test scripts/copilot-dispatch.test.mjs
       - name: Surface CI failures for the next implementation run
         if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
         run: echo "::warning::A CI workflow failed or was cancelled. Inspect the originating run before proceeding."
@@ -45,13 +48,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/queue-watchdog.mjs --create-issues
+      - name: Dispatch real cloud coding tasks (requires configured Copilot secret)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+        run: node scripts/copilot-dispatch.mjs
       - name: Report queue state
         run: |
           {
             echo "### Essentials Studio Mobile development queue"
             echo ""
-            echo "The watchdog surfaces eligible work after main pushes, CI completion and a 15-minute poll. It uses deduplicated issues if Issues are enabled; otherwise Actions summaries are the handoff record."
-            echo "A GitHub Actions runner **cannot write new implementation code** without a connected coding agent."
+            echo "The watchdog runs every five minutes as well as after main pushes and CI completion. With COPILOT_AGENT_TOKEN and an eligible GitHub Copilot plan, it starts bounded coding-agent sessions using durable receipts; otherwise it reports a clear configuration blocker. GitHub Issues are optional."
+            echo "GitHub Copilot writes code only when separately configured. Agents open PRs for review; they never auto-merge or auto-approve acceptance."
             echo ""
             node scripts/queue-watchdog.mjs | sed 's/^/    /'
           } >> "$GITHUB_STEP_SUMMARY"
