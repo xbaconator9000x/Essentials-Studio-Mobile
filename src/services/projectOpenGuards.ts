@@ -18,22 +18,33 @@ export async function inspectProjectBeforeOpen(
   },
 ): Promise<ProjectInfo> {
   const candidate = await io.openProject(path);
-  if (!candidate.path) {
+  if (typeof candidate.path !== "string" || !candidate.path.trim()) {
     throw new Error("Project did not return a valid path");
+  }
+  if (!Number.isSafeInteger(candidate.edit_map_id) || candidate.edit_map_id < 0) {
+    throw new Error("Project returned an invalid initial XP map ID");
   }
   if (candidate.edit_map_id > 0) {
     const map = await io.loadMap(candidate.path, candidate.edit_map_id);
     const expectedTiles = map.width * map.height * 3;
     if (
       map.id !== candidate.edit_map_id ||
+      !Number.isSafeInteger(map.width) || map.width <= 0 ||
+      !Number.isSafeInteger(map.height) || map.height <= 0 ||
+      !Number.isSafeInteger(map.tileset_id) || map.tileset_id <= 0 ||
       !Number.isSafeInteger(expectedTiles) ||
       expectedTiles <= 0 ||
       expectedTiles > 30_000_000 ||
-      map.tiles.length !== expectedTiles
+      !Array.isArray(map.tiles) ||
+      map.tiles.length !== expectedTiles ||
+      !map.tiles.every((tile) => Number.isInteger(tile) && tile >= -32768 && tile <= 32767)
     ) {
       throw new Error("Project's initial XP map has invalid three-layer tile data");
     }
-    await io.loadTileset(candidate.path, map.tileset_id);
+    const tileset = await io.loadTileset(candidate.path, map.tileset_id);
+    if (!tileset || tileset.id !== map.tileset_id) {
+      throw new Error("Project's initial XP map refers to a mismatched tileset");
+    }
   }
   return candidate;
 }
