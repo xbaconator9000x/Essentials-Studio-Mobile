@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "feature/android-saf-zip-export-20261029",
+  "current_work_branch": "main",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -115,7 +115,8 @@
         "PR #9 merged as 8af439cfa2d414db0df32e99f6ae341ddb82ab9d on 2026-10-29. Export ZIP compressed writes now stop before exceeding 512 MiB rather than filling app-private disk and checking after finish. Native full suite 29/29 passed (run 40856248648) and frontend+Android ARM64 debug APK passed (run 40856248690). Still requires Android document destination and genuine v21.1 desktop reopen.",
         "Draft PR #12 implements Android scoped content-URI save picker, JNI ContentResolver streaming and full byte-for-byte readback of destination ZIP, avoiding WebView Blob export. Native 31/31 tests passed run 40857477364 and Android ARM64 APK/frontend compiled run 40857477274. NOT merged or device-verified: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/12 . Physical Android SAF provider tests and genuine Essentials v21.1 desktop reopening are mandatory before acceptance.",
         "Draft PR #12 branch head 1fc5265897f03b2cea9a3f4801779948ce9650c3: native archive suite, ARM64 APK and five SAF handoff tests all passed on 2026-10-29 in runs 40879425550, 40879425542 and 40879425552. Still draft and unmerged pending latest-main integration, physical Android document-provider write/readback and real Essentials v21.1 desktop reopen.",
-        "PR #28 merged as 3e99d208927ab47d82975294ce110b644b703b8b on 2026-10-29. Independent streaming ZIP SHA-256/CRC verifier checks unchanged RXDATA, PBS, graphics and explicit directories and requires allowlisting intentional edits. Six Python tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40888016461; frontend CI passed in run 40888016366, Android APK job was still in progress at merge. Genuine v21.1 desktop reopening/device export remain unverified."
+        "PR #28 merged as 3e99d208927ab47d82975294ce110b644b703b8b on 2026-10-29. Independent streaming ZIP SHA-256/CRC verifier checks unchanged RXDATA, PBS, graphics and explicit directories and requires allowlisting intentional edits. Six Python tests passed in https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40888016461; frontend CI passed in run 40888016366, Android APK job was still in progress at merge. Genuine v21.1 desktop reopening/device export remain unverified.",
+        "PR #12 merged into main as 264af236e374fe66069a7a744be65025ede4e753 on 2026-10-30. Scoped Android SAF ContentResolver streaming/readback and synthetic ZIP import-map-edit-export verifier integrated. PR-head archive, SAF handoff, graphics and ARM64 APK workflows green (runs 40906334716, 40906334742, 40906334571, 40906334572). Physical provider readback, genuine Shattered desktop reopening and runtime play remain UNVERIFIED; ASM-005 stays in_progress."
       ]
     },
     {
@@ -155,7 +156,8 @@
         "Passages and priorities remain identical unless edited"
       ],
       "evidence": [
-        "Draft PR #38 (2026-10-30), commits bcbf3964, 496d8770 and bb51b878: preflights XP map Table and MapInfos before map-property writes, rejects ambiguous IDs and out-of-bounds events, preserves opaque Table tail bytes during resize. Five synthetic/native regression tests committed; latest native and ARM64 CI pending. Not accepted as real Shattered/device/desktop reopen evidence: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/38"
+        "Draft PR #38 (2026-10-30), commits bcbf3964, 496d8770 and bb51b878: preflights XP map Table and MapInfos before map-property writes, rejects ambiguous IDs and out-of-bounds events, preserves opaque Table tail bytes during resize. Five synthetic/native regression tests committed; latest native and ARM64 CI pending. Not accepted as real Shattered/device/desktop reopen evidence: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/38",
+        "PR #38 merged as 7a3b09972a555c04ab5c9bd5f028568c79e5b611: XP map-properties/MapInfos preflight, table-extension preservation and five native tests; PR-head native and ARM64 CI green (runs 40962768906, 40962768831). PR #37 merged as 59544eac21c495016e4117d12373a2f2e766ea1c: 3-layer map painting/undo safeguards, flood fill and touch gesture state machine; PR-head focused and ARM64 CI green (runs 40964139935, 40964139956). Real-project fidelity and phone verification pending."
       ]
     },
     {
@@ -171,7 +173,9 @@
         "Events retain conditions, triggers and page order",
         "Custom Essentials scripts remain intact"
       ],
-      "evidence": []
+      "evidence": [
+        "PR #34 merged as 51d280104a9e3e284c7c46c392dafef861f5dd9d: reject invalid/duplicate XP event mutations; PR-head native/ARM64 green (runs 40945315629, 40945315621). PR #33 merged as 04881b78cf08bc5dc958ae263f24215a6422f440: opaque event command/page metadata matching and no-write on ambiguous edits; PR-head event fidelity/native/ARM64 green (runs 40954599803, 40954599941, 40954600252). Real Shattered event editing and desktop reopen pending."
+      ]
     },
     {
       "id": "ASM-009",
@@ -203,7 +207,9 @@
         "Event panels scroll correctly on phone",
         "Back navigation never discards unsaved work"
       ],
-      "evidence": []
+      "evidence": [
+        "PR #37 merged as 59544eac21c495016e4117d12373a2f2e766ea1c: touch tap/pan/pinch/long-press event interaction with browser-free gesture regressions and ARM64 build (runs 40964139935, 40964139956). Physical Android touch and source project verification remain mandatory."
+      ]
     },
     {
       "id": "ASM-011",
