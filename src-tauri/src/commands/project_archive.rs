@@ -177,6 +177,17 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
     if candidates.next().is_some() {
         return Err("ZIP contains multiple RPG Maker projects".into());
     }
+    // Publishing only the nested project directory would silently delete any
+    // siblings when finish_import cleans the staging directory. Refuse such
+    // archives instead of losing unrelated files without warning.
+    for sibling in fs::read_dir(extracted).map_err(|e| e.to_string())? {
+        let sibling = sibling.map_err(|e| e.to_string())?;
+        if sibling.path() != project {
+            return Err(
+                "ZIP has files outside its single project folder; repackage the project without unrelated top-level files".into()
+            );
+        }
+    }
     Ok(project)
 }
 
@@ -273,6 +284,17 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
                 return Err("Cannot export a project containing symlinks".into());
             }
             if meta.is_dir() {
+                // Empty directories are part of a project too. Record each
+                // directory explicitly rather than dropping it during export.
+                let rel = path.strip_prefix(project_dir).map_err(|e| e.to_string())?;
+                let zip_name = rel
+                    .to_str()
+                    .ok_or("Cannot export non-Unicode project directory")?
+                    .replace('\\', "/");
+                clean_zip_path(&zip_name)?;
+                writer
+                    .add_directory(format!("{zip_name}/"), options)
+                    .map_err(|e| e.to_string())?;
                 directories.push(path);
                 continue;
             }
@@ -364,4 +386,149 @@ pub async fn discard_project_archive_export(
         fs::remove_file(path).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod archive_roundtrip_tests {
+    use super::{extract_archive, export_zip, finish_import, unique_id};
+    use std::fs::{self, File};
+    use std::io::{Read, Write};
+    use std::path::{Path, PathBuf};
+    use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
+
+    struct Sandbox(PathBuf);
+
+    impl Sandbox {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "essentials-archive-roundtrip-{}",
+                unique_id().expect("unique test id")
+            ));
+            fs::create_dir(&path).expect("create isolated fixture");
+            Self(path)
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn sample_zip(path: &Path, prefix: &str, extra: Option<&str>) {
+        let file = File::create(path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        for (name, bytes) in [
+            ("Game.rxproj", b"RPGXP 1.02".as_slice()),
+            ("Data/Map001.rxdata", &[0, 255, 128, 3, 4, 0][..]),
+            ("Data/Scripts.rxdata", &[4, 8, 1, 255, 0, 23][..]),
+            ("PBS/pokemon.txt", b"# keep comment\r\n[TEST]\r\nName = Test\r\n"),
+            ("Graphics/Tilesets/Example.png", &[137, 80, 78, 71, 0, 1, 2][..]),
+        ] {
+            zip.start_file(format!("{prefix}{name}"), options).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.add_directory(format!("{prefix}Graphics/Empty/"), options).unwrap();
+        if let Some(name) = extra {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(b"unrelated").unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    fn read_zip_file(zip_path: &Path, name: &str) -> Vec<u8> {
+        let mut zip = ZipArchive::new(File::open(zip_path).unwrap()).unwrap();
+        let mut contents = Vec::new();
+        zip.by_name(name).unwrap().read_to_end(&mut contents).unwrap();
+        contents
+    }
+
+    #[test]
+    fn nested_project_import_export_reimport_preserves_bytes_and_empty_directories() {
+        let sandbox = Sandbox::new();
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let original = imports.join("import-test.zip");
+        sample_zip(&original, "ExampleProject/", None);
+        let original_zip_bytes = fs::read(&original).unwrap();
+
+        let imported = finish_import(
+            original.clone(), imports.clone(), projects.clone(), "import-test".into()
+        ).expect("import project");
+        let imported = PathBuf::from(imported);
+        assert!(imported.join("Game.rxproj").is_file());
+        assert!(imported.join("Graphics/Empty").is_dir());
+        assert_eq!(fs::read(imported.join("Data/Map001.rxdata")).unwrap(),
+            [0, 255, 128, 3, 4, 0]);
+        assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
+            b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
+
+        let exported = sandbox.path("exported.zip");
+        assert!(export_zip(&imported, &exported).unwrap() > 0);
+        for name in [
+            "Game.rxproj", "Data/Map001.rxdata", "Data/Scripts.rxdata",
+            "PBS/pokemon.txt", "Graphics/Tilesets/Example.png",
+        ] {
+            let actual = read_zip_file(&exported, name);
+            let expected = fs::read(imported.join(name)).unwrap();
+            assert_eq!(actual, expected, "byte mismatch in {name}");
+        }
+        let zip = ZipArchive::new(File::open(&exported).unwrap()).unwrap();
+        assert!(zip.file_names().any(|name| name == "Graphics/Empty/"));
+
+        let reimported_root = sandbox.path("reimported");
+        let reimported = extract_archive(&exported, &reimported_root).unwrap();
+        assert_eq!(fs::read(reimported.join("Data/Scripts.rxdata")).unwrap(),
+            fs::read(imported.join("Data/Scripts.rxdata")).unwrap());
+        assert!(reimported.join("Graphics/Empty").is_dir());
+
+        // The caller's original input archive is never modified; finish_import
+        // deliberately removes only its app-private staging copy.
+        let retained_original = sandbox.path("original-copy.zip");
+        sample_zip(&retained_original, "ExampleProject/", None);
+        assert_eq!(fs::read(retained_original).unwrap(), original_zip_bytes);
+    }
+
+    #[test]
+    fn rejects_nested_project_with_unrelated_sibling_instead_of_dropping_it() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("with-sibling.zip");
+        sample_zip(&archive, "ExampleProject/", Some("outside.txt"));
+        let output = sandbox.path("extracted");
+        let error = extract_archive(&archive, &output).unwrap_err();
+        assert!(error.contains("outside its single project folder"), "{error}");
+    }
+
+    #[test]
+    fn refuses_traversal_and_duplicate_files() {
+        let sandbox = Sandbox::new();
+        let traversal = sandbox.path("traversal.zip");
+        {
+            let mut zip = ZipWriter::new(File::create(&traversal).unwrap());
+            zip.start_file("../escape.txt", SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"should never escape").unwrap();
+            zip.finish().unwrap();
+        }
+        assert!(extract_archive(&traversal, &sandbox.path("out-traversal")).is_err());
+        assert!(!sandbox.path("escape.txt").exists());
+
+        let duplicate = sandbox.path("duplicate.zip");
+        {
+            let mut zip = ZipWriter::new(File::create(&duplicate).unwrap());
+            for _ in 0..2 {
+                zip.start_file("Game.rxproj", SimpleFileOptions::default()).unwrap();
+                zip.write_all(b"duplicate").unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        assert!(extract_archive(&duplicate, &sandbox.path("out-duplicate")).is_err());
+    }
 }
