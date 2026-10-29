@@ -20,6 +20,7 @@ import {
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages } from "./services/imageLoader";
+import { importProjectZip } from "./services/archiveApi";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -105,6 +106,8 @@ function AppContent() {
   const mapIsDirtyRef = useRef(false);
   const currentMapIdRef = useRef<number | null>(null);
   const projectRef = useRef<ProjectInfo | null>(null);
+  const archivePickerRef = useRef<HTMLInputElement | null>(null);
+  const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
 
   useEffect(() => { mapDataRef.current = mapData; }, [mapData]);
   useEffect(() => { projectRef.current = project; }, [project]);
@@ -201,6 +204,26 @@ function AppContent() {
       setError(`Dialog error: ${err}`);
     }
   }, [handleOpenProject]);
+
+  // ── Android-safe archive import (browser file input, private app storage) ──
+  const handleImportProjectZip = useCallback(async (file: File) => {
+    if (projectRef.current && dirtyCount > 0) {
+      const proceed = await confirm("Unsaved project changes exist. Import a different project anyway?");
+      if (!proceed) return;
+    }
+    setLoading(true);
+    setArchiveProgress(0);
+    setError(null);
+    try {
+      const privatePath = await importProjectZip(file, setArchiveProgress);
+      await handleOpenProject(privatePath);
+    } catch (err) {
+      setError(`Project ZIP import failed: ${String(err)}`);
+    } finally {
+      setLoading(false);
+      setArchiveProgress(null);
+    }
+  }, [dirtyCount, handleOpenProject]);
 
   // ── Map selection with unsaved-changes guard ───────────────────────────────
 
@@ -530,6 +553,16 @@ function AppContent() {
             >
               {loading ? "Opening..." : "Open Project Folder"}
             </button>
+            <button className="app-welcome-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
+              Import Essentials Project ZIP
+            </button>
+            <input ref={archivePickerRef} type="file" accept=".zip,application/zip" style={{ display: "none" }}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+            {archiveProgress !== null && <p>Importing project: {archiveProgress}%</p>}
             <p className="app-welcome-hint">
               Select a folder containing a Game.rxproj file
               <br />
@@ -572,6 +605,16 @@ function AppContent() {
           >
             ▶ Play
           </button>
+          <button className="app-titlebar-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
+            Import ZIP...
+          </button>
+          <input ref={archivePickerRef} type="file" accept=".zip,application/zip" style={{ display: "none" }}
+            onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleImportProjectZip(file);
+            }} />
+          {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
           <button className="app-titlebar-btn" onClick={handleBrowseProject}>
             Open...
           </button>
