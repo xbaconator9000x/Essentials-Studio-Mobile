@@ -8,6 +8,7 @@
 import { getAssetPath } from "./tauriApi";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { DecodedImageCache } from "./imageCacheBudget";
+import { boundedAsyncMap } from "./boundedAsyncMap";
 
 // Count-only LRU limits are insufficient for large RPG Maker XP tilesets.
 // Approximate decoded RGBA memory at 4 bytes/pixel: 12M pixels ~48 MiB.
@@ -218,12 +219,19 @@ export async function loadAllTilesetImages(
   autotiles: (HTMLImageElement | null)[];
 }> {
   console.log(`[imageLoader] loadAllTilesetImages: tileset='${tilesetName}', autotiles=[${autotileNames.map(n => `'${n}'`).join(', ')}]`);
-  const [tileset, ...autotiles] = await Promise.all([
-    loadTilesetImage(projectPath, tilesetName),
-    ...autotileNames.map((name) =>
+  const loads: Array<() => Promise<HTMLImageElement | null>> = [
+    () => loadTilesetImage(projectPath, tilesetName),
+    ...autotileNames.map((name) => () =>
       name ? loadAutotileImage(projectPath, name) : Promise.resolve(null)
     ),
-  ]);
+  ];
+  // On Android, each in-flight data-URL load may temporarily hold source
+  // bytes, Base64, and a decoded bitmap. The LRU only limits *retained*
+  // images, so also cap concurrent transfers. Keep the seven XP autotile
+  // slots in their original order, including empty ones.
+  const [tileset, ...autotiles] = isAndroidTauri()
+    ? await boundedAsyncMap(loads, 2, (load) => load())
+    : await Promise.all(loads.map((load) => load()));
 
   console.log(`[imageLoader] Results: tileset=${tileset ? `${tileset.width}x${tileset.height}` : 'null'}, autotiles=[${autotiles.map(a => a ? `${a.width}x${a.height}` : 'null').join(', ')}]`);
   return { tileset, autotiles };
