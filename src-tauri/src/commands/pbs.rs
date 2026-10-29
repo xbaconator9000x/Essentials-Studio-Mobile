@@ -122,9 +122,9 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
     }) {
         return Err("Structured PBS sections/keys changed; use the raw PBS editor for additions, removals or reordering to preserve comments and unknown data".into());
     }
-    if edited.iter().any(|section| section.header.contains(['\r', '\n', ']'])
+    if edited.iter().any(|section| section.header.contains(&['\r', '\n', ']'][..])
         || section.fields.iter().any(|field| {
-            field.key.contains(['=', '\r', '\n']) || field.value.contains(['\r', '\n'])
+            field.key.contains(&['=', '\r', '\n'][..]) || field.value.contains(&['\r', '\n'][..])
         })) {
         return Err("PBS field/header contains an invalid delimiter or newline".into());
     }
@@ -132,7 +132,7 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
     let mut section_index: Option<usize> = None;
     let mut field_index = 0usize;
     for raw_line in original.split_inclusive('\n') {
-        let bare = raw_line.trim_end_matches(['\r', '\n']);
+        let bare = raw_line.trim_end_matches(&['\r', '\n'][..]);
         let trimmed = bare.trim_end();
         if pbs_header(trimmed).is_some() {
             section_index = Some(section_index.map_or(0, |i| i + 1));
@@ -151,8 +151,8 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
             // the original line ending; only replace the parsed value.
             let after_equals = &bare[eq + 1..];
             let leading_len = after_equals.len()
-                - after_equals.trim_start_matches([' ', '\t']).len();
-            let trimmed_end = after_equals.trim_end_matches([' ', '\t']);
+                - after_equals.trim_start_matches(&[' ', '\t'][..]).len();
+            let trimmed_end = after_equals.trim_end_matches(&[' ', '\t'][..]);
             let trailing = if trimmed_end.len() <= leading_len {
                 ""
             } else {
@@ -278,7 +278,7 @@ mod pbs_preservation_tests {
         let original = "# header\r\n[PIKACHU] # section note\r\nName   =  Pikachu  \r\n# preserve me\r\nUnknown directive\r\nTypes=ELECTRIC\r\nCustom = A=B\r\n";
         let mut sections = parse_pbs_content(original);
         assert_eq!(merge_pbs_existing(original, &sections).unwrap(), original);
-        sections[0].fields[2].value = "ELECTRIC,FAIRY".into();
+        sections[0].fields[1].value = "ELECTRIC,FAIRY".into();
         let expected = original.replace("Types=ELECTRIC", "Types=ELECTRIC,FAIRY");
         assert_eq!(merge_pbs_existing(original, &sections).unwrap(), expected);
         assert_eq!(parse_pbs_content(&expected), sections);
