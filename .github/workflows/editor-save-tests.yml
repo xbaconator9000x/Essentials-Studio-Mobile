@@ -7,6 +7,8 @@ on:
       - 'src/App.tsx'
       - 'src/services/saveGuards.ts'
       - 'src/services/projectOpenGuards.ts'
+      - 'src/services/importOpenGuards.ts'
+      - 'tests/importOpenGuards.test.mjs'
       - 'tests/projectOpenGuards.test.mjs'
       - 'tests/saveGuards.test.mjs'
       - '.github/workflows/editor-save-tests.yml'
@@ -16,6 +18,8 @@ on:
       - 'src/App.tsx'
       - 'src/services/saveGuards.ts'
       - 'src/services/projectOpenGuards.ts'
+      - 'src/services/importOpenGuards.ts'
+      - 'tests/importOpenGuards.test.mjs'
       - 'tests/projectOpenGuards.test.mjs'
       - 'tests/saveGuards.test.mjs'
       - '.github/workflows/editor-save-tests.yml'
@@ -33,4 +37,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify save errors propagate and dirty state remains set
-        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs
+        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs
