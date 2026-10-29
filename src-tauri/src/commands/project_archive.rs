@@ -353,6 +353,13 @@ pub async fn finish_project_archive_import(
 /// Never accept arbitrary project paths or follow a symlink outside the root.
 fn discard_imported_project_in(root: &Path, requested: &Path) -> Result<(), String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
+    // Canonicalizing the requested directory before checking its file type
+    // would turn a sibling symlink into the *target* path, potentially
+    // deleting a different, active import inside this same projects root.
+    let entry = fs::symlink_metadata(requested).map_err(|e| e.to_string())?;
+    if entry.file_type().is_symlink() || !entry.is_dir() {
+        return Err("Imported project cleanup refuses links and non-directories".into());
+    }
     let project = requested.canonicalize().map_err(|e| e.to_string())?;
     if project.parent() != Some(root.as_path()) {
         return Err("Only direct imported app-private projects may be discarded".into());
@@ -926,6 +933,24 @@ mod archive_roundtrip_tests {
         symlink(&outside, root.join("import-link")).unwrap();
         assert!(discard_imported_project_in(&root, &root.join("import-link")).is_err());
         assert_eq!(fs::read(outside.join("Game.rxproj")).unwrap(), b"original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_import_cleanup_rejects_symlink_to_sibling_active_project() {
+        use super::discard_imported_project_in;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let root = sandbox.path("projects");
+        let active = root.join("import-active");
+        fs::create_dir_all(&active).unwrap();
+        fs::write(active.join("Game.rxproj"), b"original").unwrap();
+        fs::write(active.join("Data.txt"), b"must survive").unwrap();
+        let alias = root.join("import-failed");
+        symlink(&active, &alias).unwrap();
+        assert!(discard_imported_project_in(&root, &alias).is_err());
+        assert_eq!(fs::read(active.join("Data.txt")).unwrap(), b"must survive");
+        assert!(alias.symlink_metadata().unwrap().file_type().is_symlink());
     }
 
     #[test]
