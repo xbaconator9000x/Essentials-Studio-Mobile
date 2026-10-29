@@ -301,12 +301,95 @@ pub fn dump(value: &RubyValue) -> Result<Vec<u8>, MarshalWriteError> {
     Ok(buf)
 }
 
-/// Convenience function to serialize to a file.
-pub fn dump_file(
-    path: &std::path::Path,
-    value: &RubyValue,
-) -> Result<(), MarshalWriteError> {
-    let data = dump(value)?;
-    std::fs::write(path, &data)?;
-    Ok(())
+/// Serialize an XP data file via a same-directory staging file on Android/Unix.
+/// A failed write cannot truncate the existing Map, Event or PBS Marshal file.
+/// Windows retains legacy replacement behaviour pending a separate Win32 test.
+pub fn dump_file(path: &std::path::Path, value: &RubyValue) -> Result<(), MarshalWriteError> {
+    let bytes = dump(value)?;
+    #[cfg(windows)]
+    {
+        std::fs::write(path, &bytes)?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        use std::fs::{self, OpenOptions};
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let filename = path.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "Marshal destination has no filename")
+        })?;
+        let (mut staged, staging_path) = loop {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let mut name = std::ffi::OsString::from(".");
+            name.push(filename);
+            name.push(format!(".{}.{id}.tmp", std::process::id()));
+            let candidate = parent.join(name);
+            match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+                Ok(file) => break (file, candidate),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.into()),
+            }
+        };
+        let result = (|| -> io::Result<()> {
+            staged.write_all(&bytes)?;
+            if let Ok(meta) = fs::metadata(path) {
+                if meta.is_file() { staged.set_permissions(meta.permissions())?; }
+            }
+            staged.sync_all()?;
+            drop(staged);
+            fs::rename(&staging_path, path)?;
+            // Sync parent metadata when available; some storage backends deny it.
+            if let Ok(dir) = fs::File::open(parent) { let _ = dir.sync_all(); }
+            Ok(())
+        })();
+        if result.is_err() { let _ = fs::remove_file(&staging_path); }
+        result.map_err(MarshalWriteError::from)
+    }
+}
+
+#[cfg(test)]
+mod file_save_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn test_root() -> std::path::PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "essentials-marshal-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn saved_map_reopens_without_orphan_staging_files() {
+        let dir = test_root();
+        let path = dir.join("Map001.rxdata");
+        std::fs::write(&path, b"old contents").unwrap();
+        let value = RubyValue::Array(vec![
+            RubyValue::Integer(384), RubyValue::Integer(48), RubyValue::Integer(1024)
+        ]);
+        dump_file(&path, &value).unwrap();
+        assert_eq!(crate::marshal::load_file(&path).unwrap(), value);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_save_keeps_original_destination_untouched() {
+        let dir = test_root();
+        let path = dir.join("Map002.rxdata");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("original"), b"preserve me").unwrap();
+        assert!(dump_file(&path, &RubyValue::Nil).is_err());
+        assert_eq!(std::fs::read(path.join("original")).unwrap(), b"preserve me");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
