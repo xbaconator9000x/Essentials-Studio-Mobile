@@ -28,6 +28,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Verify project ZIP IPC chunk framing
+        run: node --experimental-strip-types --test tests/archiveChunks.test.mjs
       - run: node scripts/check-development-queue.mjs
       - name: Audit inherited ESLint findings (non-blocking during port bootstrap)
         continue-on-error: true
