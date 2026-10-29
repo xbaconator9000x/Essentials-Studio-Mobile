@@ -114,13 +114,28 @@ fn pbs_field(line: &str) -> Option<(String, String, usize)> {
 /// custom field formatting or CRLF. Patch only known value spans in place.
 /// Structural changes require the raw PBS editor until a lossless structural
 /// merge is implemented; rejecting them is safer than rewriting the file.
+fn append_pbs_fields(out: &mut String, new_fields: &[PbsField], newline: &str) {
+    for field in new_fields {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push_str(newline);
+        }
+        out.push_str(&field.key);
+        out.push_str(" = ");
+        out.push_str(&field.value);
+        out.push_str(newline);
+    }
+}
+
+/// Merge changed values in place and append newly added fields/sections.
+/// Deletion/reordering of existing structure is rejected instead of risking
+/// loss of opaque lines and comments; raw editing remains available.
 fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, String> {
     let parsed = parse_pbs_content(original);
-    if parsed.len() != edited.len() || parsed.iter().zip(edited).any(|(old, new)| {
-        old.header != new.header || old.fields.len() != new.fields.len()
+    if parsed.len() > edited.len() || parsed.iter().zip(edited).any(|(old, new)| {
+        old.header != new.header || old.fields.len() > new.fields.len()
             || old.fields.iter().zip(&new.fields).any(|(a, b)| a.key != b.key)
     }) {
-        return Err("Structured PBS sections/keys changed; use the raw PBS editor for additions, removals or reordering to preserve comments and unknown data".into());
+        return Err("Structured PBS sections/keys were removed or reordered; use the raw PBS editor to preserve comments and unknown data".into());
     }
     if edited.iter().any(|section| section.header.contains(&['\r', '\n', ']'][..])
         || section.fields.iter().any(|field| {
@@ -128,6 +143,7 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
         })) {
         return Err("PBS field/header contains an invalid delimiter or newline".into());
     }
+    let newline = if original.contains("\r\n") { "\r\n" } else { "\n" };
     let mut out = String::with_capacity(original.len());
     let mut section_index: Option<usize> = None;
     let mut field_index = 0usize;
@@ -135,6 +151,10 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
         let bare = raw_line.trim_end_matches(&['\r', '\n'][..]);
         let trimmed = bare.trim_end();
         if pbs_header(trimmed).is_some() {
+            if let Some(previous) = section_index {
+                append_pbs_fields(&mut out,
+                    &edited[previous].fields[parsed[previous].fields.len()..], newline);
+            }
             section_index = Some(section_index.map_or(0, |i| i + 1));
             field_index = 0;
             out.push_str(raw_line);
@@ -166,6 +186,19 @@ fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, S
         } else {
             out.push_str(raw_line);
         }
+    }
+    if let Some(last) = section_index {
+        append_pbs_fields(&mut out, &edited[last].fields[parsed[last].fields.len()..], newline);
+    }
+    for section in &edited[parsed.len()..] {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push_str(newline);
+        }
+        out.push('[');
+        out.push_str(&section.header);
+        out.push(']');
+        out.push_str(newline);
+        append_pbs_fields(&mut out, &section.fields, newline);
     }
     Ok(out)
 }
@@ -293,6 +326,19 @@ mod pbs_preservation_tests {
         let mut sections = parse_pbs_content(original);
         sections.pop();
         assert!(merge_pbs_existing(original, &sections).is_err());
+    }
+
+    #[test]
+    fn appending_fields_and_sections_keeps_existing_comments_and_line_endings() {
+        let original = "# header\r\n[ONE]\r\nName = First\r\n# tail comment\r\n";
+        let mut sections = parse_pbs_content(original);
+        sections[0].fields.push(PbsField { key: "NewField".into(), value: "value".into() });
+        sections.push(PbsSection { header: "TWO".into(), fields: vec![
+            PbsField { key: "Name".into(), value: "Second".into() },
+        ] });
+        let merged = merge_pbs_existing(original, &sections).unwrap();
+        assert_eq!(merged, format!("{original}NewField = value\r\n[TWO]\r\nName = Second\r\n"));
+        assert_eq!(parse_pbs_content(&merged), sections);
     }
 
     #[test]
