@@ -540,7 +540,16 @@ fn mutate_event_hash(
     let RubyValue::Hash(pairs) = events else {
         return Err("Map @events is not a Ruby hash".into());
     };
-    let position = pairs.iter().position(|(key, _)| key.as_int() == Some(event_id));
+    // Ruby Hash data may be malformed or manually edited to contain duplicate
+    // serialized keys. Removing only the first match would report success while
+    // leaving the event present. Refuse ambiguous mutations without writing.
+    let mut matches = pairs.iter().enumerate()
+        .filter(|(_, (key, _))| key.as_int() == Some(event_id))
+        .map(|(index, _)| index);
+    let position = matches.next();
+    if matches.next().is_some() {
+        return Err(format!("Event {event_id} has duplicate Marshal hash keys"));
+    }
     match (replacement, position) {
         (Some(event), None) => pairs.push((RubyValue::Integer(event_id), event)),
         (Some(_), Some(_)) => return Err(format!("Event {event_id} already exists")),
@@ -566,6 +575,25 @@ mod event_mutation_safety_tests {
         assert!(mutate_event_hash(&mut map, 7, Some(RubyValue::Integer(1))).is_err());
         mutate_event_hash(&mut map, 7, None).unwrap();
         assert_eq!(map, before, "unrelated map fields changed");
+    }
+
+    #[test]
+    fn duplicate_event_keys_reject_deletion_and_insertion_without_mutating_map() {
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        if let RubyValue::Object(ref mut obj) = map {
+            let (_, events) = obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap();
+            let RubyValue::Hash(pairs) = events else { panic!("expected event hash") };
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(10)));
+            pairs.push((RubyValue::Integer(7), RubyValue::Integer(11)));
+        }
+        let original = map.clone();
+        let delete_error = mutate_event_hash(&mut map, 7, None).unwrap_err();
+        assert!(delete_error.contains("duplicate"), "{delete_error}");
+        assert_eq!(map, original, "ambiguous delete must not modify map");
+        let insert_error = mutate_event_hash(&mut map, 7, Some(RubyValue::Nil)).unwrap_err();
+        assert!(insert_error.contains("duplicate"), "{insert_error}");
+        assert_eq!(map, original, "ambiguous insert must not modify map");
     }
 
     #[test]
