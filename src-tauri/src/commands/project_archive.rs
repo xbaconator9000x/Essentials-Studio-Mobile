@@ -222,3 +222,146 @@ mod tests {
         }
     }
 }
+
+
+/// An exported ZIP is always created inside the app sandbox before any user share action.
+#[derive(serde::Serialize)]
+pub struct ProjectArchiveExport {
+    pub export_id: String,
+    pub size: u64,
+}
+
+fn safe_export_id(id: &str) -> Result<(), String> {
+    if id.starts_with("export-")
+        && id.len() <= 90
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        Ok(())
+    } else {
+        Err("Invalid export ID".into())
+    }
+}
+
+fn exports_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("exports");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(target)
+        .map_err(|e| e.to_string())?;
+    let mut writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut directories = vec![project_dir.to_path_buf()];
+    let mut count = 0usize;
+    let mut total_bytes = 0u64;
+    while let Some(dir) = directories.pop() {
+        let mut entries = fs::read_dir(dir)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if meta.file_type().is_symlink() {
+                return Err("Cannot export a project containing symlinks".into());
+            }
+            if meta.is_dir() {
+                directories.push(path);
+                continue;
+            }
+            if !meta.is_file() {
+                return Err("Cannot export a project containing special files".into());
+            }
+            count += 1;
+            if count > MAX_ENTRIES || meta.len() > MAX_FILE_BYTES {
+                return Err("Export contains too many files or an oversized file".into());
+            }
+            total_bytes = total_bytes.checked_add(meta.len()).ok_or("Export overflow")?;
+            if total_bytes > MAX_UNPACKED_BYTES {
+                return Err("Project exceeds maximum export size".into());
+            }
+            let rel = path.strip_prefix(project_dir).map_err(|e| e.to_string())?;
+            let zip_name = rel
+                .to_str()
+                .ok_or("Cannot export non-Unicode project filename")?
+                .replace('\\', "/");
+            clean_zip_path(&zip_name)?;
+            writer.start_file(zip_name, options).map_err(|e| e.to_string())?;
+            let mut source = File::open(path).map_err(|e| e.to_string())?;
+            io::copy(&mut source, &mut writer).map_err(|e| e.to_string())?;
+        }
+    }
+    let file = writer.finish().map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    if size > MAX_ARCHIVE_BYTES {
+        return Err("Exported ZIP exceeds 512 MiB archive limit".into());
+    }
+    Ok(size)
+}
+
+#[tauri::command]
+pub async fn begin_project_archive_export(
+    app: AppHandle,
+    project_path: String,
+) -> Result<ProjectArchiveExport, String> {
+    let root = projects_root(&app)?.canonicalize().map_err(|e| e.to_string())?;
+    let project = PathBuf::from(project_path).canonicalize().map_err(|e| e.to_string())?;
+    if !project.starts_with(&root) || project == root || !project.join("Game.rxproj").is_file() {
+        return Err("Only imported app-private XP projects can be exported".into());
+    }
+    let id = unique_id()?.replacen("import-", "export-", 1);
+    let target = exports_root(&app)?.join(format!("{id}.zip"));
+    let target_copy = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || export_zip(&project, &target_copy))
+        .await
+        .map_err(|e| format!("Export worker failed: {e}"))?;
+    match result {
+        Ok(size) => Ok(ProjectArchiveExport { export_id: id, size }),
+        Err(e) => {
+            let _ = fs::remove_file(target);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn read_project_archive_export_chunk(
+    app: AppHandle,
+    export_id: String,
+    offset: u64,
+) -> Result<String, String> {
+    safe_export_id(&export_id)?;
+    let path = exports_root(&app)?.join(format!("{export_id}.zip"));
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    if offset >= size || size > MAX_ARCHIVE_BYTES {
+        return Err("Invalid export offset".into());
+    }
+    use std::io::Seek;
+    file.seek(io::SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::with_capacity(MAX_CHUNK_BYTES);
+    file.take(MAX_CHUNK_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+pub async fn discard_project_archive_export(
+    app: AppHandle,
+    export_id: String,
+) -> Result<(), String> {
+    safe_export_id(&export_id)?;
+    let path = exports_root(&app)?.join(format!("{export_id}.zip"));
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
