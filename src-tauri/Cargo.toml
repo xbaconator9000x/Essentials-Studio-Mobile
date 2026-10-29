@@ -15,9 +15,11 @@ notify = "6"          # File watching
 image = "0.25"        # PNG loading
 base64 = "0.22"
 tokio = { version = "1", features = ["full"] }
-rodio = { version = "0.19", features = ["mp3", "vorbis", "wav", "flac"] }
 log = "0.4"
 env_logger = "0.11"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rodio = { version = "0.19", features = ["mp3", "vorbis", "wav", "flac"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
