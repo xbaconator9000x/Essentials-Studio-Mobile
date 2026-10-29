@@ -374,7 +374,7 @@ pub async fn save_event(
                     for (key, event_val) in pairs.iter_mut() {
                         if let Some(id) = key.as_int() {
                             if id == event.id {
-                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value());
+                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value())?;
                                 replaced = true;
                                 break;
                             }
