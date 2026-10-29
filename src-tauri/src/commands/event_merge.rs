@@ -104,6 +104,16 @@ fn same_record_kind(original: &RubyValue, edited: &RubyValue) -> bool {
 }
 
 fn merge_event_sequence(previous: &[RubyValue], current: &[RubyValue]) -> Result<RubyValue, String> {
+    // No visible sequence edit: retain original positional identity even if
+    // two indistinguishable commands have different opaque extension fields.
+    // Otherwise a simple event-name save could reject a valid legacy map.
+    if previous.len() == current.len()
+        && previous.iter().zip(current).all(|(old, new)| same_visible_fields(old, new))
+    {
+        return Ok(RubyValue::Array(previous.iter().zip(current)
+            .map(|(old, new)| preserve_unedited_event_fields(old, new))
+            .collect::<Result<Vec<_>, _>>()?));
+    }
     let mut used = vec![false; previous.len()];
     let mut matched = vec![None; current.len()];
     // Match only unique visible records on BOTH sides. Greedy matching of
@@ -341,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_visible_commands_with_distinct_extensions_are_not_mispaired() {
+    fn unchanged_duplicate_visible_commands_keep_positional_extensions() {
         let original = RubyValue::Array(vec![
             command(101, "same", Some(11)),
             command(101, "same", Some(22)),
@@ -350,7 +360,10 @@ mod tests {
             command(101, "same", None),
             command(101, "same", None),
         ]);
-        assert!(preserve_unedited_event_fields(&original, &edited).is_err());
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
+        let commands = merged.as_array().unwrap();
+        assert_eq!(marker(&commands[0]), Some(11));
+        assert_eq!(marker(&commands[1]), Some(22));
     }
 
     #[test]
