@@ -456,7 +456,7 @@ mod event_save_integrity_tests {
             ("pages", RubyValue::Array(vec![page])),
         ]);
         let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
-        let map_obj = map.as_object_mut().unwrap();
+        let RubyValue::Object(ref mut map_obj) = map else { panic!("map object") };
         let events = map_obj.instance_vars.iter_mut()
             .find(|(name, _)| name == "@events").unwrap();
         events.1 = RubyValue::Hash(vec![(RubyValue::Integer(1), event.clone())]);
