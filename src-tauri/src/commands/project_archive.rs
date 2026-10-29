@@ -295,32 +295,40 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
         }
     }
 
-    if extracted.join("Game.rxproj").is_file() {
-        return Ok(extracted.to_path_buf());
-    }
-    let children = fs::read_dir(extracted).map_err(|e| e.to_string())?;
-    let mut candidates = children
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.is_dir() && p.join("Game.rxproj").is_file());
-    let project = candidates.next().ok_or(
-        "ZIP does not contain Game.rxproj at the root or inside one project folder",
-    )?;
-    if candidates.next().is_some() {
-        return Err("ZIP contains multiple RPG Maker projects".into());
-    }
-    // Publishing only the nested project directory would silently delete any
-    // siblings when finish_import cleans the staging directory. Refuse such
-    // archives instead of losing unrelated files without warning.
-    for sibling in fs::read_dir(extracted).map_err(|e| e.to_string())? {
-        let sibling = sibling.map_err(|e| e.to_string())?;
-        if sibling.path() != project {
+    discover_project_root(extracted)
+}
+
+/// ZIPs created by GitHub or project backup tools may wrap the actual RMXP
+/// project in more than one directory (e.g. repository/project/Game.rxproj).
+/// Follow only a bounded chain of *single* directories. Never silently discard
+/// sibling files or an additional project when the staging tree is removed.
+fn discover_project_root(extracted: &Path) -> Result<PathBuf, String> {
+    const MAX_WRAPPER_DIRS: usize = 4;
+    let mut candidate = extracted.to_path_buf();
+    for depth in 0..=MAX_WRAPPER_DIRS {
+        if candidate.join("Game.rxproj").is_file() {
+            return Ok(candidate);
+        }
+        if depth == MAX_WRAPPER_DIRS {
+            return Err("ZIP project root exceeds four wrapper directories; repackage with Game.rxproj closer to the ZIP root".into());
+        }
+        let mut entries = fs::read_dir(&candidate).map_err(|e| e.to_string())?;
+        let only = entries
+            .next()
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .ok_or("ZIP does not contain Game.rxproj in a project directory")?;
+        if entries.next().transpose().map_err(|e| e.to_string())?.is_some() {
             return Err(
-                "ZIP has files outside its single project folder; repackage the project without unrelated top-level files".into()
+                "ZIP has files outside its single project folder or multiple RPG Maker projects; repackage the project without unrelated wrapper files".into()
             );
         }
+        if !only.file_type().map_err(|e| e.to_string())?.is_dir() {
+            return Err("ZIP does not contain Game.rxproj in a project directory".into());
+        }
+        candidate = only.path();
     }
-    Ok(project)
+    unreachable!("bounded wrapper search returns within the loop")
 }
 
 fn finish_import(archive_path: PathBuf, imports: PathBuf, projects: PathBuf, id: String) -> Result<String, String> {
@@ -835,6 +843,63 @@ mod archive_roundtrip_tests {
         // The caller's original input archive is never modified; finish_import
         // deliberately removes only its app-private staging copy.
         assert_eq!(fs::read(retained_original).unwrap(), original_zip_bytes);
+    }
+
+    #[test]
+    fn discovers_bounded_multilevel_project_root_without_losing_source_bytes() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("multi-wrapper.zip");
+        sample_zip(&archive, "Repository/Essentials/Shattered/", None);
+        let original_zip = fs::read(&archive).unwrap();
+        let imported = extract_archive(&archive, &sandbox.path("extracted")).unwrap();
+        assert_eq!(imported, sandbox.path("extracted/Repository/Essentials/Shattered"));
+        assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
+            b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
+        assert_eq!(fs::read(&archive).unwrap(), original_zip);
+
+        let exported = sandbox.path("repacked.zip");
+        export_zip(&imported, &exported).unwrap();
+        assert_eq!(read_zip_file(&exported, "Data/Scripts.rxdata"),
+            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+        assert_eq!(read_zip_file(&exported, "PBS/pokemon.txt"),
+            read_zip_file(&archive, "Repository/Essentials/Shattered/PBS/pokemon.txt"));
+    }
+
+    #[test]
+    fn rejects_siblings_at_every_wrapper_level_without_publishing_partial_project() {
+        for sibling in ["Repository/README.md", "Repository/Essentials/notes.txt"] {
+            let sandbox = Sandbox::new();
+            let imports = sandbox.path("imports");
+            let projects = sandbox.path("projects");
+            fs::create_dir_all(&imports).unwrap();
+            fs::create_dir_all(&projects).unwrap();
+            let archive = imports.join("import-test.zip");
+            sample_zip(&archive, "Repository/Essentials/Shattered/", Some(sibling));
+            let error = finish_import(archive, imports.clone(), projects.clone(), "import-test".into())
+                .unwrap_err();
+            assert!(error.contains("outside its single project folder"), "{error}");
+            assert!(!projects.join("import-test").exists());
+            assert!(!imports.join("import-test-extracted").exists());
+        }
+    }
+
+    #[test]
+    fn rejects_excessive_wrapper_depth_and_multiple_project_roots() {
+        let sandbox = Sandbox::new();
+        let deep = sandbox.path("too-deep.zip");
+        sample_zip(&deep, "One/Two/Three/Four/Five/", None);
+        let error = extract_archive(&deep, &sandbox.path("too-deep-extracted")).unwrap_err();
+        assert!(error.contains("four wrapper directories"), "{error}");
+
+        let multi = sandbox.path("multiple-projects.zip");
+        let mut zip = ZipWriter::new(File::create(&multi).unwrap());
+        for path in ["First/Game.rxproj", "Second/Game.rxproj"] {
+            zip.start_file(path, SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"RPGXP 1.02").unwrap();
+        }
+        zip.finish().unwrap();
+        let error = extract_archive(&multi, &sandbox.path("multiple-extracted")).unwrap_err();
+        assert!(error.contains("multiple RPG Maker projects"), "{error}");
     }
 
     #[test]
