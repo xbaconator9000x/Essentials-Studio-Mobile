@@ -68,49 +68,106 @@ pub async fn load_pbs_file(
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read {filename}: {e}"))?;
 
+    Ok(parse_pbs_content(&content))
+}
+
+/// Parse the editable section/field view without normalizing the source file.
+fn parse_pbs_content(content: &str) -> Vec<PbsSection> {
     let mut sections: Vec<PbsSection> = Vec::new();
     let mut current: Option<PbsSection> = None;
-
     for line in content.lines() {
         let trimmed = line.trim_end();
-
-        // Skip blank lines and comments
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Section header: [IDENTIFIER] optionally followed by whitespace / inline comment
-        if trimmed.starts_with('[') {
-            if let Some(close_pos) = trimmed.find(']') {
-                let header = trimmed[1..close_pos].trim().to_string();
-                let rest = trimmed[close_pos + 1..].trim();
-                if rest.is_empty() || rest.starts_with('#') {
-                    if let Some(sec) = current.take() {
-                        sections.push(sec);
-                    }
-                    current = Some(PbsSection { header, fields: Vec::new() });
-                    continue;
-                }
+        if let Some(header) = pbs_header(trimmed) {
+            if let Some(section) = current.take() {
+                sections.push(section);
             }
-        }
-
-        // Key = value (may be indented for trainers.txt sub-entries)
-        if let Some(eq_pos) = trimmed.find('=') {
-            let key = trimmed[..eq_pos].trim().to_string();
-            let value = trimmed[eq_pos + 1..].trim().to_string();
-            if !key.is_empty() {
-                if let Some(sec) = current.as_mut() {
-                    sec.fields.push(PbsField { key, value });
-                }
+            current = Some(PbsSection { header, fields: Vec::new() });
+        } else if let Some((key, value, _)) = pbs_field(trimmed) {
+            if let Some(section) = current.as_mut() {
+                section.fields.push(PbsField { key, value });
             }
         }
     }
-
-    if let Some(sec) = current.take() {
-        sections.push(sec);
+    if let Some(section) = current {
+        sections.push(section);
     }
+    sections
+}
 
-    Ok(sections)
+fn pbs_header(line: &str) -> Option<String> {
+    if !line.starts_with('[') { return None; }
+    let close = line.find(']')?;
+    let rest = line[close + 1..].trim();
+    if !rest.is_empty() && !rest.starts_with('#') { return None; }
+    Some(line[1..close].trim().to_string())
+}
+
+fn pbs_field(line: &str) -> Option<(String, String, usize)> {
+    if line.trim().is_empty() || line.starts_with('#') { return None; }
+    let eq = line.find('=')?;
+    let key = line[..eq].trim();
+    if key.is_empty() { return None; }
+    Some((key.to_string(), line[eq + 1..].trim().to_string(), eq))
+}
+
+/// Structured edits must never discard comments, blank lines, unknown text,
+/// custom field formatting or CRLF. Patch only known value spans in place.
+/// Structural changes require the raw PBS editor until a lossless structural
+/// merge is implemented; rejecting them is safer than rewriting the file.
+fn merge_pbs_existing(original: &str, edited: &[PbsSection]) -> Result<String, String> {
+    let parsed = parse_pbs_content(original);
+    if parsed.len() != edited.len() || parsed.iter().zip(edited).any(|(old, new)| {
+        old.header != new.header || old.fields.len() != new.fields.len()
+            || old.fields.iter().zip(&new.fields).any(|(a, b)| a.key != b.key)
+    }) {
+        return Err("Structured PBS sections/keys changed; use the raw PBS editor for additions, removals or reordering to preserve comments and unknown data".into());
+    }
+    if edited.iter().any(|section| section.header.contains(['\\r', '\\n', ']'])
+        || section.fields.iter().any(|field| {
+            field.key.contains(['=', '\\r', '\\n']) || field.value.contains(['\\r', '\\n'])
+        })) {
+        return Err("PBS field/header contains an invalid delimiter or newline".into());
+    }
+    let mut out = String::with_capacity(original.len());
+    let mut section_index: Option<usize> = None;
+    let mut field_index = 0usize;
+    for raw_line in original.split_inclusive('\\n') {
+        let bare = raw_line.trim_end_matches(['\\r', '\\n']);
+        let trimmed = bare.trim_end();
+        if pbs_header(trimmed).is_some() {
+            section_index = Some(section_index.map_or(0, |i| i + 1));
+            field_index = 0;
+            out.push_str(raw_line);
+        } else if let (Some(section), Some((_, old_value, eq))) =
+            (section_index, pbs_field(trimmed))
+        {
+            let new_value = &edited[section].fields[field_index].value;
+            field_index += 1;
+            if *new_value == old_value {
+                out.push_str(raw_line);
+                continue;
+            }
+            // Keep indentation, spacing around '=', trailing spaces and
+            // the original line ending; only replace the parsed value.
+            let after_equals = &bare[eq + 1..];
+            let leading_len = after_equals.len()
+                - after_equals.trim_start_matches([' ', '\\t']).len();
+            let trimmed_end = after_equals.trim_end_matches([' ', '\\t']);
+            let trailing = if trimmed_end.len() <= leading_len {
+                ""
+            } else {
+                &after_equals[trimmed_end.len()..]
+            };
+            out.push_str(&bare[..eq + 1]);
+            out.push_str(&after_equals[..leading_len]);
+            out.push_str(new_value);
+            out.push_str(trailing);
+            out.push_str(&raw_line[bare.len()..]);
+        } else {
+            out.push_str(raw_line);
+        }
+    }
+    Ok(out)
 }
 
 /// Serialize sections back and write atomically.
@@ -141,6 +198,15 @@ pub async fn save_pbs_file(
             out.push_str(" = ");
             out.push_str(&field.value);
             out.push('\n');
+        }
+    }
+
+    if path.exists() {
+        let original = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read existing {filename}: {e}"))?;
+        out = merge_pbs_existing(&original, &sections)?;
+        if out == original {
+            return Ok(());
         }
     }
 
@@ -200,4 +266,43 @@ pub async fn write_raw_pbs_file(
         .map_err(|e| format!("Failed to finalize {filename}: {e}"))?;
     eprintln!("[pbs] Wrote raw {filename} ({} bytes)", content.len());
     Ok(())
+}
+
+
+#[cfg(test)]
+mod pbs_preservation_tests {
+    use super::*;
+
+    #[test]
+    fn no_op_and_targeted_edit_preserve_comments_unknown_lines_and_crlf() {
+        let original = "# header\\r\\n[PIKACHU] # section note\\r\\nName   =  Pikachu  \\r\\n# preserve me\\r\\nUnknown directive\\r\\nTypes=ELECTRIC\\r\\nCustom = A=B\\r\\n";
+        let mut sections = parse_pbs_content(original);
+        assert_eq!(merge_pbs_existing(original, &sections).unwrap(), original);
+        sections[0].fields[2].value = "ELECTRIC,FAIRY".into();
+        let expected = original.replace("Types=ELECTRIC", "Types=ELECTRIC,FAIRY");
+        assert_eq!(merge_pbs_existing(original, &sections).unwrap(), expected);
+        assert_eq!(parse_pbs_content(&expected), sections);
+    }
+
+    #[test]
+    fn structured_save_refuses_dropping_unknown_fields_or_sections() {
+        let original = "[ONE]\\nKnown = yes\\nCustom = keep\\n[TWO]\\nName = safe\\n";
+        let mut sections = parse_pbs_content(original);
+        sections[0].fields.pop();
+        assert!(merge_pbs_existing(original, &sections).unwrap_err().contains("raw PBS editor"));
+        let mut sections = parse_pbs_content(original);
+        sections.pop();
+        assert!(merge_pbs_existing(original, &sections).is_err());
+    }
+
+    #[test]
+    fn refuses_newline_injected_values_and_preserves_duplicate_field_order() {
+        let original = "[ONE]\\nTag = first\\nTag = second\\n";
+        let mut sections = parse_pbs_content(original);
+        sections[0].fields[1].value = "changed".into();
+        assert_eq!(merge_pbs_existing(original, &sections).unwrap(),
+            "[ONE]\\nTag = first\\nTag = changed\\n");
+        sections[0].fields[1].value = "changed\\nInjected = true".into();
+        assert!(merge_pbs_existing(original, &sections).is_err());
+    }
 }
