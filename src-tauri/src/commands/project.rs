@@ -535,10 +535,62 @@ pub async fn delete_event(
     Ok(events)
 }
 
-/// Save modified tile data back to a map file.
-///
-/// Takes the flat tile array from the frontend and writes it back
-/// into the original .rxdata file, preserving all other map data.
+/// Apply a targeted edit to the original XP Table without rebuilding the
+/// surrounding Ruby object. Never silently change map dimensions or discard
+/// unknown trailing bytes from a custom Table payload.
+fn replace_map_tile_data(
+    value: &mut marshal::types::RubyValue,
+    tiles: &[i16],
+    width: i64,
+    height: i64,
+) -> Result<(), String> {
+    let w = usize::try_from(width).map_err(|_| "Invalid map width")?;
+    let h = usize::try_from(height).map_err(|_| "Invalid map height")?;
+    if w == 0 || h == 0 {
+        return Err("Map dimensions must be positive".into());
+    }
+    let expected = w.checked_mul(h).and_then(|n| n.checked_mul(3))
+        .ok_or("Map dimensions overflow")?;
+    if tiles.len() != expected {
+        return Err(format!("Tile count {} does not match {}x{}x3 = {}",
+            tiles.len(), width, height, expected));
+    }
+
+    let marshal::types::RubyValue::Object(obj) = value else {
+        return Err("Map data is not a Ruby object".into());
+    };
+    if obj.class_name != "RPG::Map" ||
+        obj.get_int("width") != Some(width) ||
+        obj.get_int("height") != Some(height) {
+        return Err("Map dimensions differ from saved XP map; reload before editing".into());
+    }
+    let (_, raw) = obj.instance_vars.iter_mut()
+        .find(|(name, _)| name == "@data")
+        .ok_or("Map has no @data Table")?;
+    let marshal::types::RubyValue::UserDefined { class_name, data } = raw else {
+        return Err("Map @data is not an XP Table".into());
+    };
+    if class_name != "Table" {
+        return Err("Map @data has an unexpected Ruby class".into());
+    }
+    let table = Table::from_bytes(data).ok_or("Map Table binary is invalid")?;
+    if table.x_size as usize != w ||
+        table.y_size as usize != h ||
+        table.z_size != 3 ||
+        table.data.len() != expected {
+        return Err("Map Table dimensions/count disagree with the map header".into());
+    }
+    // XP Table's i16 cells begin at byte 20 in z/y/x order. Mutating only
+    // those cells preserves the original header and any extension payload.
+    for (i, tile) in tiles.iter().enumerate() {
+        let offset = 20 + i * 2;
+        data[offset..offset + 2].copy_from_slice(&tile.to_le_bytes());
+    }
+    Ok(())
+}
+
+/// Save the three tile layers while preserving the original map events,
+/// metadata, Ruby instance variables and custom Table extension bytes.
 #[tauri::command]
 pub async fn save_map(
     project_path: String,
@@ -548,82 +600,60 @@ pub async fn save_map(
     height: i64,
 ) -> Result<(), String> {
     let path = PathBuf::from(&project_path);
-    let map_file = path
-        .join("Data")
-        .join(format!("Map{:03}.rxdata", map_id));
-
+    let map_file = path.join("Data").join(format!("Map{:03}.rxdata", map_id));
     if !map_file.exists() {
         return Err(format!("Map file not found: Map{:03}.rxdata", map_id));
     }
-
-    // Validate the incoming tile buffer matches the declared dimensions before we
-    // rebuild the Table, so we never write a truncated/oversized layer.
-    let expected = (width as usize)
-        .checked_mul(height as usize)
-        .and_then(|v| v.checked_mul(3))
-        .ok_or_else(|| "Map dimensions overflow".to_string())?;
-    if tiles.len() != expected {
-        return Err(format!(
-            "Tile count {} does not match {}x{}x3 = {}",
-            tiles.len(), width, height, expected
-        ));
-    }
-
-    // Read the original map data
     let mut value = marshal::load_file(&map_file)
-        .map_err(|e| format!("Failed to read map: {}", e))?;
-
-    // Update the Table's raw data
-    // Find the @data instance variable and replace the UserDefined bytes
-    let mut replaced = false;
-    if let marshal::types::RubyValue::Object(ref mut obj) = value {
-        // Rebuild the Table binary data
-        let table = Table::new_3d(width as u32, height as u32, 3);
-        let mut table_data = table;
-
-        // Copy tile IDs from flat array into Table
-        // Layout: [layer0_tiles..., layer1_tiles..., layer2_tiles...]
-        for z in 0..3u32 {
-            for y in 0..height as u32 {
-                for x in 0..width as u32 {
-                    let idx = (z as usize) * (width as usize) * (height as usize)
-                        + (y as usize) * (width as usize)
-                        + (x as usize);
-                    if idx < tiles.len() {
-                        table_data.set(x, y, z, tiles[idx]);
-                    }
-                }
-            }
-        }
-
-        // Serialize the Table to bytes
-        let table_bytes = table_data.to_bytes();
-
-        // Find and replace the @data ivar
-        for (name, val) in obj.instance_vars.iter_mut() {
-            if name == "@data" {
-                *val = marshal::types::RubyValue::UserDefined {
-                    class_name: "Table".to_string(),
-                    data: table_bytes.clone(),
-                };
-                replaced = true;
-                break;
-            }
-        }
-    }
-
-    if !replaced {
-        return Err(format!(
-            "Could not locate @data table on Map{:03}; save aborted to avoid corrupting the file",
-            map_id
-        ));
-    }
-
-    // Write back to file
+        .map_err(|e| format!("Failed to read map: {e}"))?;
+    replace_map_tile_data(&mut value, &tiles, width, height)?;
     marshal::dump_file(&map_file, &value)
-        .map_err(|e| format!("Failed to save map: {}", e))?;
-
+        .map_err(|e| format!("Failed to save map: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod map_tile_fidelity_tests {
+    use super::*;
+
+    #[test]
+    fn targeted_layer_edit_preserves_custom_map_fields_and_table_extension_bytes() {
+        let mut original = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let marshal::types::RubyValue::Object(ref mut obj) = original else { panic!("map object") };
+        obj.instance_vars.push(("@custom".into(), marshal::types::RubyValue::Symbol("keep".into())));
+        let (_, raw) = obj.instance_vars.iter_mut().find(|(name, _)| name == "@data").unwrap();
+        let marshal::types::RubyValue::UserDefined { data, .. } = raw else { panic!("Table") };
+        data.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let mut tiles = vec![0i16; 12];
+        tiles[0] = 384;
+        tiles[4] = 48;
+        tiles[8] = 1024;
+        tiles[11] = 2047;
+        replace_map_tile_data(&mut original, &tiles, 2, 2).unwrap();
+        let reloaded = marshal::load(&marshal::dump(&original).unwrap()).unwrap();
+        let obj = reloaded.as_object().unwrap();
+        assert_eq!(obj.get("custom"), Some(&marshal::types::RubyValue::Symbol("keep".into())));
+        let marshal::types::RubyValue::UserDefined { data, .. } = obj.get("data").unwrap() else { panic!("Table") };
+        assert!(data.ends_with(&[0xde, 0xad, 0xbe, 0xef]));
+        let map = RpgMap::from_ruby_value(&reloaded).unwrap();
+        assert_eq!(map.data.data, tiles);
+    }
+
+    #[test]
+    fn refuses_dimension_mismatch_or_corrupt_table_without_mutating_map() {
+        let original = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let mut value = original.clone();
+        assert!(replace_map_tile_data(&mut value, &[1; 12], 3, 2).is_err());
+        assert_eq!(value, original);
+        assert!(replace_map_tile_data(&mut value, &[1; 11], 2, 2).is_err());
+        assert_eq!(value, original);
+        let marshal::types::RubyValue::Object(ref mut obj) = value else { panic!("map") };
+        let (_, raw) = obj.instance_vars.iter_mut().find(|(name, _)| name == "@data").unwrap();
+        *raw = marshal::types::RubyValue::Nil;
+        let damaged = value.clone();
+        assert!(replace_map_tile_data(&mut value, &[1; 12], 2, 2).is_err());
+        assert_eq!(value, damaged);
+    }
 }
 
 /// Map properties data for the properties dialog.
