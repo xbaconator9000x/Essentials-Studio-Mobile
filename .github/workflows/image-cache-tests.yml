@@ -19,6 +19,9 @@ on:
       - 'tests/boundedAsyncMap.test.mjs'
       - '.github/workflows/image-cache-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   image-cache-regression:
     runs-on: ubuntu-latest

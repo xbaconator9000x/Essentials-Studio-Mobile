@@ -1,0 +1,27 @@
+name: Android document export handoff tests
+
+on:
+  push:
+    branches: [main, 'feature/android-saf-zip-export-*']
+    paths:
+      - 'src/services/androidDocumentExport.ts'
+      - 'src/services/archiveApi.ts'
+      - 'tests/androidDocumentExport.test.mjs'
+      - '.github/workflows/android-document-export-tests.yml'
+  pull_request:
+    paths:
+      - 'src/services/androidDocumentExport.ts'
+      - 'src/services/archiveApi.ts'
+      - 'tests/androidDocumentExport.test.mjs'
+      - '.github/workflows/android-document-export-tests.yml'
+
+jobs:
+  saf-handoff-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify SAF cancellation, scoped URI and native readback handoff
+        run: node --experimental-strip-types --test tests/androidDocumentExport.test.mjs

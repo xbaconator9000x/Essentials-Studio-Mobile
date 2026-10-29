@@ -3,6 +3,8 @@
  * broad-storage permission or content-URI filesystem assumptions required.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { exportAndroidDocument } from "./androidDocumentExport";
 import {
   ARCHIVE_CHUNK_BYTES,
   decodeArchiveChunk,
@@ -70,6 +72,25 @@ export async function exportProjectZip(
   });
   try {
     validateArchiveSize(exported.size);
+    const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 70) || "EssentialsProject";
+    const name = `${safeName}.zip`;
+
+    // Android's native picker returns a scoped content:// URI, not a file
+    // path. Rust streams the app-private ZIP via ContentResolver and reopens
+    // the document to verify every byte. Avoid the WebView Blob/share fallback
+    // (and its 512 MiB JS memory cost) on Android.
+    if (/Android/i.test(navigator.userAgent)) {
+      await exportAndroidDocument(exported.export_id, exported.size, name, {
+        pickDestination: (filename) => save({
+          defaultPath: filename,
+          filters: [{ name: "ZIP archives", extensions: ["zip"] }],
+        }),
+        writeAndVerify: (exportId, documentUri) =>
+          invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
+      }, onProgress);
+      return; // includes cancellation; never reports 100% unless readback passes
+    }
+
     const chunks: BlobPart[] = [];
     for (let offset = 0; offset < exported.size; offset += ARCHIVE_CHUNK_BYTES) {
       const expectedLength = expectedArchiveChunkLength(exported.size, offset);
@@ -86,8 +107,6 @@ export async function exportProjectZip(
     if (blob.size !== exported.size) {
       throw new Error("Project ZIP export was truncated before sharing");
     }
-    const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 70) || "EssentialsProject";
-    const name = `${safeName}.zip`;
     const file = new File([blob], name, { type: "application/zip" });
     if (navigator.canShare?.({ files: [file] }) && navigator.share) {
       await navigator.share({ files: [file], title: name });
