@@ -863,6 +863,24 @@ mod archive_roundtrip_tests {
             read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
         assert_eq!(read_zip_file(&exported, "PBS/pokemon.txt"),
             read_zip_file(&archive, "Repository/Essentials/Shattered/PBS/pokemon.txt"));
+
+        // Exercise the actual app-private publication path, not only the ZIP
+        // extractor: the returned path must be a direct child of projects/.
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        fs::copy(&archive, imports.join("import-multi.zip")).unwrap();
+        let published = PathBuf::from(finish_import(
+            imports.join("import-multi.zip"), imports.clone(), projects.clone(),
+            "import-multi".into(),
+        ).unwrap());
+        assert_eq!(published, projects.join("import-multi"));
+        assert!(published.join("Game.rxproj").is_file());
+        assert_eq!(fs::read(published.join("Data/Scripts.rxdata")).unwrap(),
+            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+        assert!(!imports.join("import-multi-extracted").exists());
+        assert_eq!(fs::read(&archive).unwrap(), original_zip);
     }
 
     #[test]
