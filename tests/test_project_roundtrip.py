@@ -81,15 +81,18 @@ class ProjectRoundtripTests(unittest.TestCase):
 
     def test_corrupted_zip_payload_is_detected_even_for_allowed_edits(self):
         original = self.make_zip("original.zip", self.sample())
-        exported = self.make_zip("export.zip", self.sample())
-        # Replace one byte of the compressed stream, preserving ZIP metadata.
+        exported = self.root / "export.zip"
+        with zipfile.ZipFile(exported, "w", compression=zipfile.ZIP_STORED) as archive:
+            for name, data in self.sample():
+                archive.writestr(name, data)
+        # Change a stored member byte while leaving its original CRC untouched.
         payload = bytearray(exported.read_bytes())
         with zipfile.ZipFile(exported) as archive:
             info = archive.getinfo("PBS/pokemon.txt")
             offset = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
         payload[offset + 2] ^= 0xFF
         exported.write_bytes(payload)
-        with self.assertRaises((zipfile.BadZipFile, RuntimeError, OSError)):
+        with self.assertRaises(zipfile.BadZipFile):
             verify_roundtrip(original, exported, {"PBS/pokemon.txt"})
 
 
