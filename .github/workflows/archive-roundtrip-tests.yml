@@ -27,6 +27,7 @@ on:
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
       - 'scripts/run_project_roundtrip.py'
+      - 'tests/test_roundtrip_evidence.py'
       - 'scripts/verify_project_roundtrip.py'
       - 'tests/test_project_roundtrip.py'
       - '.github/workflows/archive-roundtrip-tests.yml'
