@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "main",
+  "current_work_branch": "feature/android-saf-zip-export-20261029",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -103,7 +103,8 @@
         "Pending review: PR #4 proposes atomic Android/Unix .rxdata saves and failure-path native regression tests; not yet validated by CI and does not close export or device acceptance gates.",
         "PR #6 checks native export chunk lengths, Base64 and final Blob size; PR #7 propagates failed map writes and open_project errors. Save-guard tests passed in run 40855847755. Both draft; Android document destination and desktop reopening still unverified.",
         "PR #6 merged as 064995b4: export now checks exact native Base64 chunk lengths, declared size and final Blob size (frontend+ARM64 CI 40855698471). PR #7 merged as 3b11efc07a9740619d441220eb549fc04464d89d: failed map saves remain dirty, failed opens propagate; 2/2 save tests run 40855847755 and ARM64/frontend run 40855847315 passed. PR #9 proposes bounded ZIP disk writes; native/ARM64 CI pending. Android SAF destination and desktop reopen still outstanding.",
-        "PR #9 merged as 8af439cfa2d414db0df32e99f6ae341ddb82ab9d on 2026-10-29. Export ZIP compressed writes now stop before exceeding 512 MiB rather than filling app-private disk and checking after finish. Native full suite 29/29 passed (run 40856248648) and frontend+Android ARM64 debug APK passed (run 40856248690). Still requires Android document destination and genuine v21.1 desktop reopen."
+        "PR #9 merged as 8af439cfa2d414db0df32e99f6ae341ddb82ab9d on 2026-10-29. Export ZIP compressed writes now stop before exceeding 512 MiB rather than filling app-private disk and checking after finish. Native full suite 29/29 passed (run 40856248648) and frontend+Android ARM64 debug APK passed (run 40856248690). Still requires Android document destination and genuine v21.1 desktop reopen.",
+        "Draft PR #12 implements Android scoped content-URI save picker, JNI ContentResolver streaming and full byte-for-byte readback of destination ZIP, avoiding WebView Blob export. Native 31/31 tests passed run 40857477364 and Android ARM64 APK/frontend compiled run 40857477274. NOT merged or device-verified: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/12 . Physical Android SAF provider tests and genuine Essentials v21.1 desktop reopening are mandatory before acceptance."
       ]
     },
     {
@@ -273,7 +274,7 @@
   "progress": {
     "estimated_total_completion_percent": 20,
     "updated_at": "2026-10-29",
-    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only.",
+    "basis": "Merged PR #5 synthetic XP Marshal fidelity gate (27/27 native tests), PR #6 ZIP IPC framing (five tests + Android APK), PR #7 save error propagation (two tests + Android APK), and PR #9 bounded ZIP export (29/29 native tests + Android APK). Each has passing CI evidence; PR #9 prevents oversized compressed export from exhausting app-private storage. Real Pokémon Essentials v21.1 import/edit/export/reopen, Android SAF destination and on-device graphics/gestures remain unverified; release licensing is unresolved. Estimated overall completion 19% -> 20%, a conservative increase for tested native export robustness only. Draft PR #12 proposes Android SAF streaming export with readback; 31 native tests and ARM64 APK compile passed, but it remains unmerged pending physical-device/provider and real-project verification, so the completion estimate remains 20%.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }
