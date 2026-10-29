@@ -103,3 +103,6 @@ mod roundtrip_tests {
         assert_roundtrip(map);
     }
 }
+
+#[cfg(test)]
+mod xp_fidelity_tests;
