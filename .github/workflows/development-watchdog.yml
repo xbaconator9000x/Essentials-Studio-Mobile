@@ -7,12 +7,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - development/queue.json
-      - scripts/check-development-queue.mjs
-      - scripts/queue-watchdog.mjs
   workflow_run:
-    workflows: ["Android APK probe"]
+    workflows: ["Android APK probe", "Archive roundtrip tests"]
     types: [completed]
     branches: [main]
 
@@ -27,7 +23,6 @@ concurrency:
 jobs:
   enqueue:
     name: Check and automatically hand off next eligible tasks
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -41,6 +36,11 @@ jobs:
         run: |
           node scripts/check-development-queue.mjs
           node scripts/queue-watchdog.mjs
+      - name: Regression test queue fallback when GitHub Issues are disabled
+        run: node --test scripts/queue-watchdog.test.mjs
+      - name: Surface CI failures for the next implementation run
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
+        run: echo "::warning::A CI workflow failed or was cancelled. Inspect the originating run before proceeding."
       - name: Chain eligible implementation handoffs to tracked issues
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,7 +50,7 @@ jobs:
           {
             echo "### Essentials Studio Mobile development queue"
             echo ""
-            echo "The watchdog surfaces new eligible work and deduplicates implementation issues."
+            echo "The watchdog surfaces eligible work after main pushes, CI completion and a 15-minute poll. It uses deduplicated issues if Issues are enabled; otherwise Actions summaries are the handoff record."
             echo "A GitHub Actions runner **cannot write new implementation code** without a connected coding agent."
             echo ""
             node scripts/queue-watchdog.mjs | sed 's/^/    /'

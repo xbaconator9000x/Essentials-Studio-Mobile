@@ -8,6 +8,7 @@ on:
       - feature/android-ci-bootstrap
     paths:
       - 'src-tauri/src/commands/project_archive.rs'
+      - 'src-tauri/src/marshal/**'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
       - '.github/workflows/archive-roundtrip-tests.yml'
@@ -44,5 +45,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Verify archive import/export unit tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib commands::project_archive -- --nocapture
+      - name: Verify archive and XP Marshal preservation regression tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --nocapture

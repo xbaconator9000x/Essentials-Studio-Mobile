@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -29,8 +29,40 @@ const runGh = (...args) => {
   if (result.status !== 0) throw new Error(`gh ${args[0]} failed: ${result.stderr}`);
   return result.stdout.trim();
 };
-// List once so duplicate labels/titles across watchdog runs don't create duplicate issues.
-const existing = JSON.parse(runGh("issue", "list", "--state", "all", "--limit", "500", "--json", "title,number"));
+// Issue tracking is optional: this public repository currently has Issues disabled.
+// Always publish an actionable handoff in the run summary so the scheduled check
+// succeeds and an implementation agent can pick up work from queue.json.
+function appendHandoffSummary(note) {
+  if (!process.env.GITHUB_STEP_SUMMARY) return;
+  const lines = [
+    "### Next eligible Essentials Studio Mobile work",
+    "",
+    note,
+    "",
+    ...eligible.flatMap(task => [
+      "- **" + task.id + "** [P" + task.priority + "] " + task.title,
+      "  - Depends on: " + (task.depends_on.join(", ") || "nothing"),
+      ...task.acceptance.map(criterion => "  - [ ] " + criterion),
+    ]),
+    "",
+    "Only actual code/test results can advance task states. This workflow is a handoff, not a coding agent.",
+    "",
+  ];
+  if (eligible.length === 0) lines.splice(4, 0, "No new task is eligible; inspect in-progress work and CI failures.");
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n", "utf8");
+}
+let existing;
+try {
+  existing = JSON.parse(runGh("issue", "list", "--state", "all", "--limit", "500", "--json", "title,number"));
+} catch (error) {
+  if (/has disabled issues|issues (?:are|is) disabled/i.test(String(error))) {
+    console.warn("Repository issues are disabled; handoff recorded in Actions summary instead.");
+    appendHandoffSummary("GitHub Issues are disabled for this repository. Work remains queued in development/queue.json.");
+    process.exit(0);
+  }
+  throw error;
+}
+appendHandoffSummary("Eligible tasks are also tracked as deduplicated GitHub Issues.");
 for (const task of eligible) {
   if (existing.some(issue => issue.title.startsWith(`${task.id}:`))) continue;
   const body = [
