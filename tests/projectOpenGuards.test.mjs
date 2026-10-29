@@ -68,3 +68,40 @@ test("invalid map IDs and dimensions cannot reach the active editor", async () =
     }), /three-layer/);
   }
 });
+
+test("invalid initial map IDs cannot silently bypass XP preflight", async () => {
+  for (const edit_map_id of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    let mapCalls = 0;
+    await assert.rejects(inspectProjectBeforeOpen("/private/broken", {
+      openProject: async () => ({ ...candidate, edit_map_id }),
+      loadMap: async () => { mapCalls++; return map; },
+      loadTileset: async () => ({ id: 3 }),
+    }), /invalid initial XP map ID/);
+    assert.equal(mapCalls, 0, "rejected ID should never load a map");
+  }
+});
+
+test("invalid tile cells and tileset IDs reject before switching projects", async () => {
+  const base = {
+    openProject: async () => candidate,
+    loadMap: async () => map,
+    loadTileset: async () => ({ id: 3 }),
+  };
+  for (const broken of [
+    { ...map, width: -2, height: -2 },
+    { ...map, width: 1.5, height: 8 },
+    { ...map, tileset_id: 0 },
+    { ...map, tiles: Array(12).fill(384).map((v, i) => i === 5 ? 32768 : v) },
+    { ...map, tiles: Array(12).fill(384).map((v, i) => i === 5 ? 3.5 : v) },
+  ]) {
+    await assert.rejects(inspectProjectBeforeOpen("/private/broken", {
+      ...base,
+      loadMap: async () => broken,
+      loadTileset: async () => { throw new Error("should not load invalid map tileset"); },
+    }), /three-layer/);
+  }
+  await assert.rejects(inspectProjectBeforeOpen("/private/broken", {
+    ...base,
+    loadTileset: async () => ({ id: 4 }),
+  }), /mismatched tileset/);
+});
