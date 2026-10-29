@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "test/xp-event-opaque-field-preservation-20261029",
+  "current_work_branch": "fix/archive-chunk-integrity-20261029",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
@@ -77,7 +77,8 @@
         "Unverified initial implementation on feature/android-ci-bootstrap: src-tauri/src/commands/project_archive.rs and src/services/archiveApi.ts; compiler+roundtrip pending",
         "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding.",
         "PR #2 CI run 40840333736 compiled native Rust but failed a duplicate-ZIP test fixture because zip 2.x refuses duplicate names at write time; commit 017600e replaces fixture with a true duplicate-header archive and adds export directory-entry limits. Rerun pending.",
-        "PR #2 commit 06eea530: 5/5 native archive tests passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847121085; PR #3 integrated branch: 7/7 passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847130068. Real Essentials import still unverified."
+        "PR #2 commit 06eea530: 5/5 native archive tests passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847121085; PR #3 integrated branch: 7/7 passed https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40847130068. Real Essentials import still unverified.",
+        "PR #6 adds WebView ZIP upload source-length and Rust acknowledgement checks; frontend build and five chunk-regression tests passed in run 40855698471 (Android APK still in progress at queue update). Real-project import remains unverified."
       ]
     },
     {
@@ -98,7 +99,8 @@
         "Unverified initial export implementation on feature/android-ci-bootstrap; Android share and roundtrip tests pending",
         "Draft PR #2 adds ZIP safety/lossless roundtrip regression tests and empty-directory/sibling-file protection; native CI pending, Android on-device tests outstanding.",
         "PR #2 native import/export/reimport test passed on 2026-10-29 (run 40847121085), preserving binary RXDATA, PBS bytes, graphics and empty dirs. Android document save/share and desktop reopening remain unverified.",
-        "Pending review: PR #4 proposes atomic Android/Unix .rxdata saves and failure-path native regression tests; not yet validated by CI and does not close export or device acceptance gates."
+        "Pending review: PR #4 proposes atomic Android/Unix .rxdata saves and failure-path native regression tests; not yet validated by CI and does not close export or device acceptance gates.",
+        "PR #6 checks native export chunk lengths, Base64 and final Blob size; PR #7 propagates failed map writes and open_project errors. Save-guard tests passed in run 40855847755. Both draft; Android document destination and desktop reopening still unverified."
       ]
     },
     {
@@ -248,7 +250,7 @@
       "title": "Create independent XP map, event, script and PBS preservation fixture gate",
       "area": "native",
       "priority": 1,
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [
         "ASM-001"
       ],
@@ -259,14 +261,16 @@
         "CI runs the fidelity fixture suite; synthetic success is not substituted for real v21.1 or Android-device validation"
       ],
       "evidence": [
-        "Draft implementation on test/xp-event-opaque-field-preservation-20261029: event-aware Ruby Marshal field merge + three regression tests; CI not yet passed; XP map/PBS/real project gates still open."
+        "Draft implementation on test/xp-event-opaque-field-preservation-20261029: event-aware Ruby Marshal field merge + three regression tests; CI not yet passed; XP map/PBS/real project gates still open.",
+        "PR #5 merged as db607def93858e211fc7fdc4561aefc9dff8eb01 on 2026-10-29; native full fidelity suite 27/27 passed (run 40854511681), including three-layer Table, opaque map/event ivars, Script.rxdata, PBS/ZIP byte preservation and failed-save rollback: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40854511681",
+        "PR #5 Android ARM64 APK and frontend build succeeded in run 40854511753: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/40854511753. Synthetic-only gate; no real Essentials v21.1/device claim."
       ]
     }
   ],
   "progress": {
-    "estimated_total_completion_percent": 16,
+    "estimated_total_completion_percent": 18,
     "updated_at": "2026-10-29",
-    "basis": "PR #1 ARM64 APK verified; PR #2 archive security/lossless synthetic fixture tests 5/5 passed; PR #3 integrated native image/ZIP tests 7/7, frontend and ARM64 APK build passed with artifact. No genuine Essentials v21.1 project or physical Android image/export roundtrip verified; all relevant acceptance tasks remain open. PR #4 proposes watchdog fallback for disabled GitHub Issues and interrupted-save protection; these changes await CI, so estimated completion remains unchanged. ASM-015 separates synthetic XP fidelity testing from later real-device gates so independent validation can run without misrepresenting ASM-004/005 as finished. Event fidelity work started (ASM-015); no test result yet and estimated completion stays 16%.",
+    "basis": "PR #5 merged with 27/27 native Rust synthetic XP/Marshal/ZIP fidelity tests and successful Android ARM64 APK build, completing ASM-015 fixture-only gate. Prior archive and scoped image tests also passed. Draft PR #6 has successful frontend chunk-integrity tests; draft PR #7 has successful save-failure regression tests, but pending Android CI/merge. Genuine Essentials v21.1 import/edit/export/reopen, Android SAF destination, phone graphics/gesture validation, licensing and signed release remain unverified. Estimated total progress 16% -> 18% solely for merged, independently tested synthetic fidelity.",
     "scope": "Complete reliable Android Pokémon Essentials v21.1 RPG Maker XP editor. Browser port deferred."
   }
 }
