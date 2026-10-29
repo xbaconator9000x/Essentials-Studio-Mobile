@@ -19,7 +19,7 @@ import {
   saveEvent,
   launchGame,
 } from "./services/tauriApi";
-import { loadAllTilesetImages } from "./services/imageLoader";
+import { loadAllTilesetImages, clearImageCache } from "./services/imageLoader";
 import { importProjectZip, exportProjectZip, discardFailedProjectImport } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
@@ -168,6 +168,9 @@ function AppContent() {
         openProject, loadMap, loadTileset,
       });
 
+      // A previous project may still have image reads in flight. Invalidate
+      // their cache generation before switching the active project.
+      clearImageCache();
       // Update ref immediately so handleSelectMap sees the new project path.
       projectRef.current = proj;
       setProject(proj);
