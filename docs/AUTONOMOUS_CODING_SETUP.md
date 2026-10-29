@@ -1,32 +1,30 @@
-# Autonomous coding queue: GitHub Copilot cloud-agent dispatch
+# Essentials Studio Mobile — ChatGPT-first development queue
 
-The watchdog checks the durable queue every **five minutes**, on new main commits and after selected CI runs. The existing watchdog only reported eligible tasks. The cloud dispatch module can now start actual **GitHub Copilot cloud-agent coding sessions** with PR output, once configured. It does not require GitHub Issues.
+**No GitHub Copilot Pro, Copilot Pro+, Google Jules, ChatGPT Work subscription, paid AI API, external coding-agent API key, or special GitHub token is required for this repository's existing development queue.**
 
-## One-time setup
+The queue is in `development/queue.json`. The **Development queue watchdog** GitHub Actions workflow checks it every five minutes, on pushes to main and after selected build/test completions. It validates dependencies, identifies ready tasks, and publishes a summary for the next development run. GitHub Issues are optional and currently disabled in the repository.
 
-1. Confirm that your GitHub account has a paid Copilot plan with cloud agent / agent tasks API access and that the cloud agent is enabled in this repository.
-2. In GitHub, create a fine-grained personal access token restricted to repository xbaconator9000x/Essentials-Studio-Mobile. Grant **Agent tasks: Read and write**. Do not paste the token in chat or commit it to source.
-3. In the repository go to **Settings -> Secrets and variables -> Actions -> New repository secret**, name it exactly **COPILOT_AGENT_TOKEN**, and paste the token as its value. This is a user credential (not the built-in GitHub Actions GITHUB_TOKEN).
-4. Run **Actions -> Development queue watchdog -> Run workflow**. Confirm its summary says **Started Copilot cloud agent** and the repository gains a Copilot task and, once implemented, a reviewable PR.
-5. Leave automated merges disabled. Review code, tests, real Essentials v21.1 project fidelity, and Android device results before approving task acceptance.
+## What actually performs development?
 
-Official API documentation: https://docs.github.com/en/rest/agent-tasks/agent-tasks
+The user's **existing ChatGPT Essentials Studio Mobile automation** is the implementation agent. On its own scheduled ChatGPT invocation it uses the already connected GitHub tools to read main, select eligible tasks, edit code, create or update pull requests, check CI, and record progress and acceptance evidence.
 
-## Execution rules
+A GitHub Actions workflow **cannot wake or invoke this ChatGPT automation** on every new commit or CI result. The queue check being frequent does not make the ChatGPT coding agent run more frequently. ChatGPT automations follow their separate schedule and product usage limits. The repository does **not** impersonate ChatGPT, initiate paid inference calls, or promise continuously running autonomous coding.
 
-- Up to **two** concurrent Copilot sessions across independent areas, respecting max_parallel_native_workstreams from development/queue.json (currently **one** native/build/storage/editor/runtime session).
-- Prioritizes eligible high-priority in-progress work and unblocked todo work with completed dependencies.
-- Does not dispatch when an open PR already mentions its ASM task identifier.
-- Saves a durable task reservation to **development/copilot-dispatch-state.json on main before** API launch, then saves the returned task ID. A crash or failed API call leaves a reservation instead of charging for duplicate sessions.
-- Polls previously dispatched task IDs to release execution slots after Copilot completes or fails. **A completed agent task is not an accepted queue task.** Its receipt remains to prevent duplicate work.
-- If no COPILOT_AGENT_TOKEN is configured, the watchdog still checks queue/tests and explicitly reports that actual coding execution is not configured.
-- Never auto-merges, auto-completes acceptance, fabricates device tests, publishes binaries or bypasses the upstream licensing gate.
-- PR CI exercises the queue selection, deduplication, reservation and credential-fallback policy.
+## Workflows and safety
 
-## Recovery and limits
+- The GitHub workflow uses the normal automatic `GITHUB_TOKEN` for permitted GitHub housekeeping only; no owner-generated token or paid subscription is required.
+- It checks the durable queue, verifies the handoff test and publishes the next eligible tasks as a GitHub Actions summary.
+- It does not call Copilot's Agent Tasks API, Jules, OpenAI's API, or any other paid model endpoint.
+- The Android build, Rust tests, project data integrity and frontend regression checks continue to run via GitHub Actions.
+- Implementation work must preserve original RPG Maker XP maps, event commands, Marshal attributes, Ruby scripts, and Pokémon Essentials PBS fields. Only merged code backed by actual passing tests and required device evidence counts as completed.
+- A passing synthetic test or a successfully compiled Android APK alone does not prove physical device behavior or genuine Essentials v21.1 compatibility.
+- Public binary publication remains subject to upstream licensing review.
 
-- GitHub Copilot sessions are external, and GitHub Actions schedules may run late. The script cannot guarantee nonstop execution or a particular frequency of code commits.
-- If a task is stuck reserved because the agent creation request failed, **check Copilot tasks and the Actions log first**. Reconcile or remove only that record from development/copilot-dispatch-state.json through a reviewed GitHub change once duplicate creation is ruled out. Do not blindly delete records.
-- If Copilot finishes but acceptance is not met, review its PR and ask for revisions. The task remains in_progress until code, tests and required evidence are verified.
-- The upstream repository's licensing and physical Android project import/export still need independent validation. A green synthetic test suite does not close those gates.
-- For failed API authentication, check the token permissions, cloud-agent entitlement and repository access. A regular GITHUB_TOKEN or GitHub App installation token cannot start these sessions.
+## How to continue
+
+Use the existing enabled **Essentials Studio Mobile watchdog** automation in ChatGPT, or open a normal chat and ask ChatGPT to implement the next eligible work batch from the latest GitHub queue.
+
+The GitHub Actions handoff can be read at:
+https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/workflows/development-watchdog.yml
+
+The free-agent alternatives previously evaluated were not configured as the main development system. PR #23's Copilot-paid API code and credential requirement were removed in a follow-up correction.
