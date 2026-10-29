@@ -1,0 +1,87 @@
+name: Android APK probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/android-*
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: TypeScript frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+
+  android:
+    name: Android ARM64 debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+      - name: Install Rust toolchain and Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install JS dependencies
+        run: npm ci
+      - name: Initialise Android app (CI mode)
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android init -- --ci
+      - name: Compile Android ARM64 debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android build -- --ci --apk --debug --target aarch64
+      - name: Save build evidence and debug APK (if produced)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: essentials-studio-android-arm64-probe
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/reports/**
+          if-no-files-found: warn
+          retention-days: 7
