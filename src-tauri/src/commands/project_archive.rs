@@ -260,7 +260,29 @@ pub async fn finish_project_archive_import(
 
 #[cfg(test)]
 mod tests {
-    use super::clean_zip_path;
+    use super::{clean_zip_path, BoundedArchiveWriter};
+    use std::io::{Cursor, Seek, SeekFrom, Write};
+
+    #[test]
+    fn bounded_export_rejects_crossing_limit_without_writing_partial_bytes() {
+        let mut output = BoundedArchiveWriter::new(Cursor::new(Vec::<u8>::new()), 8);
+        output.write_all(&[1, 2, 3, 4]).unwrap();
+        output.seek(SeekFrom::Start(7)).unwrap();
+        assert!(output.write_all(&[5, 6]).is_err());
+        assert_eq!(output.into_inner().into_inner(), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn bounded_export_allows_exact_limit_and_safe_header_rewrites() {
+        let mut output = BoundedArchiveWriter::new(Cursor::new(Vec::<u8>::new()), 8);
+        output.write_all(&[1, 2, 3, 4]).unwrap();
+        output.seek(SeekFrom::Start(4)).unwrap();
+        output.write_all(&[5, 6, 7, 8]).unwrap();
+        output.seek(SeekFrom::Start(0)).unwrap();
+        output.write_all(&[9, 10]).unwrap();
+        assert_eq!(output.into_inner().into_inner(), vec![9, 10, 3, 4, 5, 6, 7, 8]);
+    }
+
     #[test]
     fn blocks_absolute_and_traversal_paths() {
         for bad in ["../x", "/root/x", "a/../b", "C:/Users/x", "x\\y", "."] {
