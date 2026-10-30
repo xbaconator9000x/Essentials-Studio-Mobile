@@ -76,6 +76,7 @@ function AppContent() {
   const [selectedTileId, setSelectedTileId] = useState(FIRST_REGULAR_TILE);
   const [mapIsDirty, setMapIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Event editor state
@@ -630,6 +631,16 @@ function AppContent() {
           Essentials Studio — {project.name}{dirtyCount > 0 ? " *" : ""}
         </span>
         <div className="app-titlebar-right">
+          <button className="app-titlebar-btn" disabled={loading || saving || dirtyCount === 0}
+            onClick={async () => {
+              setSaving(true);
+              setError(null);
+              try { await saveAll(); }
+              catch (err) { setError(`Save all failed: ${String(err)}`); }
+              finally { setSaving(false); }
+            }}>
+            {saving ? "Saving..." : "Save All"}
+          </button>
           <button className="app-titlebar-btn" onClick={() => setShowDatabase(true)}>
             Database
           </button>
@@ -645,7 +656,7 @@ function AppContent() {
           >
             ▶ Play
           </button>
-          <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading}>
+          <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading || saving}>
             Export ZIP...
           </button>
           <button className="app-titlebar-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
@@ -664,6 +675,13 @@ function AppContent() {
           {loading && <span className="app-loading">Loading...</span>}
         </div>
       </div>
+
+      {archiveProgress !== null && (
+        <div className="app-operation-status" role="status" aria-live="polite">
+          {archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`}
+        </div>
+      )}
+      {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
       {/* Main layout — map editor always visible */}
       <div className="app-body">
