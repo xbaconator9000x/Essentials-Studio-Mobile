@@ -110,7 +110,6 @@ function AppContent() {
   const mapIsDirtyRef = useRef(false);
   const currentMapIdRef = useRef<number | null>(null);
   const projectRef = useRef<ProjectInfo | null>(null);
-  const archivePickerRef = useRef<HTMLInputElement | null>(null);
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
   const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
@@ -602,15 +601,19 @@ function AppContent() {
             >
               {loading ? "Opening..." : "Open Project Folder"}
             </button>
-            <button className="app-welcome-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
+            {/* Android WebView must receive a real tap on the file input.
+                A hidden input triggered via .click() can silently do nothing
+                without opening the native document picker. */}
+            <label className="app-welcome-btn app-archive-picker">
               Import Essentials Project ZIP
-            </button>
-            <input ref={archivePickerRef} type="file" accept=".zip,application/zip" style={{ display: "none" }}
-              onChange={event => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (file) void handleImportProjectZip(file);
-              }} />
+              <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+                aria-label="Choose Essentials Project ZIP" disabled={loading}
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void handleImportProjectZip(file);
+                }} />
+            </label>
             {archiveProgress !== null && <p>Importing project: {archiveProgress}%</p>}
             <p className="app-welcome-hint">
               Select a folder containing a Game.rxproj file
@@ -667,15 +670,16 @@ function AppContent() {
           <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading || saving}>
             Export ZIP...
           </button>
-          <button className="app-titlebar-btn" onClick={() => archivePickerRef.current?.click()} disabled={loading}>
+          <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
-          </button>
-          <input ref={archivePickerRef} type="file" accept=".zip,application/zip" style={{ display: "none" }}
-            onChange={event => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) void handleImportProjectZip(file);
-            }} />
+            <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+              aria-label="Choose Essentials Project ZIP" disabled={loading}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+          </label>
           {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
           <button className="app-titlebar-btn" onClick={handleBrowseProject}>
             Open...
