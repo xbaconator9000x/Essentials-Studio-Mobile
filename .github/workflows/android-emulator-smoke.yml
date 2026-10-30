@@ -91,7 +91,8 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          target: google_apis
+          # Avoid GMS/Google Search ANRs observed in the prior screenshot.
+          target: default
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 600
