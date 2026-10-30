@@ -161,8 +161,12 @@ jobs:
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 600
-          disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cores 4
+          disable-animations: true
+          # The 4-vCPU/4-GiB full AOSP image hit 100% guest CPU (81% kernel)
+          # during first WebView focus and raised a genuine app ANR in run
+          # 41102608478. Avoid oversubscribing the Intel host and let the
+          # smoke script wait for guest load to settle before app startup.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 2
           script: bash scripts/android-emulator-functional-smoke.sh
       - name: Preserve screenshot, UI hierarchy, ZIP import and failure receipts
         if: always()
