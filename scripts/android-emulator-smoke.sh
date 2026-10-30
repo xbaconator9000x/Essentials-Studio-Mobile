@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Android emulator runtime smoke: installs and launches the real compiled editor.
+# This is not a physical SAF provider, full-project import, or gameplay test.
+set -euo pipefail
+
+evidence="android-runtime-evidence"
+mkdir -p "$evidence"
+capture() {
+  adb logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true
+  adb exec-out screencap -p > "$evidence/launch.png" 2>/dev/null || true
+  adb shell dumpsys activity activities > "$evidence/activities.txt" 2>&1 || true
+  adb shell getprop > "$evidence/device-properties.txt" 2>&1 || true
+}
+trap capture EXIT
+
+apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
+if [[ -z "$apk" || ! -f "$apk" ]]; then
+  echo "No compiled APK found" >&2
+  exit 1
+fi
+aapt_bin="$(find "${ANDROID_HOME:?}/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+if [[ -z "$aapt_bin" || ! -x "$aapt_bin" ]]; then
+  echo "Android aapt is unavailable" >&2
+  exit 1
+fi
+package="$("$aapt_bin" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+if [[ -z "$package" ]]; then
+  echo "Could not read package name from APK" >&2
+  exit 1
+fi
+abi="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
+if [[ "$abi" != x86_64 ]]; then
+  echo "Unexpected emulator ABI: $abi" >&2
+  exit 1
+fi
+{
+  printf 'source_sha=%s\n' "${GITHUB_SHA:-unknown}"
+  printf 'apk=%s\n' "$apk"
+  printf 'apk_sha256=%s\n' "$(sha256sum "$apk" | awk '{print $1}')"
+  printf 'package=%s\n' "$package"
+  printf 'emulator_abi=%s\n' "$abi"
+  printf 'android_release=%s\n' "$(adb shell getprop ro.build.version.release | tr -d '\r')"
+} | tee "$evidence/receipt.txt"
+
+adb install -r "$apk"
+adb shell pm path "$package" | tee "$evidence/installed-package.txt"
+adb logcat -c
+adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 | tee "$evidence/launch-command.txt"
+
+# Wait for the application process, then give its WebView time to initialise.
+running=""
+for attempt in $(seq 1 20); do
+  running="$(adb shell pidof "$package" 2>/dev/null | tr -d '\r' || true)"
+  if [[ -n "$running" ]]; then break; fi
+  sleep 2
+done
+if [[ -z "$running" ]]; then
+  echo "Editor process never started" >&2
+  exit 1
+fi
+sleep 12
+running="$(adb shell pidof "$package" 2>/dev/null | tr -d '\r' || true)"
+if [[ -z "$running" ]]; then
+  echo "Editor process exited after launch" >&2
+  exit 1
+fi
+capture
+if grep -q 'FATAL EXCEPTION' "$evidence/logcat.txt"; then
+  echo "Android runtime reported a fatal exception after launch" >&2
+  exit 1
+fi
+printf 'launch_process=%s\nresult=emulator_launch_only_pass\n' "$running" | tee -a "$evidence/receipt.txt"
+echo "Editor installed and stayed running on the x86_64 Android emulator."
