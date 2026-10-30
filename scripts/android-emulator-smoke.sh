@@ -29,7 +29,7 @@ if [[ -z "$package" ]]; then
   exit 1
 fi
 if command -v sha256sum >/dev/null 2>&1; then
-  apk_hash="${apk_hash}"
+  apk_hash="$(sha256sum "$apk" | awk '{print $1}')"
 else
   apk_hash="$(shasum -a 256 "$apk" | awk '{print $1}')"
 fi
@@ -41,7 +41,7 @@ fi
 {
   printf 'source_sha=%s\n' "${GITHUB_SHA:-unknown}"
   printf 'apk=%s\n' "$apk"
-  printf 'apk_sha256=%s\n' "$(sha256sum "$apk" | awk '{print $1}')"
+  printf 'apk_sha256=%s\n' "$apk_hash"
   printf 'package=%s\n' "$package"
   printf 'emulator_abi=%s\n' "$abi"
   printf 'android_release=%s\n' "$(adb shell getprop ro.build.version.release | tr -d '\r')"
