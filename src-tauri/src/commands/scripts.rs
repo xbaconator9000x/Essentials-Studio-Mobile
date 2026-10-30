@@ -113,12 +113,28 @@ fn script_entries(arr: &[RubyValue]) -> Vec<ScriptEntry> {
     result
 }
 
+/// Script IDs are editor identity keys. A duplicate can make a load select
+/// the wrong source or a delete erase multiple entries. Reject ambiguity
+/// before writing any Ruby Marshal data.
+fn ensure_unique_script_ids(arr: &[RubyValue]) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    for entry in arr {
+        if let Some((id, _, _)) = parse_script_entry(entry) {
+            if !seen.insert(id) {
+                return Err(format!("Duplicate original script ID {id}; refusing ambiguous operation"));
+            }
+        }
+    }
+    Ok(())
+}
+
 // ── Commands ─────────────────────────────────────────────────────────
 
 /// Load the script list (id + title only, no decompression).
 #[tauri::command]
 pub async fn load_script_list(project_path: String) -> Result<Vec<ScriptEntry>, String> {
     let arr = load_scripts_raw(&project_path)?;
+    ensure_unique_script_ids(&arr)?;
     let result = script_entries(&arr);
 
     eprintln!("[scripts] Loaded {} script entries", result.len());
@@ -132,6 +148,7 @@ pub async fn load_script_source(
     script_id: i64,
 ) -> Result<String, String> {
     let arr = load_scripts_raw(&project_path)?;
+    ensure_unique_script_ids(&arr)?;
 
     for entry in &arr {
         if let RubyValue::Nil = entry {
@@ -236,6 +253,7 @@ pub async fn create_script(
         .join("Data")
         .join("Scripts.rxdata");
     let mut arr = load_scripts_raw(&project_path)?;
+    ensure_unique_script_ids(&arr)?;
 
     // Generate a unique magic number
     let max_id = arr
@@ -243,7 +261,8 @@ pub async fn create_script(
         .filter_map(|e| parse_script_entry(e).map(|(id, _, _)| id))
         .max()
         .unwrap_or(0);
-    let new_id = max_id + 1;
+    let new_id = max_id.checked_add(1)
+        .ok_or_else(|| "Cannot create script: script ID space is exhausted".to_string())?;
 
     // Build the new entry (empty source)
     let compressed = compress_zlib("")?;
@@ -287,6 +306,7 @@ pub async fn delete_script(
         .join("Data")
         .join("Scripts.rxdata");
     let mut arr = load_scripts_raw(&project_path)?;
+    ensure_unique_script_ids(&arr)?;
 
     // Find and remove the script
     let original_len = arr.len();
@@ -418,6 +438,74 @@ mod fidelity_tests {
             .unwrap_err().contains("exceeds"));
         let oversized = "x".repeat(MAX_SCRIPT_SOURCE_BYTES as usize + 1);
         assert!(compress_zlib(&oversized).unwrap_err().contains("exceeds"));
+    }
+
+    #[test]
+    fn duplicate_script_ids_fail_closed_without_touching_opaque_entries() {
+        let duplicate = vec![
+            RubyValue::Nil,
+            script(9, "First", "puts :one"),
+            RubyValue::Symbol("opaque".into()),
+            script(9, "Second", "puts :two"),
+        ];
+        assert!(ensure_unique_script_ids(&duplicate).unwrap_err().contains("Duplicate"));
+        let unique = vec![RubyValue::Nil, script(9, "First", "puts :one")];
+        assert!(ensure_unique_script_ids(&unique).is_ok());
+    }
+
+    fn test_project_with_scripts(prefix: &str, entries: Vec<RubyValue>) -> (PathBuf, PathBuf, Vec<u8>) {
+        let unique = format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let path = data.join("Scripts.rxdata");
+        marshal::dump_file(&path, &RubyValue::Array(entries)).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        (root, path, before)
+    }
+
+    #[tokio::test]
+    async fn duplicate_ids_refuse_script_delete_and_create_without_writing_file() {
+        let (root, path, before) = test_project_with_scripts(
+            "essentials-script-guard",
+            vec![
+                script(5, "First", "puts :one"),
+                RubyValue::Nil,
+                script(5, "Second", "puts :two"),
+            ],
+        );
+        let project_path = root.to_string_lossy().into_owned();
+
+        let deleted = delete_script(project_path.clone(), 5).await;
+        assert!(deleted.unwrap_err().contains("Duplicate original script ID"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        let created = create_script(project_path.clone(), "New".into(), 5).await;
+        assert!(created.unwrap_err().contains("Duplicate original script ID"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        let loaded = load_script_source(project_path.clone(), 5).await;
+        assert!(loaded.unwrap_err().contains("Duplicate original script ID"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn creating_after_maximum_script_id_fails_without_writing() {
+        let (root, path, before) = test_project_with_scripts(
+            "essentials-script-overflow",
+            vec![script(i64::MAX, "Last", "puts :last")],
+        );
+        let result = create_script(root.to_string_lossy().into_owned(), "New".into(), i64::MAX).await;
+        assert!(result.unwrap_err().contains("script ID space is exhausted"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
 }
