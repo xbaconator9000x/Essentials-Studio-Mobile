@@ -243,6 +243,14 @@ pub async fn save_pbs_file(
         }
     }
 
+    // The structured UI is not a raw text editor. A newly created file (or
+    // appended field/section) can otherwise serialize delimiters and newlines
+    // that the parser cannot read back as the requested edit. Reject before
+    // touching the file, including for existing projects.
+    if parse_pbs_content(&out) != sections {
+        return Err("Structured PBS edit cannot be read back losslessly; use the raw PBS editor".into());
+    }
+
     std::fs::write(&tmp_path, &out)
         .map_err(|e| format!("Failed to write {filename}: {e}"))?;
     std::fs::rename(&tmp_path, &path)
@@ -339,6 +347,42 @@ mod pbs_preservation_tests {
         let merged = merge_pbs_existing(original, &sections).unwrap();
         assert_eq!(merged, format!("{original}NewField = value\r\n[TWO]\r\nName = Second\r\n"));
         assert_eq!(parse_pbs_content(&merged), sections);
+    }
+
+    #[tokio::test]
+    async fn structured_save_rejects_unreadable_fields_without_changing_existing_file() {
+        let unique = format!("essentials-pbs-roundtrip-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos());
+        let root = std::env::temp_dir().join(unique);
+        let project = root.to_string_lossy().into_owned();
+        let valid = vec![PbsSection {
+            header: "ONE".into(),
+            fields: vec![PbsField { key: "Name".into(), value: "Valid".into() }],
+        }];
+        save_pbs_file(project.clone(), "pokemon.txt".into(), valid.clone()).await.unwrap();
+        let path = root.join("PBS/pokemon.txt");
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(load_pbs_file(project.clone(), "pokemon.txt".into()).await.unwrap(), valid);
+
+        let mut bad_key = valid.clone();
+        bad_key[0].fields[0].key = "Name=Alias".into();
+        assert!(save_pbs_file(project.clone(), "pokemon.txt".into(), bad_key)
+            .await.unwrap_err().contains("losslessly"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        let mut bad_value = valid.clone();
+        bad_value[0].fields[0].value = "Valid\\nInjected = yes".into();
+        assert!(save_pbs_file(project.clone(), "pokemon.txt".into(), bad_value)
+            .await.unwrap_err().contains("losslessly"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        let mut bad_header = valid.clone();
+        bad_header[0].header = "ONE]\\n[TWO".into();
+        assert!(save_pbs_file(project.clone(), "fresh.txt".into(), bad_header)
+            .await.unwrap_err().contains("losslessly"));
+        assert!(!root.join("PBS/fresh.txt").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
