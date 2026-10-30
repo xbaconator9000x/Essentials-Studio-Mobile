@@ -18,7 +18,7 @@ if [[ -z "$apk" || ! -f "$apk" ]]; then
   echo "No compiled APK found" >&2
   exit 1
 fi
-aapt_bin="$(find "${ANDROID_HOME:?}/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+aapt_bin="$(find "${ANDROID_HOME:?}/build-tools" -type f -name aapt | sort -r | head -n 1)"
 if [[ -z "$aapt_bin" || ! -x "$aapt_bin" ]]; then
   echo "Android aapt is unavailable" >&2
   exit 1
@@ -27,6 +27,11 @@ package="$("$aapt_bin" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)
 if [[ -z "$package" ]]; then
   echo "Could not read package name from APK" >&2
   exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  apk_hash="${apk_hash}"
+else
+  apk_hash="$(shasum -a 256 "$apk" | awk '{print $1}')"
 fi
 abi="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
 if [[ "$abi" != x86_64 ]]; then
