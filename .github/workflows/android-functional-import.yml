@@ -151,13 +151,17 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          # Avoid GMS/Google Search ANRs observed in the prior screenshot.
-          target: default
+          # The standard API30 AOSP image repeatedly stalls the app's WebView
+          # during first-boot focus dispatch (ANR confirmed in logcat). Use the
+          # lightweight Android Test Device image to reduce boot-time contention,
+          # while keeping a real Android WebView, DocumentsUI and x86_64 APK.
+          # Do not count launch or ZIP import as passed without UI evidence.
+          target: aosp_atd
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 600
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 4
           script: bash scripts/android-emulator-functional-smoke.sh
       - name: Preserve screenshot, UI hierarchy, ZIP import and failure receipts
         if: always()
