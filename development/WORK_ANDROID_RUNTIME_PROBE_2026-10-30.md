@@ -1,3 +1,15 @@
+# Latest follow-up — 2026-10-30
+
+## Clean cold-boot follow-up: install blocked by guest services
+
+Fresh AVD, explicit -no-snapshot-load -no-snapshot-save, one bounded boot/install process. ADB reached device; sys.boot_completed eventually returned 1. Guest ABI list includes x86_64,x86,arm64-v8a,armeabi-v7a,armeabi: ARM support is advertised, but app binary compatibility remains unverified.
+
+Actual APK installation attempts failed before app launch: initially no package service; later settings-provider-not-initialised, StorageManager.getVolumes() null, and broken service pipe. Diagnostic logcat records BOOT FAILURE starting StorageStatsService with NullPointerException and missing mount service, with repeated system-service startup. Thus this is a guest provisioning/service failure, not evidence of an Essentials app bug. Stopped the unhealthy emulator after collecting logs; final emulator exit -11 was observed after the stop request and is not independently attributed to a spontaneous crash.
+
+No successful APK install, launch, import/edit/save/export/reopen. Screenshot of editor unavailable. Prior pending-snapshot error was avoided by the clean instance; storage/package service failure is the current blocker. Do not equate boot_completed=1 with a usable Android guest.
+
+---
+
 # Work Android runtime probe — 2026-10-30
 
 ## Actual provisioning and execution
