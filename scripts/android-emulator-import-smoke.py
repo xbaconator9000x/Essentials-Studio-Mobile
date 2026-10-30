@@ -121,10 +121,40 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
             and child.get("bounds")
         ), None)
         if title is not None:
+            # In API30 list mode, the title is not a clickable accessibility
+            # node. Tap the *row* rather than repeatedly targeting the same
+            # non-clickable TextView. Grid cards retain their title target.
+            if node.get("class") == "android.widget.LinearLayout":
+                return center(node.attrib["bounds"])
             return center(title.attrib["bounds"])
         if any(child.get("text", "").casefold() == filename.casefold()
                for child in node.iter("node")):
             return center(node.attrib["bounds"])
+    return None
+
+
+def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None:
+    """Alternate touch target for the list row, away from its preview button.
+
+    The first Android 11 run tapped the non-clickable filename twice and left
+    DocumentsUI open. If a full-row tap also fails, exercise the leading icon
+    region exactly once and preserve a failed import unless the editor opens.
+    """
+    start = xml_text.find("<?xml")
+    root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
+    for node in root.iter("node"):
+        if (node.get("resource-id") != "com.android.documentsui:id/item_root"
+                or node.get("class") != "android.widget.LinearLayout"):
+            continue
+        if not any(child.get("text", "").casefold() == filename.casefold()
+                   for child in node.iter("node")):
+            continue
+        left, cy = center(node.attrib["bounds"])
+        bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib["bounds"])
+        if bounds is None:
+            return None
+        x1, _, x2, _ = map(int, bounds.groups())
+        return min(x1 + 80, x2 - 1), cy
     return None
 
 
@@ -280,6 +310,17 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
                 "EssentialsSynthetic.zip",
             )
             if second is not None:
+                if list_toggle is not None:
+                    alternate = picker_list_row_icon(
+                        (evidence / "after-first-file-tap.xml").read_text(encoding="utf-8"),
+                        "EssentialsSynthetic.zip",
+                    )
+                    if alternate is not None:
+                        second = alternate
+                (evidence / "picker-tap-targets.txt").write_text(
+                    f"first={card} second={second} list_mode={list_toggle is not None}\\n",
+                    encoding="utf-8",
+                )
                 tap(second)
         if not wait_for_editor(evidence, 35):
             # Preserve a real failure when the picker stays open or import
@@ -318,6 +359,15 @@ def selftest() -> None:
                        'content-desc="List view" bounds="[890,499][1017,625]"/>'
                        '</hierarchy>')
     assert picker_list_view_control(entries(list_toggle_xml)) == (953, 562)
+    list_xml = ('<?xml version="1.0"?><hierarchy>'
+                '<node resource-id="com.android.documentsui:id/item_root" '
+                'class="android.widget.LinearLayout" bounds="[0,641][1080,830]">'
+                '<node resource-id="android:id/title" text="EssentialsSynthetic.zip" '
+                'bounds="[189,685][620,742]"/></node></hierarchy>')
+    assert picker_file_card(list_xml, "EssentialsSynthetic.zip") == (540, 735)
+    assert picker_list_row_icon(list_xml, "EssentialsSynthetic.zip") == (80, 735)
+    assert picker_list_row_icon(list_xml, "missing.zip") is None
+    assert picker_list_row_icon(grid_xml, "EssentialsSynthetic.zip") is None
     assert picker_list_view_control(entries(grid_xml)) is None
     assert not editor_visible(entries(xml))
     assert not documents_ui_visible(entries(xml))
