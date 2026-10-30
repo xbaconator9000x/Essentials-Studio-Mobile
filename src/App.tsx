@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectInfo, MapRenderData, TilesetRenderInfo, MapProperties, RpgEvent, EventInfo } from "./types";
 import { FIRST_REGULAR_TILE } from "./types";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import {
   openProject,
   loadMap,
@@ -20,7 +20,12 @@ import {
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages, clearImageCache } from "./services/imageLoader";
-import { importProjectZip, exportProjectZip, discardFailedProjectImport } from "./services/archiveApi";
+import {
+  importProjectZip,
+  importProjectZipFromAndroidDocument,
+  exportProjectZip,
+  discardFailedProjectImport,
+} from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
 import { inspectProjectBeforeOpen } from "./services/projectOpenGuards";
@@ -63,6 +68,7 @@ async function showFolderPicker(): Promise<string | null> {
  */
 function AppContent() {
   const { saveAll, dirtyCount } = useProjectSave();
+  const isAndroid = /Android/i.test(navigator.userAgent);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [pbsIndex, setPbsIndex] = useState<PbsIndex>(new Map());
@@ -221,8 +227,12 @@ function AppContent() {
     }
   }, [handleOpenProject]);
 
-  // ── Android-safe archive import (browser file input, private app storage) ──
-  const handleImportProjectZip = useCallback(async (file: File) => {
+  // ── Archive import into private app storage ─────────────────────────────────
+  const handleImportSource = useCallback(async <T,>(
+    source: T | null,
+    importArchive: (source: T, onProgress?: (percent: number) => void) => Promise<string>,
+  ) => {
+    if (source === null) return;
     if (projectRef.current && dirtyCount > 0) {
       const proceed = await confirm("Unsaved project changes exist. Import a different project anyway?");
       if (!proceed) return;
@@ -232,8 +242,8 @@ function AppContent() {
     setArchiveOutcome(null);
     setError(null);
     try {
-      await importAndOpenProject(file, {
-        importArchive: importProjectZip,
+      await importAndOpenProject(source, {
+        importArchive,
         openProject: handleOpenProject,
         discardFailedImport: discardFailedProjectImport,
         isActiveProject: (path) => projectRef.current?.path === path,
@@ -245,6 +255,27 @@ function AppContent() {
       setArchiveProgress(null);
     }
   }, [dirtyCount, handleOpenProject]);
+
+  const handleImportProjectZip = useCallback(
+    (file: File) => handleImportSource(file, importProjectZip),
+    [handleImportSource],
+  );
+
+  const handlePickAndroidProjectZip = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "ZIP archives", extensions: ["zip"] }],
+      });
+      if (selected === null) return;
+      if (typeof selected !== "string") {
+        throw new Error("Android document picker returned an unsupported selection");
+      }
+      await handleImportSource(selected, importProjectZipFromAndroidDocument);
+    } catch (err) {
+      setError(`Project ZIP import failed: ${String(err)}`);
+    }
+  }, [handleImportSource]);
 
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
@@ -601,19 +632,23 @@ function AppContent() {
             >
               {loading ? "Opening..." : "Open Project Folder"}
             </button>
-            {/* Android WebView must receive a real tap on the file input.
-                A hidden input triggered via .click() can silently do nothing
-                without opening the native document picker. */}
-            <label className="app-welcome-btn app-archive-picker">
-              Import Essentials Project ZIP
-              <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
-                aria-label="Choose Essentials Project ZIP" disabled={loading}
-                onChange={event => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) void handleImportProjectZip(file);
-                }} />
-            </label>
+            {isAndroid ? (
+              <button className="app-welcome-btn" aria-label="Choose Essentials Project ZIP"
+                onClick={() => void handlePickAndroidProjectZip()} disabled={loading}>
+                Import Essentials Project ZIP
+              </button>
+            ) : (
+              <label className="app-welcome-btn app-archive-picker">
+                Import Essentials Project ZIP
+                <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+                  aria-label="Choose Essentials Project ZIP" disabled={loading}
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void handleImportProjectZip(file);
+                  }} />
+              </label>
+            )}
             {archiveProgress !== null && <p>Importing project: {archiveProgress}%</p>}
             <p className="app-welcome-hint">
               Select a folder containing a Game.rxproj file
@@ -670,16 +705,23 @@ function AppContent() {
           <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading || saving}>
             Export ZIP...
           </button>
-          <label className="app-titlebar-btn app-archive-picker">
-            Import ZIP...
-            <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
-              aria-label="Choose Essentials Project ZIP" disabled={loading}
-              onChange={event => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (file) void handleImportProjectZip(file);
-              }} />
-          </label>
+          {isAndroid ? (
+            <button className="app-titlebar-btn" aria-label="Choose Essentials Project ZIP"
+              onClick={() => void handlePickAndroidProjectZip()} disabled={loading}>
+              Import ZIP...
+            </button>
+          ) : (
+            <label className="app-titlebar-btn app-archive-picker">
+              Import ZIP...
+              <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+                aria-label="Choose Essentials Project ZIP" disabled={loading}
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void handleImportProjectZip(file);
+                }} />
+            </label>
+          )}
           {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
           <button className="app-titlebar-btn" onClick={handleBrowseProject}>
             Open...

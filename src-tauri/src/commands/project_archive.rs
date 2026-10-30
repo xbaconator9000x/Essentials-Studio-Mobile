@@ -26,7 +26,7 @@ fn safe_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn import_root(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn import_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let root = root.join("imports");
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
@@ -40,7 +40,7 @@ fn projects_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn staging_path(root: &Path, id: &str) -> Result<PathBuf, String> {
+pub(crate) fn staging_path(root: &Path, id: &str) -> Result<PathBuf, String> {
     safe_id(id)?;
     Ok(root.join(format!("{id}.zip")))
 }
