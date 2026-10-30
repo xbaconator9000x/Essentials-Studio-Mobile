@@ -123,6 +123,40 @@ def capture(evidence: Path) -> None:
             pass
 
 
+
+def system_anr_wait_button(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    """Only dismiss the OS process ANR's Wait button, never an app ANR."""
+    labels = [n.get("text", "").strip().casefold() for n in nodes]
+    if "process system isn't responding" not in labels:
+        return None
+    for node in nodes:
+        if node.get("text", "").strip().casefold() == "wait" and node.get("bounds"):
+            return center(node["bounds"])
+    return None
+
+
+def recover_system_anr(evidence: Path) -> bool:
+    """Bounded, logged AOSP boot ANR recovery; never declare an import pass."""
+    evidence.mkdir(parents=True, exist_ok=True)
+    try:
+        nodes = dump_ui(evidence, "system-anr")
+        button = system_anr_wait_button(nodes)
+        if button is None:
+            return False
+        tap(button)
+        (evidence / "system-anr-recovery.txt").write_text(
+            "Tapped Android OS process ANR Wait; editor focus still requires verification.\\n",
+            encoding="utf-8",
+        )
+        return True
+    except (RuntimeError, ET.ParseError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        (evidence / "system-anr-recovery.txt").write_text(
+            "Could not safely dismiss OS ANR: " + str(exc)[:400] + "\\n",
+            encoding="utf-8",
+        )
+        return False
+
+
 def smoke(fixture: Path, evidence: Path, package: str) -> None:
     if not fixture.is_file() or fixture.stat().st_size == 0:
         raise FileNotFoundError("Native-generated synthetic original.zip is required")
@@ -187,6 +221,13 @@ def selftest() -> None:
     assert not editor_visible(entries(xml))
     editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
     assert editor_visible(entries(editor_xml))
+    anr_xml = ('<?xml version="1.0"?><hierarchy>'
+               '<node text="Process system isn\'t responding" bounds="[0,0][100,30]"/>'
+               '<node text="Close app" bounds="[10,30][90,50]"/>'
+               '<node text="Wait" bounds="[10,60][90,100]"/></hierarchy>')
+    assert system_anr_wait_button(entries(anr_xml)) == (50, 80)
+    assert system_anr_wait_button(entries(editor_xml)) is None
+    assert system_anr_wait_button(entries(anr_xml.replace("system", "Essentials Studio"))) is None
     try:
         center("[0,0][0,10]")
     except ValueError:
@@ -201,11 +242,14 @@ def main() -> int:
     parser.add_argument("--package")
     parser.add_argument("--evidence", type=Path, default=Path("android-runtime-evidence"))
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--recover-system-anr", action="store_true")
     options = parser.parse_args()
     if options.self_test:
         selftest()
         print("Accessibility selector self-tests passed")
         return 0
+    if options.recover_system_anr:
+        return 0 if recover_system_anr(options.evidence) else 1
     if not options.fixture or not options.package:
         parser.error("--fixture and --package are required")
     try:
