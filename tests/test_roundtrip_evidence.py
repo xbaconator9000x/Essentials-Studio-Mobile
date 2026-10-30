@@ -24,7 +24,7 @@ class RoundtripEvidenceTests(unittest.TestCase):
             output = root / "published"
             receipt = publish_verified_evidence(source, output, report)
             self.assertEqual(receipt["verification"], report)
-            self.assertEqual(receipt["allowed_changed_paths"], ["Data/Map001.rxdata"])
+            self.assertEqual(receipt["allowed_changed_paths"], ["Data/Map001.rxdata", "PBS/pokemon.txt"])
             self.assertIn("physical Android SAF provider", receipt["unverified_gates"])
             self.assertEqual(json.loads((output / "receipt.json").read_text()), receipt)
             for name in ("original.zip", "exported.zip"):
