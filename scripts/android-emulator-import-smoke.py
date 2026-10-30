@@ -149,8 +149,8 @@ def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None
         if not any(child.get("text", "").casefold() == filename.casefold()
                    for child in node.iter("node")):
             continue
-        left, cy = center(node.attrib["bounds"])
-        bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib["bounds"])
+        _, cy = center(node.attrib["bounds"])
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib["bounds"])
         if bounds is None:
             return None
         x1, _, x2, _ = map(int, bounds.groups())
@@ -318,7 +318,7 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
                     if alternate is not None:
                         second = alternate
                 (evidence / "picker-tap-targets.txt").write_text(
-                    f"first={card} second={second} list_mode={list_toggle is not None}\\n",
+                    f"first={card} second={second} list_mode={list_toggle is not None}\n",
                     encoding="utf-8",
                 )
                 tap(second)
