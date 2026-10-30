@@ -87,7 +87,13 @@ for attempt in $(seq 1 6); do
   # shows the standard "Wait" action. Dismiss ONLY that exact OS ANR once,
   # using its accessibility bounds; never dismiss an editor crash or claim
   # success without subsequently proving editor foreground focus.
-  if [[ "$focus" == *"Application Not Responding: system"* && "$recovered_system_anr" == 0 ]]; then
+  # Android's SystemUI ANR uses the process name com.android.systemui
+  # (observed in run 41094049109); the older system-process ANR uses
+  # "system". Neither may be mistaken for an editor application ANR.
+  if [[ "$recovered_system_anr" == 0 && (
+        "$focus" == *"Application Not Responding: system"* ||
+        "$focus" == *"Application Not Responding: com.android.systemui"*
+      ) ]]; then
     if python3 scripts/android-emulator-import-smoke.py --recover-system-anr --evidence "$evidence"; then
       recovered_system_anr=1
       echo "Dismissed transient Android OS ANR; checking editor focus again."
