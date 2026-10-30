@@ -110,6 +110,18 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     for node in root.iter("node"):
         if node.get("resource-id") != "com.android.documentsui:id/item_root":
             continue
+        # On AOSP API30, tapping the *middle of the grid thumbnail* can leave
+        # GET_CONTENT open without selecting anything. The recorded failing
+        # hierarchy places the actual file name in android:id/title at the
+        # bottom of the card; tap that label's bounds instead.
+        title = next((
+            child for child in node.iter("node")
+            if child.get("resource-id") == "android:id/title"
+            and child.get("text", "").casefold() == filename.casefold()
+            and child.get("bounds")
+        ), None)
+        if title is not None:
+            return center(title.attrib["bounds"])
         if any(child.get("text", "").casefold() == filename.casefold()
                for child in node.iter("node")):
             return center(node.attrib["bounds"])
@@ -258,6 +270,13 @@ def selftest() -> None:
     picker_xml = '<?xml version="1.0"?><hierarchy><node resource-id="com.android.documentsui:id/item_root" bounds="[10,20][110,220]"><node text="EssentialsSynthetic.zip"/></node></hierarchy>'
     assert picker_file_card(picker_xml, "EssentialsSynthetic.zip") == (60, 120)
     assert picker_file_card(picker_xml, "other.zip") is None
+    # Real API30 DocumentsUI grid: the ZIP nameplate is at y=1139..1190,
+    # while the card midpoint y=952 was not accepted by the provider.
+    grid_xml = ('<?xml version="1.0"?><hierarchy>'
+                '<node resource-id="com.android.documentsui:id/item_root" bounds="[58,646][535,1259]">'
+                '<node resource-id="android:id/title" text="EssentialsSynthetic.zip" '
+                'bounds="[195,1139][498,1190]"/></node></hierarchy>')
+    assert picker_file_card(grid_xml, "EssentialsSynthetic.zip") == (346, 1164)
     assert not editor_visible(entries(xml))
     assert not documents_ui_visible(entries(xml))
     picker_visible_xml = ('<?xml version="1.0"?><hierarchy>'
