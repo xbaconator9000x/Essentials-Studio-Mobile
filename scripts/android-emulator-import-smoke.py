@@ -78,6 +78,31 @@ def wait_for(evidence: Path, name: str, needle: str, seconds: int) -> tuple[int,
     raise RuntimeError(f"Missing Android UI item {needle!r}: {last_error}")
 
 
+def documents_ui_visible(nodes: list[dict[str, str]]) -> bool:
+    """Verify the *native* document provider actually opened, not a WebView."""
+    return any(
+        n.get("package", "").startswith(("com.android.documentsui", "com.google.android.documentsui"))
+        for n in nodes
+    )
+
+
+def wait_for_document_picker(evidence: Path, seconds: int) -> list[dict[str, str]]:
+    deadline = time.monotonic() + seconds
+    nodes: list[dict[str, str]] = []
+    while time.monotonic() < deadline:
+        nodes = dump_ui(evidence, "after-import-tap")
+        reject_editor_anr(nodes)
+        if documents_ui_visible(nodes):
+            return nodes
+        time.sleep(2)
+    visible = [n.get("text", "") for n in nodes if n.get("text")]
+    raise RuntimeError(
+        "Android DocumentsUI did not open after import control tap; "
+        "native SAF picker is required if WebView file input is unsupported. "
+        f"Visible UI: {visible[-12:]!r}"
+    )
+
+
 def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     """Tap the full DocumentsUI item, not its small nameplate or preview icon."""
     start = xml_text.find("<?xml")
@@ -185,7 +210,12 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
         "fixture_sha256": original_hash, "package": package, "result": "failed"
     }
     try:
-        tap(wait_for(evidence, "landing", "Import Essentials Project ZIP", 50))
+        # Tap the actual input's accessibility button, not the surrounding
+        # label text; assert that a native picker launches before looking for
+        # a file. A missing picker is an app integration defect, not a missing
+        # "Show roots" menu item.
+        tap(wait_for(evidence, "landing", "Choose Essentials Project ZIP", 50))
+        wait_for_document_picker(evidence, 15)
         try:
             selected = wait_for(evidence, "picker", "EssentialsSynthetic.zip", 18)
         except RuntimeError:
@@ -229,6 +259,11 @@ def selftest() -> None:
     assert picker_file_card(picker_xml, "EssentialsSynthetic.zip") == (60, 120)
     assert picker_file_card(picker_xml, "other.zip") is None
     assert not editor_visible(entries(xml))
+    assert not documents_ui_visible(entries(xml))
+    picker_visible_xml = ('<?xml version="1.0"?><hierarchy>'
+                          '<node package="com.android.documentsui" text="Recent" bounds="[0,0][200,80]"/>'
+                          '</hierarchy>')
+    assert documents_ui_visible(entries(picker_visible_xml))
     editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
     assert editor_visible(entries(editor_xml))
     app_anr = ('<?xml version="1.0"?><hierarchy>'
