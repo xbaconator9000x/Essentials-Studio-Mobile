@@ -807,6 +807,49 @@ mod archive_roundtrip_tests {
         RubyValue::String(RubyString::with_encoding(text.as_bytes().to_vec(), "UTF-8".into()))
     }
 
+    /// Fully synthetic PNG artwork for the native ZIP fixture. The previous
+    /// fixture wrote ASCII placeholder bytes under a .png name, so successful
+    /// project opening could not establish whether Android could actually
+    /// decode and render a tileset or event character.
+    fn synthetic_png(width: u32, height: u32, character: bool) -> Vec<u8> {
+        let pixels = image::RgbaImage::from_fn(width, height, |x, y| {
+            let x_band = (x / 32) as u8;
+            let y_band = (y / 32) as u8;
+            if character && (x % 32 < 4 || y % 32 < 4) {
+                image::Rgba([0, 0, 0, 0])
+            } else {
+                image::Rgba([
+                    x_band.wrapping_mul(29).wrapping_add(36),
+                    y_band.wrapping_mul(27).wrapping_add(51),
+                    if character { 186 } else { 88 },
+                    255,
+                ])
+            }
+        });
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(pixels)
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .expect("encode original synthetic PNG pixels");
+        encoded.into_inner()
+    }
+
+    #[test]
+    fn synthetic_fixture_graphics_decode_and_match_xp_layout() {
+        let members = synthetic_rxdata_members();
+        for (path, width, height) in [
+            ("Graphics/Tilesets/Synthetic.png", 256, 256),
+            ("Graphics/Characters/SyntheticGuide.png", 128, 128),
+        ] {
+            let bytes = &members.iter().find(|(name, _)| name == path)
+                .expect("synthetic artwork fixture member").1;
+            assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+            let decoded = image::load_from_memory(bytes)
+                .expect("synthetic graphics must be valid PNG pixels");
+            assert_eq!(decoded.width(), width, "{path} width");
+            assert_eq!(decoded.height(), height, "{path} height");
+        }
+    }
+
     fn synthetic_rxdata_members() -> Vec<(String, Vec<u8>)> {
         let mut map = RpgMap::new_blank(2, 2, 1);
         map.data.set(1, 0, 1, 48);
@@ -932,7 +975,11 @@ mod archive_roundtrip_tests {
             ),
             (
                 "Graphics/Tilesets/Synthetic.png".into(),
-                b"rights-cleared synthetic image bytes".to_vec(),
+                synthetic_png(256, 256, false),
+            ),
+            (
+                "Graphics/Characters/SyntheticGuide.png".into(),
+                synthetic_png(128, 128, true),
             ),
         ])
         .collect()
