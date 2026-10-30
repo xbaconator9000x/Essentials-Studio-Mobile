@@ -112,6 +112,7 @@ function AppContent() {
   const projectRef = useRef<ProjectInfo | null>(null);
   const archivePickerRef = useRef<HTMLInputElement | null>(null);
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
+  const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
   useEffect(() => { mapDataRef.current = mapData; }, [mapData]);
   useEffect(() => { projectRef.current = project; }, [project]);
@@ -229,6 +230,7 @@ function AppContent() {
     }
     setLoading(true);
     setArchiveProgress(0);
+    setArchiveOutcome(null);
     setError(null);
     try {
       await importAndOpenProject(file, {
@@ -248,6 +250,7 @@ function AppContent() {
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
     if (!active) return;
+    setArchiveOutcome(null);
     if (dirtyCount > 0) {
       setError("Save all outstanding edits before exporting a project ZIP.");
       return;
@@ -256,7 +259,12 @@ function AppContent() {
     setArchiveProgress(0);
     setError(null);
     try {
-      await exportProjectZip(active.path, active.name, setArchiveProgress);
+      const outcome = await exportProjectZip(active.path, active.name, setArchiveProgress);
+      setArchiveOutcome(outcome === "saved"
+        ? "ZIP saved to the selected Android document and byte-verified."
+        : outcome === "cancelled"
+          ? "ZIP export cancelled. No destination document was written."
+          : "ZIP share/download requested. Verify the file in the destination app.");
     } catch (err) {
       setError(`Project ZIP export failed: ${String(err)}`);
     } finally {
@@ -681,6 +689,7 @@ function AppContent() {
           {archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`}
         </div>
       )}
+      {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
       {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
       {/* Main layout — map editor always visible */}
