@@ -265,7 +265,12 @@ function AppContent() {
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: "ZIP archives", extensions: ["zip"] }],
+        // Android DocumentsUI providers disagree on ZIP MIME types
+        // (application/zip vs application/x-zip-compressed). A restrictive
+        // filter can display an archive but leave its row unselectable.
+        // Select via the native provider, then let the bounded Rust ZIP
+        // validator reject anything that is not a safe project archive.
+        // This does not grant filesystem access or bypass the SAF picker.
       });
       if (selected === null) return;
       if (typeof selected !== "string") {
