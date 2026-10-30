@@ -110,7 +110,16 @@ export async function exportProjectZip(
     }
     const file = new File([blob], name, { type: "application/zip" });
     if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-      await navigator.share({ files: [file], title: name });
+      try {
+        await navigator.share({ files: [file], title: name });
+      } catch (error) {
+        // Closing the native share sheet is a cancellation, not an export
+        // failure and certainly not a verified document save.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return "cancelled";
+        }
+        throw error;
+      }
     } else {
       const url = URL.createObjectURL(blob);
       try {
