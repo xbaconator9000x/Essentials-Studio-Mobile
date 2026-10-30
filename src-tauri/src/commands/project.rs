@@ -366,19 +366,42 @@ pub async fn save_event(
     let mut found_events_hash = false;
     let mut replaced = false;
     if let marshal::types::RubyValue::Object(ref mut obj) = value {
+        // Duplicate @events ivars make the serialized map ambiguous; do not
+        // edit one while silently leaving another conflicting hash intact.
+        if obj.instance_vars.iter().filter(|(name, _)| name == "@events").count() != 1 {
+            return Err(format!("Ambiguous @events fields on Map{:03}; save aborted", map_id));
+        }
         for (name, val) in obj.instance_vars.iter_mut() {
             if name == "@events" {
                 if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
                     found_events_hash = true;
-                    // Find the matching event by ID key
-                    for (key, event_val) in pairs.iter_mut() {
-                        if let Some(id) = key.as_int() {
-                            if id == event.id {
-                                *event_val = super::event_merge::preserve_unedited_event_fields(event_val, &event.to_ruby_value())?;
-                                replaced = true;
-                                break;
-                            }
+                    // Malformed Marshal Hashes can contain duplicate integer keys.
+                    // Updating the first match would silently leave another event behind.
+                    let matches: Vec<usize> = pairs.iter().enumerate()
+                        .filter_map(|(index, (key, _))| (key.as_int() == Some(event.id)).then_some(index))
+                        .collect();
+                    if matches.len() > 1 {
+                        return Err(format!(
+                            "Ambiguous event ID {}: duplicate keys in Map{:03}; save aborted",
+                            event.id, map_id
+                        ));
+                    }
+                    if let Some(&index) = matches.first() {
+                        let original = &pairs[index].1;
+                        let embedded_id = original.as_object()
+                            .and_then(|obj| obj.get_int("id"));
+                        if embedded_id != Some(event.id) {
+                            return Err(format!(
+                                "Event ID {} does not match serialized event payload on Map{:03}; save aborted",
+                                event.id, map_id
+                            ));
                         }
+                        // Finish validation and merging before mutating the hash.
+                        let merged = super::event_merge::preserve_unedited_event_fields(
+                            original, &event.to_ruby_value()
+                        )?;
+                        pairs[index].1 = merged;
+                        replaced = true;
                     }
                     // Event id not present yet (e.g. created client-side): insert it
                     // rather than silently dropping the edit.
@@ -471,6 +494,72 @@ mod event_save_integrity_tests {
         assert_eq!(std::fs::read(&map_file).unwrap(), original_bytes);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[tokio::test]
+    async fn duplicate_or_mismatched_serialized_event_ids_reject_save_without_writing() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-event-duplicate-{}-{unique}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+        let event = object("RPG::Event", vec![
+            ("id", RubyValue::Integer(1)),
+            ("name", RubyValue::String(RubyString::new(b"Original".to_vec()))),
+            ("x", RubyValue::Integer(0)),
+            ("y", RubyValue::Integer(0)),
+            ("pages", RubyValue::Array(vec![])),
+        ]);
+        let mut edited = RpgEvent::from_ruby_value(&event).unwrap();
+        edited.name = "Edited".into();
+
+        for entries in [
+            vec![
+                (RubyValue::Integer(1), event.clone()),
+                (RubyValue::Integer(1), event.clone()),
+            ],
+            vec![
+                (RubyValue::Integer(1), object("RPG::Event", vec![
+                    ("id", RubyValue::Integer(2)),
+                    ("name", RubyValue::String(RubyString::new(b"Mismatch".to_vec()))),
+                    ("x", RubyValue::Integer(0)),
+                    ("y", RubyValue::Integer(0)),
+                    ("pages", RubyValue::Array(vec![])),
+                ])),
+            ],
+        ] {
+            let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+            let RubyValue::Object(ref mut obj) = map else { panic!("map object") };
+            obj.instance_vars.iter_mut()
+                .find(|(name, _)| name == "@events").unwrap().1 = RubyValue::Hash(entries);
+            marshal::dump_file(&map_file, &map).unwrap();
+            let before = std::fs::read(&map_file).unwrap();
+            let error = save_event(root.to_string_lossy().into_owned(), 1, edited.clone())
+                .await.unwrap_err();
+            assert!(
+                error.contains("duplicate keys") || error.contains("does not match"),
+                "{error}"
+            );
+            assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        }
+        // A second serialized @events ivar must also be rejected without a write.
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map object") };
+        obj.instance_vars.push((
+            "@events".into(),
+            RubyValue::Hash(vec![(RubyValue::Integer(1), event)]),
+        ));
+        marshal::dump_file(&map_file, &map).unwrap();
+        let before = std::fs::read(&map_file).unwrap();
+        let error = save_event(root.to_string_lossy().into_owned(), 1, edited)
+            .await.unwrap_err();
+        assert!(error.contains("Ambiguous @events"), "{error}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
 }
 
 /// Create a new event on a map at position (x, y).
