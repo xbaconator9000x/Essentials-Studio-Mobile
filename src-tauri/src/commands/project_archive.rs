@@ -1217,6 +1217,61 @@ mod archive_roundtrip_tests {
                 assert_eq!(exported_hashes.get(name), Some(original_hash), "SHA-256 mismatch in {name}");
             }
         }
+        // An archive with the expected hashes is not necessarily a project the
+        // editor can reopen. Re-extract the exported ZIP and exercise the real
+        // project/map/event/PBS readers against that fresh project root.
+        let reopened_root = extract_archive(&exported, &sandbox.path("reopened-export"))
+            .expect("reimport exported synthetic project ZIP");
+        assert!(reopened_root.join("Graphics/Empty").is_dir());
+        assert_eq!(
+            fs::read(reopened_root.join("Data/Scripts.rxdata")).unwrap(),
+            fs::read(imported.join("Data/Scripts.rxdata")).unwrap(),
+            "reimport must preserve untouched scripts"
+        );
+        runtime.block_on(async {
+            let reopened_project = crate::commands::project::open_project(
+                reopened_root.to_string_lossy().into_owned(),
+            )
+            .await
+            .expect("open project reimported from exported ZIP");
+            let reopened_map = crate::commands::project::load_map(
+                reopened_project.path.clone(), 1,
+            )
+            .await
+            .expect("load edited map from reimported ZIP");
+            assert_eq!(reopened_map.tiles[4], 777);
+            let reopened_event = crate::commands::project::load_event(
+                reopened_project.path.clone(), 1, 7,
+            )
+            .await
+            .expect("load edited event from reimported ZIP");
+            assert_eq!(
+                reopened_event.pages[0].list[0].parameters[0],
+                serde_json::Value::String("Edited dialogue".into())
+            );
+            let reopened_pbs = crate::commands::pbs::load_pbs_file(
+                reopened_project.path.clone(), "pokemon.txt".into(),
+            )
+            .await
+            .expect("load edited PBS from reimported ZIP");
+            assert_eq!(
+                reopened_pbs[0].fields.iter().find(|field| field.key == "Name")
+                    .expect("Name field").value,
+                "Edited"
+            );
+        });
+        let reopened_map = crate::marshal::load_file(
+            &reopened_root.join("Data/Map001.rxdata"),
+        ).expect("reimported map retains Ruby Marshal");
+        let RubyValue::Object(reopened_map) = reopened_map else {
+            panic!("reimported map remains RPG::Map")
+        };
+        assert_eq!(
+            reopened_map.get("plugin_metadata"),
+            Some(&RubyValue::Symbol("keep-map".into())),
+            "reimported map must retain opaque metadata"
+        );
+
         if let Some(directory) = std::env::var_os("PROJECT_ROUNDTRIP_ARTIFACT_DIR") {
             let directory = PathBuf::from(directory);
             fs::create_dir_all(&directory).unwrap();
