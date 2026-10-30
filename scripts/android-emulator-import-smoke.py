@@ -128,6 +128,15 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     return None
 
 
+def picker_list_view_control(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    """Prefer DocumentsUI's accessible list mode over the ambiguous grid thumbnail."""
+    for node in nodes:
+        if (node.get("resource-id") == "com.android.documentsui:id/sub_menu_list"
+                and node.get("content-desc") == "List view" and node.get("bounds")):
+            return center(node["bounds"])
+    return None
+
+
 def editor_visible(nodes: list[dict[str, str]]) -> bool:
     """Require a loaded project, not merely the welcome screen or picker."""
     return (
@@ -236,15 +245,35 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             selected = wait_for(evidence, "picker-file", "EssentialsSynthetic.zip", 25)
         # A file may appear under Recent without opening Downloads; capture
         # the current picker hierarchy for either path before selecting it.
-        dump_ui(evidence, "picker-file")
-        # DocumentsUI grid tiles can require a tap on the card rather than
-        # the title/nameplate. The previous test spent 90s waiting for an
-        # impossible marker while still displaying the system file picker.
-        xml = (evidence / "picker-file.xml").read_text(encoding="utf-8")
+        nodes = dump_ui(evidence, "picker-file")
+        # The API30 DocumentsUI grid exposes a non-clickable item_root and
+        # non-clickable title. Switch to the native list presentation when
+        # available; this is an actual UI interaction, not a bypass of SAF.
+        list_toggle = picker_list_view_control(nodes)
+        if list_toggle is not None:
+            tap(list_toggle)
+            time.sleep(2)
+            nodes = dump_ui(evidence, "picker-file-list")
+            if not documents_ui_visible(nodes):
+                raise AssertionError("DocumentsUI disappeared while switching to list mode")
+        xml_name = "picker-file-list.xml" if list_toggle is not None else "picker-file.xml"
+        xml = (evidence / xml_name).read_text(encoding="utf-8")
         card = picker_file_card(xml, "EssentialsSynthetic.zip")
         if card is None:
-            raise AssertionError("Cannot locate the synthetic ZIP picker card")
+            raise AssertionError("Cannot locate the synthetic ZIP picker item")
         tap(card)
+        # AOSP file rows sometimes select on first tap and open on second.
+        # Inspect the *actual* provider after the first tap; never tap blindly
+        # after it has returned to the editor or an import-error dialog.
+        time.sleep(4)
+        nodes = dump_ui(evidence, "after-first-file-tap")
+        if documents_ui_visible(nodes):
+            second = picker_file_card(
+                (evidence / "after-first-file-tap.xml").read_text(encoding="utf-8"),
+                "EssentialsSynthetic.zip",
+            )
+            if second is not None:
+                tap(second)
         if not wait_for_editor(evidence, 35):
             # Preserve a real failure when the picker stays open or import
             # rejects the ZIP; never count a live WebView as successful import.
@@ -277,6 +306,12 @@ def selftest() -> None:
                 '<node resource-id="android:id/title" text="EssentialsSynthetic.zip" '
                 'bounds="[195,1139][498,1190]"/></node></hierarchy>')
     assert picker_file_card(grid_xml, "EssentialsSynthetic.zip") == (346, 1164)
+    list_toggle_xml = ('<?xml version="1.0"?><hierarchy>'
+                       '<node resource-id="com.android.documentsui:id/sub_menu_list" '
+                       'content-desc="List view" bounds="[890,499][1017,625]"/>'
+                       '</hierarchy>')
+    assert picker_list_view_control(entries(list_toggle_xml)) == (953, 562)
+    assert picker_list_view_control(entries(grid_xml)) is None
     assert not editor_visible(entries(xml))
     assert not documents_ui_visible(entries(xml))
     picker_visible_xml = ('<?xml version="1.0"?><hierarchy>'
