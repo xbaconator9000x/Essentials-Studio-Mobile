@@ -207,3 +207,11 @@ body,
   color: var(--color-overlay0);
   line-height: 1.6;
 }
+
+/* Keep file operations visible on narrow Android viewports. */
+.app-titlebar { flex-wrap: wrap; gap: 6px; }
+.app-title { min-width: 0; overflow-wrap: anywhere; }
+.app-titlebar-right { max-width: 100%; min-width: 0; overflow-x: auto; padding-bottom: 3px; }
+.app-titlebar-right > button { flex-shrink: 0; min-height: 36px; }
+.app-operation-status { flex-shrink: 0; padding: 8px 12px; background: var(--color-mantle); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; }
+.app-operation-error { color: var(--color-danger); border-bottom: 1px solid var(--color-danger); }
