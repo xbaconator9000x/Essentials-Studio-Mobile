@@ -55,12 +55,21 @@ def dump_ui(evidence: Path, name: str) -> list[dict[str, str]]:
     return entries(result.stdout)
 
 
+def reject_editor_anr(nodes: list[dict[str, str]]) -> None:
+    """Fail closed on the editor's own Android ANR, not an OS system dialog."""
+    if any("essentials studio mobile isn't responding" in n.get("text", "").casefold()
+           for n in nodes):
+        raise AssertionError("Editor application is not responding (ANR); import not exercised")
+
+
 def wait_for(evidence: Path, name: str, needle: str, seconds: int) -> tuple[int, int]:
     deadline = time.monotonic() + seconds
     last_error = ""
     while time.monotonic() < deadline:
         try:
-            point = locate(dump_ui(evidence, name), needle)
+            nodes = dump_ui(evidence, name)
+            reject_editor_anr(nodes)
+            point = locate(nodes, needle)
             if point:
                 return point
         except (ET.ParseError, RuntimeError, subprocess.CalledProcessError) as exc:
@@ -96,6 +105,7 @@ def wait_for_editor(evidence: Path, seconds: int) -> bool:
     while time.monotonic() < deadline:
         try:
             nodes = dump_ui(evidence, "after-picker")
+            reject_editor_anr(nodes)
             if editor_visible(nodes):
                 return True
             if any("Project ZIP import failed" in n.get("text", "") for n in nodes):
@@ -221,6 +231,16 @@ def selftest() -> None:
     assert not editor_visible(entries(xml))
     editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
     assert editor_visible(entries(editor_xml))
+    app_anr = ('<?xml version="1.0"?><hierarchy>'
+               '<node text="Essentials Studio Mobile isn\'t responding" bounds="[0,0][80,60]"/>'
+               '</hierarchy>')
+    try:
+        reject_editor_anr(entries(app_anr))
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("The emulator must reject editor ANR dialogs")
+
     anr_xml = ('<?xml version="1.0"?><hierarchy>'
                '<node text="Process system isn\'t responding" bounds="[0,0][100,30]"/>'
                '<node text="Close app" bounds="[10,30][90,50]"/>'

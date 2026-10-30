@@ -4,6 +4,10 @@
 # survive from one entry to the next.
 set -euo pipefail
 
+# AOSP on this accelerated host is still scheduling first-boot system
+# services when boot_completed=1. A short idle window avoids measuring an
+# overloaded boot as an editor import failure; app ANRs still fail closed.
+sleep 25
 bash scripts/android-emulator-smoke.sh
 
 receipt="android-runtime-evidence/receipt.txt"

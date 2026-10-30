@@ -102,6 +102,20 @@ for attempt in $(seq 1 6); do
   fi
   sleep 5
 done
+# A brief foreground window can turn into a real application ANR just
+# afterwards. The first functional test run caught exactly that state.
+# Let Android's WebView settle and recheck both the window and logcat.
+sleep 20
+capture
+focus="$(grep 'mCurrentFocus=' "$evidence/windows.txt" | tail -n 1 || true)"
+if [[ "$focus" != *"$package"* || "$focus" == *"Application Not Responding"* ]]; then
+  printf 'Editor foreground was lost after settling: %s\n' "$focus" >&2
+  exit 1
+fi
+if grep -Fq "ANR in $package" "$evidence/logcat.txt"; then
+  echo "Android reported an ANR in the editor after launch" >&2
+  exit 1
+fi
 if [[ ! -s "$evidence/launch.png" ]]; then
   echo "No Android screenshot was captured" >&2
   exit 1
