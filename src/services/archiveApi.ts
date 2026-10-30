@@ -66,7 +66,7 @@ export async function exportProjectZip(
   projectPath: string,
   projectName: string,
   onProgress?: (percent: number) => void,
-): Promise<void> {
+): Promise<"saved" | "cancelled" | "requested"> {
   const exported = await invoke<ProjectArchiveExport>("begin_project_archive_export", {
     projectPath,
   });
@@ -80,7 +80,9 @@ export async function exportProjectZip(
     // the document to verify every byte. Avoid the WebView Blob/share fallback
     // (and its 512 MiB JS memory cost) on Android.
     if (/Android/i.test(navigator.userAgent)) {
-      await exportAndroidDocument(exported.export_id, exported.size, name, {
+      // Preserve the native provider result so the UI never confuses a
+      // cancelled picker with a byte-verified document save.
+      return await exportAndroidDocument(exported.export_id, exported.size, name, {
         pickDestination: (filename) => save({
           defaultPath: filename,
           filters: [{ name: "ZIP archives", extensions: ["zip"] }],
@@ -88,7 +90,6 @@ export async function exportProjectZip(
         writeAndVerify: (exportId, documentUri) =>
           invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
       }, onProgress);
-      return; // includes cancellation; never reports 100% unless readback passes
     }
 
     const chunks: BlobPart[] = [];
@@ -124,7 +125,9 @@ export async function exportProjectZip(
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
     }
+    // A browser share/download request is not a verified destination write.
     onProgress?.(100);
+    return "requested";
   } finally {
     await invoke("discard_project_archive_export", { exportId: exported.export_id }).catch(() => {});
   }
