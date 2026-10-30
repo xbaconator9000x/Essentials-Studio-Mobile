@@ -69,6 +69,43 @@ def wait_for(evidence: Path, name: str, needle: str, seconds: int) -> tuple[int,
     raise RuntimeError(f"Missing Android UI item {needle!r}: {last_error}")
 
 
+def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
+    """Tap the full DocumentsUI item, not its small nameplate or preview icon."""
+    start = xml_text.find("<?xml")
+    root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
+    for node in root.iter("node"):
+        if node.get("resource-id") != "com.android.documentsui:id/item_root":
+            continue
+        if any(child.get("text", "").casefold() == filename.casefold()
+               for child in node.iter("node")):
+            return center(node.attrib["bounds"])
+    return None
+
+
+def editor_visible(nodes: list[dict[str, str]]) -> bool:
+    """Require a loaded project, not merely the welcome screen or picker."""
+    return (
+        locate(nodes, "Essentials Studio —") is not None
+        and locate(nodes, "Export ZIP") is not None
+        and not any("Project ZIP import failed" in n.get("text", "") for n in nodes)
+    )
+
+
+def wait_for_editor(evidence: Path, seconds: int) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            nodes = dump_ui(evidence, "after-picker")
+            if editor_visible(nodes):
+                return True
+            if any("Project ZIP import failed" in n.get("text", "") for n in nodes):
+                return False
+        except (ET.ParseError, RuntimeError, subprocess.CalledProcessError):
+            pass
+        time.sleep(3)
+    return False
+
+
 def tap(point: tuple[int, int]) -> None:
     adb("shell", "input", "tap", str(point[0]), str(point[1]))
 
@@ -111,10 +148,23 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             tap(wait_for(evidence, "picker-menu", "Show roots", 12))
             tap(wait_for(evidence, "picker-downloads", "Downloads", 15))
             selected = wait_for(evidence, "picker-file", "EssentialsSynthetic.zip", 25)
-        tap(selected)
-        wait_for(evidence, "imported", "Synthetic RMXP", 90)
-        if not locate(dump_ui(evidence, "imported-final"), "Essentials Studio"):
-            raise AssertionError("No editor window detected after import")
+        # DocumentsUI grid tiles can require a tap on the card rather than
+        # the title/nameplate. The previous test spent 90s waiting for an
+        # impossible marker while still displaying the system file picker.
+        xml = (evidence / "picker-file.xml").read_text(encoding="utf-8")
+        card = picker_file_card(xml, "EssentialsSynthetic.zip")
+        if card is None:
+            raise AssertionError("Cannot locate the synthetic ZIP picker card")
+        tap(card)
+        if not wait_for_editor(evidence, 35):
+            # Preserve a real failure when the picker stays open or import
+            # rejects the ZIP; never count a live WebView as successful import.
+            nodes = dump_ui(evidence, "import-attempt-final")
+            visible = [n.get("text", "") for n in nodes if n.get("text")]
+            raise AssertionError("Project did not open after DocumentsUI selection: " + repr(visible[-16:]))
+        nodes = dump_ui(evidence, "imported-final")
+        if not editor_visible(nodes):
+            raise AssertionError("Project editor controls not visible after ZIP import")
         pid = adb("shell", "pidof", package, check=False).stdout.strip()
         if not pid:
             raise AssertionError("Editor process crashed during project import")
@@ -128,6 +178,12 @@ def selftest() -> None:
     xml = '<?xml version="1.0"?><hierarchy><node text="" bounds="[0,0][100,100]"><node text="Import Essentials Project ZIP" bounds="[10,20][90,60]"/></node></hierarchy>'
     assert locate(entries(xml), "Import Essentials Project ZIP") == (50, 40)
     assert locate(entries(xml), "missing") is None
+    picker_xml = '<?xml version="1.0"?><hierarchy><node resource-id="com.android.documentsui:id/item_root" bounds="[10,20][110,220]"><node text="EssentialsSynthetic.zip"/></node></hierarchy>'
+    assert picker_file_card(picker_xml, "EssentialsSynthetic.zip") == (60, 120)
+    assert picker_file_card(picker_xml, "other.zip") is None
+    assert not editor_visible(entries(xml))
+    editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
+    assert editor_visible(entries(editor_xml))
     try:
         center("[0,0][0,10]")
     except ValueError:
