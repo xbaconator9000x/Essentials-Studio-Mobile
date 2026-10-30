@@ -3,7 +3,7 @@
   "project": "Essentials Studio Mobile",
   "upstream": "doranteseduardo/rmxp-editor",
   "authoritative_branch": "main",
-  "current_work_branch": "test/android-emulator-project-import-20261030",
+  "current_work_branch": "main",
   "workflow": "Android APK probe, native fidelity CI and 15-minute queue handoff",
   "policy": {
     "max_parallel_native_workstreams": 1,
