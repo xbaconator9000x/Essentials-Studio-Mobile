@@ -148,6 +148,9 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             tap(wait_for(evidence, "picker-menu", "Show roots", 12))
             tap(wait_for(evidence, "picker-downloads", "Downloads", 15))
             selected = wait_for(evidence, "picker-file", "EssentialsSynthetic.zip", 25)
+        # A file may appear under Recent without opening Downloads; capture
+        # the current picker hierarchy for either path before selecting it.
+        dump_ui(evidence, "picker-file")
         # DocumentsUI grid tiles can require a tap on the card rather than
         # the title/nameplate. The previous test spent 90s waiting for an
         # impossible marker while still displaying the system file picker.
