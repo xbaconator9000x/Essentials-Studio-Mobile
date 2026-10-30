@@ -69,7 +69,36 @@ if [[ -z "$running" ]]; then
   echo "Editor process exited after launch" >&2
   exit 1
 fi
-capture
+# A live process alone is not a successful UI launch. The previous run showed
+# the editor behind an Android "Process system isn't responding" modal while
+# CI incorrectly reported success. Require the actual editor window to have
+# focus, allowing a short settling interval after the emulator boots.
+focus=""
+for attempt in $(seq 1 6); do
+  capture
+  focus="$(grep 'mCurrentFocus=' "$evidence/activities.txt" | tail -n 1 || true)"
+  if [[ "$focus" == *"$package"* && "$focus" != *"Application Not Responding"* ]]; then
+    break
+  fi
+  if [[ "$attempt" == 6 ]]; then
+    printf 'Editor UI not foreground/usable; current focus: %s\n' "$focus" >&2
+    exit 1
+  fi
+  sleep 5
+done
+if [[ ! -s "$evidence/launch.png" ]]; then
+  echo "No Android screenshot was captured" >&2
+  exit 1
+fi
+if ! python3 - "$evidence/launch.png" <<'PY'
+import pathlib
+import sys
+sys.exit(0 if pathlib.Path(sys.argv[1]).read_bytes().startswith(b'\x89PNG\r\n\x1a\n') else 1)
+PY
+then
+  echo "Screenshot is not a PNG" >&2
+  exit 1
+fi
 if grep -q 'FATAL EXCEPTION' "$evidence/logcat.txt"; then
   echo "Android runtime reported a fatal exception after launch" >&2
   exit 1
