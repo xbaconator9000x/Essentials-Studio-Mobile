@@ -1125,6 +1125,39 @@ mod archive_roundtrip_tests {
                 serde_json::Value::String("Synthetic dialogue".into())
             );
 
+            // Exercise the actual event-save path, not just read-only parsing.
+            let mut edited_event = event;
+            edited_event.pages[0].list[0].parameters[0] =
+                serde_json::Value::String("Edited dialogue".into());
+            crate::commands::project::save_event(
+                project.path.clone(), 1, edited_event,
+            ).await.expect("save controlled event dialogue edit");
+            let saved_event = crate::commands::project::load_event(
+                project.path.clone(), 1, 7,
+            ).await.expect("reopen edited event");
+            assert_eq!(
+                saved_event.pages[0].list[0].parameters[0],
+                serde_json::Value::String("Edited dialogue".into())
+            );
+
+            // Edit one structured PBS field through the production command.
+            let mut pbs = crate::commands::pbs::load_pbs_file(
+                project.path.clone(), "pokemon.txt".into(),
+            ).await.expect("load synthetic PBS");
+            pbs[0].fields.iter_mut().find(|field| field.key == "Name")
+                .expect("Name field").value = "Edited".into();
+            crate::commands::pbs::save_pbs_file(
+                project.path.clone(), "pokemon.txt".into(), pbs,
+            ).await.expect("save controlled PBS field edit");
+            let pbs_readback = crate::commands::pbs::load_pbs_file(
+                project.path.clone(), "pokemon.txt".into(),
+            ).await.expect("reopen edited PBS");
+            assert_eq!(
+                pbs_readback[0].fields.iter().find(|field| field.key == "Name")
+                    .expect("Name field").value,
+                "Edited"
+            );
+
             let mut edited_tiles = map.tiles.clone();
             edited_tiles[4] = 777;
             crate::commands::project::save_map(
@@ -1146,6 +1179,10 @@ mod archive_roundtrip_tests {
                     .expect("read untouched event back");
             assert_eq!(event_readback.name, "Synthetic Guide");
             assert_eq!(event_readback.pages[0].list[0].code, 101);
+            assert_eq!(
+                event_readback.pages[0].list[0].parameters[0],
+                serde_json::Value::String("Edited dialogue".into())
+            );
         });
 
         let saved_map = crate::marshal::load_file(&imported.join("Data/Map001.rxdata")).unwrap();
@@ -1165,12 +1202,16 @@ mod archive_roundtrip_tests {
             Some(&RubyValue::Symbol("keep-event".into()))
         );
 
+        assert_eq!(
+            fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
+            b"# synthetic PBS\r\n[TEST]\r\nName = Edited\r\n"
+        );
         let exported = sandbox.path("exported-rxdata.zip");
         export_zip(&imported, &exported).unwrap();
         let exported_hashes = member_sha256(&exported, "");
         assert_eq!(original_hashes.keys().collect::<Vec<_>>(), exported_hashes.keys().collect::<Vec<_>>());
         for (name, original_hash) in &original_hashes {
-            if name == "Data/Map001.rxdata" {
+            if name == "Data/Map001.rxdata" || name == "PBS/pokemon.txt" {
                 assert_ne!(exported_hashes.get(name), Some(original_hash));
             } else {
                 assert_eq!(exported_hashes.get(name), Some(original_hash), "SHA-256 mismatch in {name}");
@@ -1705,12 +1746,9 @@ mod archive_roundtrip_tests {
             .any(|name| name == "Graphics/Empty/"));
         assert_eq!(fs::read(&archive).unwrap(), original_zip_bytes);
 
-        if let Ok(artifact_dir) = std::env::var("PROJECT_ROUNDTRIP_ARTIFACT_DIR") {
-            let artifact_dir = PathBuf::from(artifact_dir);
-            fs::create_dir_all(&artifact_dir).unwrap();
-            fs::copy(&archive, artifact_dir.join("original.zip")).unwrap();
-            fs::copy(&exported, artifact_dir.join("exported.zip")).unwrap();
-        }
+        // The wrapped fixture above is the sole canonical artifact producer.
+        // Multiple parallel Rust tests writing original.zip/exported.zip caused
+        // nondeterministic evidence and could pair unrelated ZIPs.
     }
 
 }
