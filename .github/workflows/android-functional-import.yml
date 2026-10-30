@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/android-functional-import.yml'
       - 'scripts/android-emulator-import-smoke.py'
+      - 'scripts/android-emulator-functional-smoke.sh'
       - 'scripts/android-emulator-smoke.sh'
       - 'src/**'
       - 'src-tauri/**'
@@ -115,6 +116,7 @@ jobs:
         run: |
           bash -n scripts/android-emulator-smoke.sh
           python3 scripts/android-emulator-import-smoke.py --self-test
+          bash -n scripts/android-emulator-functional-smoke.sh
       - name: Preserve compiled APK
         uses: actions/upload-artifact@v4
         with:
@@ -155,14 +157,7 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            bash scripts/android-emulator-smoke.sh
-            package="$(sed -n 's/^package=//p' android-runtime-evidence/receipt.txt | head -n 1)"
-            test -n "$package"
-            python3 scripts/android-emulator-import-smoke.py \
-              --fixture android-synthetic-fixture/original.zip \
-              --package "$package" \
-              --evidence android-runtime-evidence
+          script: bash scripts/android-emulator-functional-smoke.sh
       - name: Preserve screenshot, UI hierarchy, ZIP import and failure receipts
         if: always()
         uses: actions/upload-artifact@v4
