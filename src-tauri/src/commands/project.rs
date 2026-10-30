@@ -366,6 +366,11 @@ pub async fn save_event(
     let mut found_events_hash = false;
     let mut replaced = false;
     if let marshal::types::RubyValue::Object(ref mut obj) = value {
+        // Duplicate @events ivars make the serialized map ambiguous; do not
+        // edit one while silently leaving another conflicting hash intact.
+        if obj.instance_vars.iter().filter(|(name, _)| name == "@events").count() != 1 {
+            return Err(format!("Ambiguous @events fields on Map{:03}; save aborted", map_id));
+        }
         for (name, val) in obj.instance_vars.iter_mut() {
             if name == "@events" {
                 if let marshal::types::RubyValue::Hash(ref mut pairs) = val {
@@ -539,6 +544,19 @@ mod event_save_integrity_tests {
             );
             assert_eq!(std::fs::read(&map_file).unwrap(), before);
         }
+        // A second serialized @events ivar must also be rejected without a write.
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map object") };
+        obj.instance_vars.push((
+            "@events".into(),
+            RubyValue::Hash(vec![(RubyValue::Integer(1), event)]),
+        ));
+        marshal::dump_file(&map_file, &map).unwrap();
+        let before = std::fs::read(&map_file).unwrap();
+        let error = save_event(root.to_string_lossy().into_owned(), 1, edited)
+            .await.unwrap_err();
+        assert!(error.contains("Ambiguous @events"), "{error}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), before);
         std::fs::remove_dir_all(root).unwrap();
     }
 
