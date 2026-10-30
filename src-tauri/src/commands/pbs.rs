@@ -372,13 +372,13 @@ mod pbs_preservation_tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
 
         let mut bad_value = valid.clone();
-        bad_value[0].fields[0].value = "Valid\\nInjected = yes".into();
+        bad_value[0].fields[0].value = "Valid\nInjected = yes".into();
         assert!(save_pbs_file(project.clone(), "pokemon.txt".into(), bad_value)
             .await.is_err());
         assert_eq!(std::fs::read(&path).unwrap(), before);
 
         let mut bad_header = valid.clone();
-        bad_header[0].header = "ONE]\\n[TWO".into();
+        bad_header[0].header = "ONE]\n[TWO".into();
         assert!(save_pbs_file(project.clone(), "fresh.txt".into(), bad_header)
             .await.unwrap_err().contains("losslessly"));
         assert!(!root.join("PBS/fresh.txt").exists());
