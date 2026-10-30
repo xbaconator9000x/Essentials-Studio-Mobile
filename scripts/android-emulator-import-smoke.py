@@ -183,7 +183,14 @@ def capture(evidence: Path) -> None:
 def system_anr_wait_button(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     """Only dismiss the OS process ANR's Wait button, never an app ANR."""
     labels = [n.get("text", "").strip().casefold() for n in nodes]
-    if "process system isn't responding" not in labels:
+    # Android 11 AOSP reports SystemUI ANRs under either the process name
+    # or the user-facing "System UI" label. Never accept the editor's ANR.
+    system_labels = {
+        "process system isn't responding",
+        "system ui isn't responding",
+        "com.android.systemui isn't responding",
+    }
+    if not any(label in system_labels for label in labels):
         return None
     for node in nodes:
         if node.get("text", "").strip().casefold() == "wait" and node.get("bounds"):
@@ -335,6 +342,12 @@ def selftest() -> None:
                '<node text="Close app" bounds="[10,30][90,50]"/>'
                '<node text="Wait" bounds="[10,60][90,100]"/></hierarchy>')
     assert system_anr_wait_button(entries(anr_xml)) == (50, 80)
+    # The macOS AOSP emulator run 41094049109 exposed an ANR in
+    # com.android.systemui, which the earlier strict matcher missed.
+    assert system_anr_wait_button(entries(anr_xml.replace(
+        "Process system", "System UI"))) == (50, 80)
+    assert system_anr_wait_button(entries(anr_xml.replace(
+        "Process system", "com.android.systemui"))) == (50, 80)
     assert system_anr_wait_button(entries(editor_xml)) is None
     assert system_anr_wait_button(entries(anr_xml.replace("system", "Essentials Studio"))) is None
     try:
