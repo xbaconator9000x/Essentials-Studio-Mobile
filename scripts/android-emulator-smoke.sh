@@ -9,7 +9,7 @@ capture() {
   adb logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true
   adb exec-out screencap -p > "$evidence/launch.png" 2>/dev/null || true
   adb shell dumpsys activity activities > "$evidence/activities.txt" 2>&1 || true
-  adb shell dumpsys window windows > "$evidence/windows.txt" 2>&1 || true
+  adb shell dumpsys window > "$evidence/windows.txt" 2>&1 || true
   adb shell getprop > "$evidence/device-properties.txt" 2>&1 || true
 }
 trap capture EXIT
