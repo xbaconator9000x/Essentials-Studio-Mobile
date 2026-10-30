@@ -352,8 +352,8 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
                 tap(preview)
                 time.sleep(3)
                 nodes = dump_ui(evidence, "after-file-preview")
-                with (evidence / "picker-tap-targets.txt").open("a", encoding="utf-8") as receipt:
-                    receipt.write(f"preview={preview} after_preview=" +
+                with (evidence / "picker-tap-targets.txt").open("a", encoding="utf-8") as tap_log:
+                    tap_log.write(f"preview={preview} after_preview=" +
                                   repr([n.get("text", "") for n in nodes if n.get("text")][-10:]) + "\\n")
                 for node in nodes:
                     if (node.get("text", "").strip().casefold() in
@@ -376,6 +376,10 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             raise AssertionError("Editor process crashed during project import")
         receipt.update({"result": "emulator_zip_import_open_pass", "process": pid})
     finally:
+        # The result receipt must survive all optional picker diagnostics, even
+        # when the preview control opens a different Android activity.
+        # Keep the structured receipt distinct from any open log file handle.
+        assert isinstance(receipt, dict), "Import result receipt was overwritten"
         (evidence / "import-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         capture(evidence)
 
