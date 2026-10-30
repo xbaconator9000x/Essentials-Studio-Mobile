@@ -48,8 +48,44 @@ fi
   printf 'android_release=%s\n' "$(adb shell getprop ro.build.version.release | tr -d '\r')"
 } | tee "$evidence/receipt.txt"
 
+# The full AOSP API30 image can report sys.boot_completed=1 while first-boot
+# dexopt and WebView services still saturate its virtual CPUs. The actual
+# 41102608478 trace shows load 15.2, 81% kernel CPU and a 5-second FocusEvent
+# ANR before the import UI is touched. Never dismiss or count an app ANR as
+# success; start the editor only after the guest has demonstrably settled.
+await_guest_idle() {
+  local phase="$1" consecutive=0 attempt load boot
+  for attempt in $(seq 1 36); do
+    boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    load="$(adb shell cat /proc/loadavg 2>/dev/null | awk '{print $1}' | tr -d '\r' || true)"
+    printf '%s attempt=%s boot=%s load1=%s\n' "$phase" "$attempt" "$boot" "$load" \
+      | tee -a "$evidence/guest-idle.txt"
+    if [[ "$boot" == "1" && "$load" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+       && awk -v value="$load" 'BEGIN { exit !(value < 5.0) }'; then
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge 3 ]]; then
+        return 0
+      fi
+    else
+      consecutive=0
+    fi
+    sleep 10
+  done
+  echo "Android guest did not settle before $phase; preserving diagnostics." >&2
+  return 1
+}
+
 adb install -r "$apk"
 adb shell pm path "$package" | tee "$evidence/installed-package.txt"
+# Ahead-of-time compile this debug package while the emulator is idle; do not
+# include first-launch dexopt in the responsiveness acceptance window.
+adb shell cmd package compile -m speed -f "$package" \
+  > "$evidence/package-compile.txt" 2>&1 || {
+    echo "Android package precompilation failed; retaining evidence." >&2
+    exit 1
+  }
+await_guest_idle "pre-launch"
+printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
 adb logcat -c
 adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 | tee "$evidence/launch-command.txt"
 
