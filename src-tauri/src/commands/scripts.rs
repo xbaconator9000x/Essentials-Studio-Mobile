@@ -120,6 +120,14 @@ fn ensure_unique_script_ids(arr: &[RubyValue]) -> Result<(), String> {
     let mut seen = HashSet::new();
     for entry in arr {
         if let Some((id, _, _)) = parse_script_entry(entry) {
+            // The frontend exposes titles as UTF-8 strings. Lossy decoding of a
+            // legacy-encoded title would turn an unchanged save into corruption.
+            let parts = entry.as_array().expect("parsed script entry must be an array");
+            if let RubyValue::String(raw_title) = &parts[1] {
+                if std::str::from_utf8(&raw_title.bytes).is_err() {
+                    return Err(format!("Script {id} title is not UTF-8; refusing lossy edit"));
+                }
+            }
             if !seen.insert(id) {
                 return Err(format!("Duplicate original script ID {id}; refusing ambiguous operation"));
             }
@@ -183,6 +191,7 @@ pub async fn load_script_source(
 /// non-standard nil placeholders and every untouched compressed byte stream.
 /// Preserve them unless the corresponding script was actually edited/deleted.
 fn merge_script_entries(original: &[RubyValue], scripts: &[ScriptData]) -> Result<Vec<RubyValue>, String> {
+    ensure_unique_script_ids(original)?;
     let mut submitted = HashMap::new();
     for script in scripts {
         if submitted.insert(script.id, script).is_some() {
@@ -469,6 +478,27 @@ mod fidelity_tests {
         marshal::dump_file(&path, &RubyValue::Array(entries)).unwrap();
         let before = std::fs::read(&path).unwrap();
         (root, path, before)
+    }
+
+    #[tokio::test]
+    async fn legacy_encoded_script_title_refuses_lossy_save_and_preserves_file() {
+        let legacy = RubyValue::Array(vec![
+            RubyValue::Integer(7),
+            RubyValue::String(RubyString::new(vec![b'L', 0xff, b'g'])),
+            RubyValue::String(RubyString::new(compress_zlib("puts :ok").unwrap())),
+        ]);
+        let (root, path, before) = test_project_with_scripts(
+            "essentials-legacy-script-title", vec![RubyValue::Nil, legacy],
+        );
+        let project = root.to_string_lossy().into_owned();
+        assert!(load_script_list(project.clone()).await.unwrap_err().contains("not UTF-8"));
+        assert!(load_script_source(project.clone(), 7).await.unwrap_err().contains("not UTF-8"));
+        assert!(save_all_scripts(project.clone(), vec![source(7, "L�g", "puts :ok")])
+            .await.unwrap_err().contains("not UTF-8"));
+        assert!(create_script(project.clone(), "New".into(), 7).await.unwrap_err().contains("not UTF-8"));
+        assert!(delete_script(project.clone(), 7).await.unwrap_err().contains("not UTF-8"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]
