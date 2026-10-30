@@ -128,6 +128,14 @@ fn ensure_unique_script_ids(arr: &[RubyValue]) -> Result<(), String> {
     Ok(())
 }
 
+fn next_script_id(arr: &[RubyValue]) -> Result<i64, String> {
+    let max_id = arr.iter()
+        .filter_map(|entry| parse_script_entry(entry).map(|(id, _, _)| id))
+        .max().unwrap_or(0);
+    max_id.checked_add(1)
+        .ok_or_else(|| "Cannot create script: script ID space is exhausted".to_string())
+}
+
 // ── Commands ─────────────────────────────────────────────────────────
 
 /// Load the script list (id + title only, no decompression).
@@ -256,13 +264,7 @@ pub async fn create_script(
     ensure_unique_script_ids(&arr)?;
 
     // Generate a unique magic number
-    let max_id = arr
-        .iter()
-        .filter_map(|e| parse_script_entry(e).map(|(id, _, _)| id))
-        .max()
-        .unwrap_or(0);
-    let new_id = max_id.checked_add(1)
-        .ok_or_else(|| "Cannot create script: script ID space is exhausted".to_string())?;
+    let new_id = next_script_id(&arr)?;
 
     // Build the new entry (empty source)
     let compressed = compress_zlib("")?;
@@ -496,16 +498,11 @@ mod fidelity_tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    #[tokio::test]
-    async fn creating_after_maximum_script_id_fails_without_writing() {
-        let (root, path, before) = test_project_with_scripts(
-            "essentials-script-overflow",
-            vec![script(i64::MAX, "Last", "puts :last")],
-        );
-        let result = create_script(root.to_string_lossy().into_owned(), "New".into(), i64::MAX).await;
-        assert!(result.unwrap_err().contains("script ID space is exhausted"));
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::remove_dir_all(&root).unwrap();
+    #[test]
+    fn script_id_overflow_is_rejected_before_serialization() {
+        // Ruby Marshal fixnums are narrower than i64; exercise the guard
+        // directly rather than trying to serialize an unrepresentable ID.
+        let entries = vec![script(i64::MAX, "Last", "puts :last")];
+        assert!(next_script_id(&entries).unwrap_err().contains("script ID space is exhausted"));
     }
-
 }
