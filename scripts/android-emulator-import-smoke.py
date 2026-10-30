@@ -158,6 +158,22 @@ def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None
     return None
 
 
+def picker_preview_control(nodes: list[dict[str, str]], filename: str) -> tuple[int, int] | None:
+    """AOSP exposes an actual clickable preview action even when ZIP rows are not clickable.
+
+    Use it only after ordinary file selection has failed. The preview itself
+    never counts as import success; a subsequent project-open receipt is required.
+    """
+    for node in nodes:
+        if (node.get("resource-id") == "com.android.documentsui:id/preview_icon"
+                and node.get("content-desc", "").casefold() ==
+                f"Preview the file {filename}".casefold()
+                and node.get("clickable") == "true"
+                and node.get("bounds")):
+            return center(node["bounds"])
+    return None
+
+
 def picker_list_view_control(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     """Prefer DocumentsUI's accessible list mode over the ambiguous grid thumbnail."""
     for node in nodes:
@@ -322,6 +338,30 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
                     encoding="utf-8",
                 )
                 tap(second)
+        # The Android 11 DocumentsUI ZIP row remained inert even with an
+        # unrestricted */* picker (run 41127092100). The accessibility tree
+        # exposes a distinct clickable "Preview the file" control. Exercise
+        # that native control once, preserving the resulting UI and only
+        # following an explicitly clickable Open/Select action if offered.
+        # A preview or file list is NEVER treated as a successful import.
+        time.sleep(3)
+        nodes = dump_ui(evidence, "after-second-file-tap")
+        if documents_ui_visible(nodes):
+            preview = picker_preview_control(nodes, "EssentialsSynthetic.zip")
+            if preview is not None:
+                tap(preview)
+                time.sleep(3)
+                nodes = dump_ui(evidence, "after-file-preview")
+                with (evidence / "picker-tap-targets.txt").open("a", encoding="utf-8") as receipt:
+                    receipt.write(f"preview={preview} after_preview=" +
+                                  repr([n.get("text", "") for n in nodes if n.get("text")][-10:]) + "\\n")
+                for node in nodes:
+                    if (node.get("text", "").strip().casefold() in
+                            {"open", "select", "use this file"}
+                            and node.get("clickable") == "true"
+                            and node.get("bounds")):
+                        tap(center(node["bounds"]))
+                        break
         if not wait_for_editor(evidence, 35):
             # Preserve a real failure when the picker stays open or import
             # rejects the ZIP; never count a live WebView as successful import.
@@ -367,6 +407,16 @@ def selftest() -> None:
     assert picker_file_card(list_xml, "EssentialsSynthetic.zip") == (540, 735)
     assert picker_list_row_icon(list_xml, "EssentialsSynthetic.zip") == (80, 735)
     assert picker_list_row_icon(list_xml, "missing.zip") is None
+    # Exact clickable preview action observed in real AOSP API30 evidence.
+    preview_xml = ('<?xml version="1.0"?><hierarchy>'
+                   '<node resource-id="com.android.documentsui:id/preview_icon" '
+                   'content-desc="Preview the file EssentialsSynthetic.zip" '
+                   'clickable="true" bounds="[891,641][1080,830]"/>'
+                   '</hierarchy>')
+    assert picker_preview_control(entries(preview_xml), "EssentialsSynthetic.zip") == (985, 735)
+    assert picker_preview_control(entries(preview_xml), "other.zip") is None
+    assert picker_preview_control(entries(preview_xml.replace('clickable="true"', 'clickable="false"')),
+                                  "EssentialsSynthetic.zip") is None
     assert picker_list_row_icon(grid_xml, "EssentialsSynthetic.zip") is None
     assert picker_list_view_control(entries(grid_xml)) is None
     assert not editor_visible(entries(xml))
