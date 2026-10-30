@@ -75,11 +75,26 @@ fi
 # CI incorrectly reported success. Require the actual editor window to have
 # focus, allowing a short settling interval after the emulator boots.
 focus=""
+recovered_system_anr=0
 for attempt in $(seq 1 6); do
   capture
   focus="$(grep 'mCurrentFocus=' "$evidence/windows.txt" | tail -n 1 || true)"
   if [[ "$focus" == *"$package"* && "$focus" != *"Application Not Responding"* ]]; then
     break
+  fi
+  # AOSP API 30 on overloaded macOS runners can show a transient *system*
+  # process ANR over a healthy editor. The real screenshot from run 41037978718
+  # shows the standard "Wait" action. Dismiss ONLY that exact OS ANR once,
+  # using its accessibility bounds; never dismiss an editor crash or claim
+  # success without subsequently proving editor foreground focus.
+  if [[ "$focus" == *"Application Not Responding: system"* && "$recovered_system_anr" == 0 ]]; then
+    if python3 scripts/android-emulator-import-smoke.py --recover-system-anr --evidence "$evidence"; then
+      recovered_system_anr=1
+      echo "Dismissed transient Android OS ANR; checking editor focus again."
+      sleep 12
+      continue
+    fi
+    echo "Android OS ANR could not be safely dismissed; retaining failure evidence." >&2
   fi
   if [[ "$attempt" == 6 ]]; then
     printf 'Editor UI not foreground/usable; current focus: %s\n' "$focus" >&2
