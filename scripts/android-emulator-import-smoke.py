@@ -226,6 +226,77 @@ def capture(evidence: Path) -> None:
 
 
 
+
+def try_external_storage_download(evidence: Path, filename: str) -> bool:
+    """Exercise the actual external-storage document provider, not Downloads' media index.
+
+    ADB-pushed files can appear in the Downloads collection without a usable
+    DownloadsProvider document ID. The AOSP picker exposes an independent
+    "Android SDK built for x86_64" storage root backed by ExternalStorageProvider.
+    This fallback still navigates DocumentsUI with real input events; it does
+    not inject a URI or bypass the app's native file picker.
+    """
+    nodes = dump_ui(evidence, "before-external-storage")
+    if not documents_ui_visible(nodes):
+        return False
+    roots = locate(nodes, "Show roots")
+    if roots is None:
+        return False
+    tap(roots)
+    time.sleep(2)
+    nodes = dump_ui(evidence, "external-storage-roots")
+    storage = next((
+        center(n["bounds"]) for n in nodes
+        if n.get("text", "").strip().casefold().startswith("android sdk built for")
+        and n.get("bounds")
+    ), None)
+    if storage is None:
+        (evidence / "external-storage-result.txt").write_text(
+            "No AOSP external-storage root available; no alternate selection attempted.\\n",
+            encoding="utf-8",
+        )
+        return False
+    tap(storage)
+    time.sleep(2)
+    nodes = dump_ui(evidence, "external-storage-root")
+    folder = next((
+        center(n["bounds"]) for n in nodes
+        if n.get("text", "").strip().casefold() in {"download", "downloads"}
+        and n.get("bounds")
+    ), None)
+    if folder is None:
+        (evidence / "external-storage-result.txt").write_text(
+            "External-storage root opened, but Download directory not found.\\n",
+            encoding="utf-8",
+        )
+        return False
+    tap(folder)
+    time.sleep(2)
+    nodes = dump_ui(evidence, "external-storage-download")
+    if not documents_ui_visible(nodes):
+        return False
+    card = picker_file_card(
+        (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
+        filename,
+    )
+    if card is None:
+        (evidence / "external-storage-result.txt").write_text(
+            "Download directory opened, but synthetic ZIP was absent.\\n",
+            encoding="utf-8",
+        )
+        return False
+    tap(card)
+    time.sleep(4)
+    nodes = dump_ui(evidence, "external-storage-after-file-tap")
+    returned = not documents_ui_visible(nodes)
+    (evidence / "external-storage-result.txt").write_text(
+        f"ExternalStorageProvider file tap={card}, returned_to_app={returned}; "
+        "project-open verification still required.\\n",
+        encoding="utf-8",
+    )
+    return returned
+
+
 def system_anr_wait_button(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     """Only dismiss the OS process ANR's Wait button, never an app ANR."""
     labels = [n.get("text", "").strip().casefold() for n in nodes]
@@ -362,6 +433,14 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
                             and node.get("bounds")):
                         tap(center(node["bounds"]))
                         break
+        # ADB-pushed ZIPs are visible in Downloads' media collection, but
+        # the API30 GET_CONTENT row and preview remained inert in multiple
+        # independent runs. Try the separately backed ExternalStorageProvider
+        # root once, retaining native DocumentsUI and a strict project-open gate.
+        if documents_ui_visible(dump_ui(evidence, "before-alternate-root")):
+            receipt["external_storage_picker_returned"] = try_external_storage_download(
+                evidence, "EssentialsSynthetic.zip"
+            )
         if not wait_for_editor(evidence, 35):
             # Preserve a real failure when the picker stays open or import
             # rejects the ZIP; never count a live WebView as successful import.
@@ -421,6 +500,12 @@ def selftest() -> None:
     assert picker_preview_control(entries(preview_xml), "other.zip") is None
     assert picker_preview_control(entries(preview_xml.replace('clickable="true"', 'clickable="false"')),
                                   "EssentialsSynthetic.zip") is None
+    # Captured AOSP roots expose a distinct ExternalStorageProvider root.
+    external_root_xml = ('<?xml version="1.0"?><hierarchy>'
+                         '<node text="Android SDK built for x86_64" '
+                         'bounds="[168,766][714,817]"/>'
+                         '</hierarchy>')
+    assert locate(entries(external_root_xml), "Android SDK built for") == (441, 791)
     assert picker_list_row_icon(grid_xml, "EssentialsSynthetic.zip") is None
     assert picker_list_view_control(entries(grid_xml)) is None
     assert not editor_visible(entries(xml))
