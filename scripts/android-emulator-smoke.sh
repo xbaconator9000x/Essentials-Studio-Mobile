@@ -9,6 +9,7 @@ capture() {
   adb logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true
   adb exec-out screencap -p > "$evidence/launch.png" 2>/dev/null || true
   adb shell dumpsys activity activities > "$evidence/activities.txt" 2>&1 || true
+  adb shell dumpsys window windows > "$evidence/windows.txt" 2>&1 || true
   adb shell getprop > "$evidence/device-properties.txt" 2>&1 || true
 }
 trap capture EXIT
@@ -76,7 +77,7 @@ fi
 focus=""
 for attempt in $(seq 1 6); do
   capture
-  focus="$(grep 'mCurrentFocus=' "$evidence/activities.txt" | tail -n 1 || true)"
+  focus="$(grep 'mCurrentFocus=' "$evidence/windows.txt" | tail -n 1 || true)"
   if [[ "$focus" == *"$package"* && "$focus" != *"Application Not Responding"* ]]; then
     break
   fi
