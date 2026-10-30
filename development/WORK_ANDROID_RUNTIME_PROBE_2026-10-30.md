@@ -1,3 +1,15 @@
+# Working Android execution route — 2026-10-30
+
+The accelerated macOS Intel GitHub runner with an API30 default AOSP x86_64 emulator has now installed and launched the actual editor APK. Run 41024005562 produced launch.png showing the unobstructed Essentials Studio landing screen. activities.txt records the editor MainActivity resumed and mCurrentFocus pointing to that activity. No project ZIP was imported.
+
+The run failed due to a test-script error: dumpsys window windows omitted the global mCurrentFocus field. It was present in the activity evidence. PR #48 commit 9755cab5e50cb6446cbd70685739e392f8b4e788 changes capture to the full dumpsys window command while retaining the foreground, PNG and fatal-exception checks. Corrected run: https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/41025904344 (result must be checked).
+
+Earlier failures were emulator guest-service failures in unaccelerated Work, and system/GMS ANR overlays with the Google APIs image. Use the lean default AOSP image and accelerated runner. ZIP size did not cause these failures: they occurred before project import.
+
+Current evidence verifies APK install and unobstructed launch only. Import/edit/save/export/reopen and unrelated-file preservation remain unverified in this emulator. The phone screenshots independently show full-project import, map rendering, tile editing and save-on-map-switch. Phone Export ZIP failure remains unresolved; do not attribute it to size without measurement. PR #49 adds visible save/export progress/errors, but does not establish a native export fix.
+
+---
+
 # Latest follow-up — 2026-10-30
 
 ## Clean cold-boot follow-up: install blocked by guest services
