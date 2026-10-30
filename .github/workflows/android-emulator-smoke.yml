@@ -1,0 +1,117 @@
+name: Android emulator runtime smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-emulator-smoke.yml'
+      - 'scripts/android-emulator-smoke.sh'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-emulator-smoke.yml'
+      - 'scripts/android-emulator-smoke.sh'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-emulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-x86:
+    name: Compile x86_64 Android debug APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Generate Android Gradle project
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android init -- --ci
+      - name: Compile x86_64 Android debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android build -- --ci --apk --debug --target x86_64
+      - name: Verify smoke-test shell syntax
+        run: bash -n scripts/android-emulator-smoke.sh
+      - name: Preserve compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-x86-debug-${{ github.sha }}
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  emulator-launch:
+    name: Install and launch x86_64 APK on accelerated macOS emulator
+    needs: build-x86
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-x86-debug-${{ github.sha }}
+          path: src-tauri/gen/android/app/build/outputs/apk
+      - uses: android-actions/setup-android@v4
+      - name: Confirm downloaded APK and source identity
+        run: |
+          test -n "$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          echo "Source: ${{ github.sha }}"
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -exec shasum -a 256 {} \;
+      - name: Install and launch compiled APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          # Avoid GMS/Google Search ANRs observed in the prior screenshot.
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 600
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash scripts/android-emulator-smoke.sh
+      - name: Preserve emulator screenshot, logcat and runtime receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-evidence-${{ github.sha }}
+          path: android-runtime-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
