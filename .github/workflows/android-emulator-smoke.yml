@@ -1,0 +1,84 @@
+name: Android emulator runtime smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-emulator-smoke.yml'
+      - 'scripts/android-emulator-smoke.sh'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-emulator-smoke.yml'
+      - 'scripts/android-emulator-smoke.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-emulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-launch:
+    name: Compile x86_64 APK and launch on Android emulator
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Generate Android Gradle project
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android init -- --ci
+      - name: Compile x86_64 Android debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android build -- --ci --apk --debug --target x86_64
+      - name: Verify smoke-test shell syntax
+        run: bash -n scripts/android-emulator-smoke.sh
+      - name: Install and launch compiled APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash scripts/android-emulator-smoke.sh
+      - name: Preserve APK, runtime receipt, screenshot and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-smoke-${{ github.sha }}
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            android-runtime-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
