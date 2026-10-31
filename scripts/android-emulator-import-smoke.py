@@ -178,6 +178,25 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     return None
 
 
+def picker_folder_row(xml_text: str, folder_name: str) -> tuple[int, int] | None:
+    """Target the DocumentsUI folder row, not its non-clickable title label.
+
+    Android 11 exposes directory labels as TextViews nested in item_root.
+    A label-centre tap can leave the provider on the parent directory.
+    """
+    start = xml_text.find("<?xml")
+    root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
+    for node in root.iter("node"):
+        if not documents_ui_id(node.get("resource-id", ""), "item_root"):
+            continue
+        if not node.get("bounds"):
+            continue
+        if any(child.get("text", "").strip().casefold() == folder_name.casefold()
+               for child in node.iter("node")):
+            return center(node.attrib["bounds"])
+    return None
+
+
 def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None:
     """Alternate touch target for the list row, away from its preview button.
 
@@ -320,11 +339,16 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
     tap(storage)
     time.sleep(2)
     nodes = dump_ui(evidence, "external-storage-root")
-    folder = next((
-        center(n["bounds"]) for n in nodes
-        if n.get("text", "").strip().casefold() in {"download", "downloads"}
-        and n.get("bounds")
-    ), None)
+    root_xml = (evidence / "external-storage-root.xml").read_text(encoding="utf-8")
+    folder = (picker_folder_row(root_xml, "Download")
+              or picker_folder_row(root_xml, "Downloads"))
+    if folder is None:
+        # Older DocumentsUI builds may expose only the folder label.
+        folder = next((
+            center(n["bounds"]) for n in nodes
+            if n.get("text", "").strip().casefold() in {"download", "downloads"}
+            and n.get("bounds")
+        ), None)
     if folder is None:
         (evidence / "external-storage-result.txt").write_text(
             "External-storage root opened, but Download directory not found.\\n",
@@ -576,6 +600,17 @@ def selftest() -> None:
                 'bounds="[189,685][620,742]"/></node></hierarchy>')
     assert picker_file_card(list_xml, "EssentialsSynthetic.zip") == (540, 735)
     assert picker_list_row_icon(list_xml, "EssentialsSynthetic.zip") == (80, 735)
+    folder_xml = ('<?xml version="1.0"?><hierarchy>'
+                  '<node resource-id="com.google.android.documentsui:id/item_root" '
+                  'bounds="[0,600][1080,780]">'
+                  '<node text="Download" bounds="[160,650][400,700]"/>'
+                  '</node></hierarchy>')
+    assert picker_folder_row(folder_xml, "Download") == (540, 690)
+    assert picker_folder_row(folder_xml, "Documents") is None
+    assert picker_folder_row(folder_xml.replace(
+        "com.google.android.documentsui:id/", "com.android.documentsui:id/"),
+        "Download") == (540, 690)
+
     assert picker_list_row_icon(list_xml, "missing.zip") is None
     # Exact clickable preview action observed in real AOSP API30 evidence.
     preview_xml = ('<?xml version="1.0"?><hierarchy>'
