@@ -44,6 +44,47 @@ def private_map_paths(package: str) -> set[str]:
     return paths
 
 
+def expected_member_paths(root: str, members: dict[str, bytes]) -> set[str]:
+    """Require a safe, exact file manifest before comparing private import bytes."""
+    if not root.startswith("./projects/import-") or "/" in root[len("./projects/"):]:
+        raise AssertionError(f"Invalid imported project root: {root!r}")
+    paths = set()
+    for name in members:
+        if (not name or name.startswith("/") or "\\\\" in name
+                or any(part in ("", ".", "..") for part in name.split("/"))):
+            raise AssertionError(f"Unsafe exported member name: {name!r}")
+        paths.add(f"{root}/{name}")
+    return paths
+
+
+def verify_reimported_members(package: str, map_path: str, exported_zip: bytes) -> int:
+    """Compare every extracted file, not only Map001, against the SAF ZIP."""
+    suffix = "/Data/Map001.rxdata"
+    if not map_path.endswith(suffix):
+        raise AssertionError(f"Invalid re-imported map path: {map_path!r}")
+    root = map_path[:-len(suffix)]
+    members = export_helper.archive_files(exported_zip)
+    expected = expected_member_paths(root, members)
+    output = map_helper.run_adb(
+        "shell", "run-as", package, "find", root, "-type", "f", "-print"
+    ).decode(errors="replace")
+    actual_paths = {line.strip() for line in output.splitlines() if line.strip()}
+    if actual_paths != expected:
+        raise AssertionError(
+            f"Re-import member mismatch: missing={sorted(expected-actual_paths)!r}, "
+            f"extra={sorted(actual_paths-expected)!r}"
+        )
+    for name, original in members.items():
+        imported = map_helper.run_adb(
+            "exec-out", "run-as", package, "cat", f"{root}/{name}", timeout=60
+        )
+        if imported != original:
+            raise AssertionError(f"Re-import altered member {name!r}: "
+                                 f"expected_sha={hashlib.sha256(original).hexdigest()}, "
+                                 f"actual_sha={hashlib.sha256(imported).hexdigest()}")
+    return len(members)
+
+
 def one_new_path(before: set[str], after: set[str]) -> str:
     if not before.issubset(after):
         raise AssertionError(f"An existing imported project disappeared: {sorted(before-after)}")
@@ -127,6 +168,9 @@ def run(package: str, evidence: Path) -> None:
         path, map_sha = wait_for_reimported_map(
             package, evidence, before, painted["map_sha256_after"], 75
         )
+        receipt["reimported_member_count"] = verify_reimported_members(
+            package, path, zip_before
+        )
         if hashlib.sha256(export_helper.read_remote(export_helper.EXPORTED_REMOTE)).hexdigest() != zip_sha:
             raise AssertionError("SAF-exported ZIP was mutated during reimport")
         if hashlib.sha256(export_helper.read_remote(export_helper.ORIGINAL_REMOTE)).hexdigest() != imported["fixture_sha256"]:
@@ -151,6 +195,23 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    assert expected_member_paths("./projects/import-1", {
+        "Game.rxproj": b"", "Data/Map001.rxdata": b"",
+        "PBS/pokemon.txt": b"", "Graphics/Empty": b"",
+    }) == {
+        "./projects/import-1/Game.rxproj",
+        "./projects/import-1/Data/Map001.rxdata",
+        "./projects/import-1/PBS/pokemon.txt",
+        "./projects/import-1/Graphics/Empty",
+    }
+    for unsafe in ("../Game.rxproj", "/Game.rxproj", "PBS//pokemon.txt",
+                   "Graphics\\\\Tilesets\\\\bad.png"):
+        try:
+            expected_member_paths("./projects/import-1", {unsafe: b""})
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"Accepted unsafe reimport member {unsafe!r}")
     assert one_new_path(
         {"./projects/import-1/Data/Map001.rxdata"},
         {"./projects/import-1/Data/Map001.rxdata", "./projects/import-2/Data/Map001.rxdata"},
