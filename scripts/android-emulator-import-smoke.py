@@ -16,6 +16,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
+# UIAutomator writes a single on-device file. The readback MUST use the same
+# path: reading a stale /sdcard/window.xml made a healthy dump look malformed.
+UI_DUMP_PATH = "/data/local/tmp/essentials-ui-dump.xml"
+
+
 def adb(*args: str, check: bool = True, timeout: int = 40) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["adb", *args], text=True, capture_output=True, check=check, timeout=timeout)
 
@@ -56,7 +61,7 @@ def dump_ui(evidence: Path, name: str) -> list[dict[str, str]]:
     failures: list[str] = []
     for attempt in range(1, 4):
         try:
-            dump = adb("shell", "uiautomator", "dump", "/data/local/tmp/essentials-ui-dump.xml",
+            dump = adb("shell", "uiautomator", "dump", UI_DUMP_PATH,
                        check=False, timeout=35)
             if dump.returncode:
                 failures.append(
@@ -64,7 +69,7 @@ def dump_ui(evidence: Path, name: str) -> list[dict[str, str]]:
                     f"stdout={dump.stdout[-250:]!r} stderr={dump.stderr[-250:]!r}"
                 )
             else:
-                xml = adb("exec-out", "cat", "/sdcard/window.xml",
+                xml = adb("exec-out", "cat", UI_DUMP_PATH,
                           check=False, timeout=20)
                 if xml.returncode:
                     failures.append(
@@ -828,8 +833,12 @@ def selftest() -> None:
         root = Path(temporary)
         with patch(__name__ + ".adb", side_effect=[
             first_failure, dump_success, xml_success
-        ]), patch(__name__ + ".time.sleep"):
+        ]) as mocked_adb, patch(__name__ + ".time.sleep"):
             assert locate(dump_ui(root, "retry-test"), "Recent") == (50, 40)
+            calls = mocked_adb.call_args_list
+            assert calls[1].args[:3] == ("shell", "uiautomator", "dump")
+            assert calls[2].args[:2] == ("exec-out", "cat")
+            assert calls[1].args[3] == calls[2].args[2] == UI_DUMP_PATH
         assert (root / "retry-test.xml").read_text(encoding="utf-8") == ui_xml
         with patch(__name__ + ".adb", return_value=first_failure), \
                 patch(__name__ + ".time.sleep"):
