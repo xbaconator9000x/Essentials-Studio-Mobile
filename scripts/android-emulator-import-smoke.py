@@ -56,7 +56,7 @@ def dump_ui(evidence: Path, name: str) -> list[dict[str, str]]:
     failures: list[str] = []
     for attempt in range(1, 4):
         try:
-            dump = adb("shell", "uiautomator", "dump", "/sdcard/window.xml",
+            dump = adb("shell", "uiautomator", "dump", "/data/local/tmp/essentials-ui-dump.xml",
                        check=False, timeout=35)
             if dump.returncode:
                 failures.append(
@@ -213,6 +213,56 @@ def picker_folder_row(xml_text: str, folder_name: str, target: str = "title") ->
             return center(node.attrib["bounds"])
         return center(title.attrib["bounds"])
     return None
+
+def picker_breadcrumb(xml_text: str) -> str:
+    """Read the current DocumentsUI location; a visible folder tile is not proof of entry."""
+    root = ET.fromstring(xml_text[xml_text.find("<?xml"):] if "<?xml" in xml_text else xml_text)
+    for node in root.iter("node"):
+        if documents_ui_id(node.get("resource-id", ""), "breadcrumb_text"):
+            return node.get("text", "").strip()
+    return ""
+
+
+def picker_focused_item(xml_text: str, filename: str) -> bool:
+    """Only activate keyboard focus when it is on the exact requested document row."""
+    root = ET.fromstring(xml_text[xml_text.find("<?xml"):] if "<?xml" in xml_text else xml_text)
+    for node in root.iter("node"):
+        if (documents_ui_id(node.get("resource-id", ""), "item_root")
+                and node.get("focused") == "true"
+                and any(child.get("text", "").strip().casefold() == filename.casefold()
+                        for child in node.iter("node"))):
+            return True
+    return False
+
+
+def activate_picker_item_keyboard(evidence: Path, filename: str, prefix: str,
+                                  steps: int = 24) -> bool:
+    """Use actual DocumentsUI keyboard focus when its non-clickable cards ignore touch.
+
+    ADB sends normal TAB/ENTER input, not a forged URI or injected app callback.
+    Never press ENTER unless the freshly dumped accessibility tree shows focus
+    on the exact target item_root. Preserve a bounded focus trace on failure.
+    """
+    trace: list[str] = []
+    for step in range(steps):
+        adb("shell", "input", "keyevent", "KEYCODE_TAB")
+        nodes = dump_ui(evidence, f"{prefix}-focus-{step}")
+        if not documents_ui_visible(nodes):
+            break
+        xml = (evidence / f"{prefix}-focus-{step}.xml").read_text(encoding="utf-8")
+        focused = [n.get("text", "") for n in nodes if n.get("focused") == "true"]
+        trace.append(f"{step}: {focused!r} breadcrumb={picker_breadcrumb(xml)!r}")
+        if picker_focused_item(xml, filename):
+            adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+            (evidence / f"{prefix}-keyboard.txt").write_text(
+                "\n".join(trace) + "\nactivated=" + filename + "\n", encoding="utf-8"
+            )
+            return True
+    (evidence / f"{prefix}-keyboard.txt").write_text(
+        "\n".join(trace) + "\nno exact focused target\n", encoding="utf-8"
+    )
+    return False
+
 
 def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None:
     """Alternate touch target for the list row, away from its preview button.
@@ -397,18 +447,42 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
             time.sleep(2)
         if card is not None:
             break
+    # The 2026-10-31 Linux KVM evidence showed the root breadcrumb still
+    # said sdk_gphone_x86_64 after all three touch attempts. The earlier
+    # message incorrectly claimed Download had opened. Use keyboard focus
+    # on the exact folder card as an independent native UI interaction.
+    current_xml = (evidence / "external-storage-download.xml").read_text(encoding="utf-8")
+    if card is None and picker_breadcrumb(current_xml).casefold() not in {"download", "downloads"}:
+        attempts.append("touch navigation failed; trying exact-card keyboard focus")
+        if activate_picker_item_keyboard(evidence, "Download", "download-folder"):
+            deadline = time.monotonic() + 25
+            while time.monotonic() < deadline:
+                nodes = dump_ui(evidence, "external-storage-download")
+                if not documents_ui_visible(nodes):
+                    return False
+                current_xml = (evidence / "external-storage-download.xml").read_text(
+                    encoding="utf-8"
+                )
+                card = picker_file_card(current_xml, filename)
+                if card is not None:
+                    break
+                time.sleep(2)
     (evidence / "external-storage-navigation.txt").write_text(
         "\\n".join(attempts) + "\\n", encoding="utf-8"
     )
     if card is None:
         (evidence / "external-storage-result.txt").write_text(
-            "Download directory opened, but synthetic ZIP was absent.\\n",
+            f"ZIP not selectable; current breadcrumb={picker_breadcrumb(current_xml)!r}.\\n",
             encoding="utf-8",
         )
         return False
     tap(card)
     time.sleep(4)
     nodes = dump_ui(evidence, "external-storage-after-file-tap")
+    if documents_ui_visible(nodes):
+        activate_picker_item_keyboard(evidence, filename, "download-zip")
+        time.sleep(4)
+        nodes = dump_ui(evidence, "external-storage-after-keyboard")
     returned = not documents_ui_visible(nodes)
     (evidence / "external-storage-result.txt").write_text(
         f"ExternalStorageProvider file tap={card}, returned_to_app={returned}; "
@@ -657,6 +731,19 @@ def selftest() -> None:
     ).replace('bounds="[189,1652][377,1709]"', 'bounds="[674,983][838,1034]"')
     assert picker_folder_row(actual_grid_folder, "Download") == (756, 1008)
     assert picker_folder_row(actual_grid_folder, "Download", "icon") == (612, 1008)
+    assert picker_breadcrumb('<?xml version="1.0"?><hierarchy>'
+                             '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
+                             'text="sdk_gphone_x86_64"/></hierarchy>') == "sdk_gphone_x86_64"
+    focused_xml = ('<?xml version="1.0"?><hierarchy>'
+                   '<node resource-id="com.google.android.documentsui:id/item_root" '
+                   'focused="true"><node text="Download"/></node></hierarchy>')
+    assert picker_focused_item(focused_xml, "Download")
+    assert not picker_focused_item(focused_xml, "Documents")
+    assert not picker_focused_item(focused_xml.replace('focused="true"', 'focused="false"'),
+                                   "Download")
+    assert picker_focused_item(focused_xml.replace(
+        "com.google.android.documentsui:id/", "com.android.documentsui:id/"), "Download")
+
 
     assert picker_list_row_icon(list_xml, "missing.zip") is None
     # Exact clickable preview action observed in real AOSP API30 evidence.
