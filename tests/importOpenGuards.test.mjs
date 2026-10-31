@@ -15,6 +15,32 @@ test("successful import and open never discard app-private project", async () =>
   assert.deepEqual(calls, ["import", "open"]);
 });
 
+test("cancelled Android document selection leaves the project untouched", async () => {
+  let called = false;
+  await importAndOpenProject(null, {
+    importArchive: async () => { called = true; return "/private/import-cancelled"; },
+    openProject: async () => { called = true; },
+    discardFailedImport: async () => { called = true; },
+    isActiveProject: () => false,
+  });
+  assert.equal(called, false);
+});
+
+test("Android document import failures do not open or discard a project", async () => {
+  const calls = [];
+  const uri = "content://com.android.providers.downloads.documents/document/42";
+  await assert.rejects(importAndOpenProject(uri, {
+    importArchive: async (selectedUri) => {
+      assert.equal(selectedUri, uri);
+      throw new Error("Android document stream failed");
+    },
+    openProject: async () => { calls.push("open"); },
+    discardFailedImport: async () => { calls.push("discard"); },
+    isActiveProject: () => false,
+  }), /Android document stream failed/);
+  assert.deepEqual(calls, []);
+});
+
 test("invalid initial XP map discards only the rejected import", async () => {
   const calls = [];
   const error = new Error("invalid Map001.rxdata");

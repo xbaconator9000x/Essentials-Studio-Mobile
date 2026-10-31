@@ -48,8 +48,130 @@ fi
   printf 'android_release=%s\n' "$(adb shell getprop ro.build.version.release | tr -d '\r')"
 } | tee "$evidence/receipt.txt"
 
-adb install -r "$apk"
-adb shell pm path "$package" | tee "$evidence/installed-package.txt"
+# The full AOSP API30 image can report sys.boot_completed=1 while first-boot
+# dexopt and WebView services still saturate its virtual CPUs. The actual
+# 41102608478 trace shows load 15.2, 81% kernel CPU and a 5-second FocusEvent
+# ANR before the import UI is touched. Never dismiss or count an app ANR as
+# success; start the editor only after the guest has demonstrably settled.
+await_guest_idle() {
+  local phase="$1" consecutive=0 attempt load boot
+  for attempt in $(seq 1 36); do
+    boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    load="$(adb shell cat /proc/loadavg 2>/dev/null | awk '{print $1}' | tr -d '\r' || true)"
+    printf '%s attempt=%s boot=%s load1=%s\n' "$phase" "$attempt" "$boot" "$load" \
+      | tee -a "$evidence/guest-idle.txt"
+    if [[ "$boot" == "1" && "$load" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+       && awk -v value="$load" 'BEGIN { exit !(value < 5.0) }'; then
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge 3 ]]; then
+        return 0
+      fi
+    else
+      consecutive=0
+    fi
+    sleep 10
+  done
+  echo "Android guest remained busy before $phase; recording overload and attempting strict foreground/ANR checks." >&2
+  printf "guest_idle_timeout_phase=%s\n" "$phase" >> "$evidence/receipt.txt"
+  adb shell top -b -n 1 > "$evidence/guest-busy-top.txt" 2>&1 || true
+  adb shell dumpsys cpuinfo > "$evidence/guest-busy-cpuinfo.txt" 2>&1 || true
+  # Idle is a startup optimisation, not proof of editor correctness.
+  # Report the overload separately while still attempting the strict editor
+  # foreground, screenshot, fatal-exception and ANR assertions.
+  return 1
+}
+
+# A newly booted Google APIs guest can report boot_completed=1 while the
+# package manager is still unstable. Run 41162315865 failed at adb install
+# with "Failure calling service package: Broken pipe (32)" before app launch.
+# Retry only this infrastructure operation, with bounded timeouts and a real
+# package-manager readback. Never turn an unsuccessful install into a pass.
+python3 - "$apk" "$package" "$evidence" <<'PY'
+import pathlib
+import subprocess
+import sys
+import time
+
+apk, package, evidence_dir = sys.argv[1:]
+evidence = pathlib.Path(evidence_dir)
+
+def probe_package_manager(attempt: int) -> bool:
+    """Wait for the package service, not merely sys.boot_completed=1."""
+    for probe_number in range(1, 9):
+        try:
+            probe = subprocess.run(
+                ["adb", "shell", "cmd", "package", "list", "packages", "android"],
+                capture_output=True, text=True, timeout=20, check=False,
+            )
+            ready = probe.returncode == 0 and "package:android" in probe.stdout.splitlines()
+            with (evidence / "package-manager-readiness.txt").open("a", encoding="utf-8") as log:
+                log.write(f"attempt={attempt} probe={probe_number} ready={ready} "
+                          f"exit={probe.returncode} stdout={probe.stdout[-250:]!r} "
+                          f"stderr={probe.stderr[-250:]!r}\n")
+            if ready:
+                return True
+        except subprocess.TimeoutExpired as exc:
+            with (evidence / "package-manager-readiness.txt").open("a", encoding="utf-8") as log:
+                log.write(f"attempt={attempt} probe={probe_number} timeout={exc}\n")
+        time.sleep(10)
+    return False
+
+for attempt in range(1, 4):
+    log = evidence / f"install-attempt-{attempt}.txt"
+    if not probe_package_manager(attempt):
+        log.write_text("Package manager did not become responsive; install not attempted.\n",
+                       encoding="utf-8")
+    else:
+        try:
+            # Streamed installs failed with Broken pipe (32) and missing package
+            # service during API30 Google APIs first-boot dexopt (41182715951).
+            # Non-streaming transfers the APK before invoking the device installer.
+            result = subprocess.run(
+                ["adb", "install", "--no-streaming", "-r", apk],
+                capture_output=True, text=True, timeout=150, check=False,
+            )
+            log.write_text(result.stdout + result.stderr, encoding="utf-8")
+            if result.returncode == 0 and "Success" in result.stdout:
+                probe = subprocess.run(
+                    ["adb", "shell", "pm", "path", package],
+                    capture_output=True, text=True, timeout=30, check=False,
+                )
+                (evidence / "installed-package.txt").write_text(
+                    probe.stdout + probe.stderr, encoding="utf-8",
+                )
+                if probe.returncode == 0 and "package:" in probe.stdout:
+                    print(f"APK installation verified on attempt {attempt}: "
+                          f"{probe.stdout.strip()}", flush=True)
+                    break
+                with log.open("a", encoding="utf-8") as output:
+                    output.write("\nInstall returned success but pm path did not confirm the package.\n")
+        except subprocess.TimeoutExpired as exc:
+            log.write_text(f"ADB install or package verification timed out: {exc}\n",
+                           encoding="utf-8")
+    if attempt == 3:
+        raise SystemExit("APK installation failed after three bounded attempts; "
+                         "see package-manager-readiness.txt and install-attempt-*.txt")
+    print(f"Install attempt {attempt} failed; allowing package manager to recover.",
+          flush=True)
+    try:
+        subprocess.run(["adb", "wait-for-device"], timeout=30, check=False)
+    except subprocess.TimeoutExpired:
+        pass
+    time.sleep(20)
+PY
+# Deliberately skip optional ahead-of-time package compilation on the emulator.
+# Run 41177479976 timed out the adb-side compilation after 75 seconds, then
+# the Android guest remained at load 17-45 for six minutes and eventually lost
+# editor focus. Killing adb does not guarantee that Android's dex2oat job has
+# stopped. Launch the normally installed debug APK without adding this
+# unbounded CPU-intensive background workload. Real foreground/ANR/import
+# assertions below remain mandatory.
+printf 'package_precompile=skipped_to_avoid_emulator_cpu_contention\n' >> "$evidence/receipt.txt"
+if await_guest_idle "pre-launch"; then
+  printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
+else
+  printf 'guest_idle_before_launch=overloaded\n' >> "$evidence/receipt.txt"
+fi
 adb logcat -c
 adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 | tee "$evidence/launch-command.txt"
 
@@ -75,11 +197,32 @@ fi
 # CI incorrectly reported success. Require the actual editor window to have
 # focus, allowing a short settling interval after the emulator boots.
 focus=""
+recovered_system_anr=0
 for attempt in $(seq 1 6); do
   capture
   focus="$(grep 'mCurrentFocus=' "$evidence/windows.txt" | tail -n 1 || true)"
   if [[ "$focus" == *"$package"* && "$focus" != *"Application Not Responding"* ]]; then
     break
+  fi
+  # AOSP API 30 on overloaded macOS runners can show a transient *system*
+  # process ANR over a healthy editor. The real screenshot from run 41037978718
+  # shows the standard "Wait" action. Dismiss ONLY that exact OS ANR once,
+  # using its accessibility bounds; never dismiss an editor crash or claim
+  # success without subsequently proving editor foreground focus.
+  # Android's SystemUI ANR uses the process name com.android.systemui
+  # (observed in run 41094049109); the older system-process ANR uses
+  # "system". Neither may be mistaken for an editor application ANR.
+  if [[ "$recovered_system_anr" == 0 && (
+        "$focus" == *"Application Not Responding: system"* ||
+        "$focus" == *"Application Not Responding: com.android.systemui"*
+      ) ]]; then
+    if python3 scripts/android-emulator-import-smoke.py --recover-system-anr --evidence "$evidence"; then
+      recovered_system_anr=1
+      echo "Dismissed transient Android OS ANR; checking editor focus again."
+      sleep 12
+      continue
+    fi
+    echo "Android OS ANR could not be safely dismissed; retaining failure evidence." >&2
   fi
   if [[ "$attempt" == 6 ]]; then
     printf 'Editor UI not foreground/usable; current focus: %s\n' "$focus" >&2
@@ -87,6 +230,20 @@ for attempt in $(seq 1 6); do
   fi
   sleep 5
 done
+# A brief foreground window can turn into a real application ANR just
+# afterwards. The first functional test run caught exactly that state.
+# Let Android's WebView settle and recheck both the window and logcat.
+sleep 20
+capture
+focus="$(grep 'mCurrentFocus=' "$evidence/windows.txt" | tail -n 1 || true)"
+if [[ "$focus" != *"$package"* || "$focus" == *"Application Not Responding"* ]]; then
+  printf 'Editor foreground was lost after settling: %s\n' "$focus" >&2
+  exit 1
+fi
+if grep -Fq "ANR in $package" "$evidence/logcat.txt"; then
+  echo "Android reported an ANR in the editor after launch" >&2
+  exit 1
+fi
 if [[ ! -s "$evidence/launch.png" ]]; then
   echo "No Android screenshot was captured" >&2
   exit 1
