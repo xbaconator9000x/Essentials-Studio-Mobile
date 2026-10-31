@@ -77,13 +77,35 @@ await_guest_idle() {
 
 adb install -r "$apk"
 adb shell pm path "$package" | tee "$evidence/installed-package.txt"
-# Ahead-of-time compile this debug package while the emulator is idle; do not
-# include first-launch dexopt in the responsiveness acceptance window.
-adb shell cmd package compile -m speed -f "$package" \
-  > "$evidence/package-compile.txt" 2>&1 || {
-    echo "Android package precompilation failed; retaining evidence." >&2
-    exit 1
-  }
+# AOT compilation is a startup optimisation, not an import acceptance gate.
+# On the API30 Google APIs image (run 41157610988) the command stalled for
+# over nine minutes *after* the APK installed, preventing any launch/import
+# attempt. Bound the command; preserve diagnostics and let the strict guest
+# idle, foreground, ANR and project-open checks decide whether the app works.
+if python3 - "$package" "$evidence/package-compile.txt" <<'PY'
+import subprocess
+import sys
+
+package, destination = sys.argv[1:]
+with open(destination, "wb") as log:
+    try:
+        result = subprocess.run(
+            ["adb", "shell", "cmd", "package", "compile", "-m", "speed", "-f", package],
+            stdout=log, stderr=subprocess.STDOUT, timeout=75, check=False,
+        )
+        if result.returncode:
+            log.write(f"\\nAOT compile exited {result.returncode}; testing normal startup.\\n".encode())
+        sys.exit(0 if result.returncode == 0 else 1)
+    except subprocess.TimeoutExpired:
+        log.write(b"\\nAOT compile exceeded 75 seconds; testing normal startup.\\n")
+        sys.exit(1)
+PY
+then
+  printf 'package_precompile=pass\\n' >> "$evidence/receipt.txt"
+else
+  printf 'package_precompile=unavailable\\n' >> "$evidence/receipt.txt"
+  echo "Optional package precompile unavailable; retaining evidence and testing actual startup."
+fi
 await_guest_idle "pre-launch"
 printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
 adb logcat -c
