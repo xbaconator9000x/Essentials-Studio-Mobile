@@ -40,14 +40,29 @@ concurrency:
 
 jobs:
   fixture:
-    runs-on: ubuntu-22.04
+    # Avoid the Ubuntu 22.04 Azure mirror that stalled apt for the full 60m
+    # in run 41250200427, cancelling an otherwise successful Android build.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux Tauri dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+          set -euo pipefail
+          # Prefer the canonical HTTPS mirror over intermittent Azure HTTP mirrors.
+          for source in /etc/apt/sources.list /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources; do
+            if [[ -f "$source" ]]; then
+              sudo sed -i -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+                -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
+          # Fail promptly on an unhealthy package mirror, not after an hour.
+          timeout 300s sudo apt-get -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          timeout 300s sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
             patchelf libasound2-dev
       - uses: actions/setup-node@v4
