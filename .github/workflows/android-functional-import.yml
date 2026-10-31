@@ -82,6 +82,11 @@ jobs:
       CI: 'true'
     steps:
       - uses: actions/checkout@v4
+      - name: Check import UI selectors and shell syntax
+        run: |
+          bash -n scripts/android-emulator-smoke.sh
+          python3 scripts/android-emulator-import-smoke.py --self-test
+          bash -n scripts/android-emulator-functional-smoke.sh
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -113,11 +118,6 @@ jobs:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: npm run tauri android build -- --ci --apk --debug --target x86_64
-      - name: Check import UI selectors and shell syntax
-        run: |
-          bash -n scripts/android-emulator-smoke.sh
-          python3 scripts/android-emulator-import-smoke.py --self-test
-          bash -n scripts/android-emulator-functional-smoke.sh
       - name: Preserve compiled APK
         uses: actions/upload-artifact@v4
         with:
