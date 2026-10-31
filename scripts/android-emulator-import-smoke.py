@@ -601,6 +601,38 @@ def selftest() -> None:
     else:
         raise AssertionError("Empty bounds accepted")
 
+    # A first-boot UIAutomator failure with empty stderr must be retried,
+    # and three failures must never reuse an earlier XML dump as a pass.
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+
+    ui_xml = ('<?xml version="1.0"?><hierarchy>'
+              '<node text="Recent" bounds="[0,0][100,80]"/>'
+              '</hierarchy>')
+    first_failure = subprocess.CompletedProcess([], 1, "", "")
+    dump_success = subprocess.CompletedProcess([], 0, "UI dumped", "")
+    xml_success = subprocess.CompletedProcess([], 0, ui_xml, "")
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        with patch(__name__ + ".adb", side_effect=[
+            first_failure, dump_success, xml_success
+        ]), patch(__name__ + ".time.sleep"):
+            assert locate(dump_ui(root, "retry-test"), "Recent") == (50, 40)
+        assert (root / "retry-test.xml").read_text(encoding="utf-8") == ui_xml
+        with patch(__name__ + ".adb", return_value=first_failure), \
+                patch(__name__ + ".time.sleep"):
+            try:
+                dump_ui(root, "all-failed")
+            except RuntimeError as exc:
+                assert "after 3 attempts" in str(exc)
+            else:
+                raise AssertionError("Three failed UI dumps were accepted")
+        failure_log = (root / "all-failed-uiautomator-failures.txt").read_text(
+            encoding="utf-8"
+        )
+        assert "attempt 3: dump exit=1" in failure_log
+        assert not (root / "all-failed.xml").exists()
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
