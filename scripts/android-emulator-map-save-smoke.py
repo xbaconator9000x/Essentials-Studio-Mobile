@@ -50,8 +50,10 @@ def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
 
 
 def private_map_path(package: str) -> str:
-    output = run_adb("shell", "run-as", package, "sh", "-c",
-                     "find . -type f -name Map001.rxdata -print").decode(errors="replace")
+    # Pass find directly to run-as: adb shell flattens sh -c arguments, so
+    # `sh -c find . -type f ...` executes bare `find` and lists every file.
+    output = run_adb("shell", "run-as", package, "find", ".", "-type", "f",
+                     "-name", "Map001.rxdata", "-print").decode(errors="replace")
     paths = [line.strip() for line in output.splitlines() if line.strip()]
     if len(paths) != 1 or not re.fullmatch(r"\./[A-Za-z0-9_./-]*Map001\.rxdata", paths[0]):
         raise AssertionError(f"Expected one app-private Map001.rxdata, found {paths!r}")
@@ -165,7 +167,20 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError(f"Accepted invalid bounds {bad}")
-    # The find command must print only matching files, not a full sandbox listing.\n    assert "find . -type f -name Map001.rxdata -print".endswith("-print")\n    nodes = [
+    # Regression: run-as must receive find directly, not sh -c with split arguments.
+    original_run_adb = globals()["run_adb"]
+    observed = []
+    def fake_run_adb(*args: str, timeout: int = 45) -> bytes:
+        observed.append(args)
+        return b"./projects/import-test/Data/Map001.rxdata\\n"
+    try:
+        globals()["run_adb"] = fake_run_adb
+        assert private_map_path("com.example.fixture") == "./projects/import-test/Data/Map001.rxdata"
+    finally:
+        globals()["run_adb"] = original_run_adb
+    assert observed == [("shell", "run-as", "com.example.fixture", "find", ".",
+                         "-type", "f", "-name", "Map001.rxdata", "-print")]
+    nodes = [
         {"text": "🗺 [001] Synthetic Map", "bounds": "[7,301][514,380]"},
         {"text": "", "class": "android.widget.Image", "bounds": "[1300,354][1800,934]"},
         *[{"text": name, "bounds": "[700,202][800,309]"}
