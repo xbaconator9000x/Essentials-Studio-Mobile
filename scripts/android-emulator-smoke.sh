@@ -75,10 +75,10 @@ await_guest_idle() {
   printf "guest_idle_timeout_phase=%s\n" "$phase" >> "$evidence/receipt.txt"
   adb shell top -b -n 1 > "$evidence/guest-busy-top.txt" 2>&1 || true
   adb shell dumpsys cpuinfo > "$evidence/guest-busy-cpuinfo.txt" 2>&1 || true
-  # Idle is a startup optimisation, not proof of editor correctness. The
-  # subsequent process, foreground, screenshot, fatal-exception and ANR
-  # assertions must still pass; do not convert an app failure into success.
-  return 0
+  # Idle is a startup optimisation, not proof of editor correctness.
+  # Report the overload separately while still attempting the strict editor
+  # foreground, screenshot, fatal-exception and ANR assertions.
+  return 1
 }
 
 # A newly booted Google APIs guest can report boot_completed=1 while the
@@ -159,8 +159,11 @@ else
   printf 'package_precompile=unavailable\n' >> "$evidence/receipt.txt"
   echo "Optional package precompile unavailable; retaining evidence and testing actual startup."
 fi
-await_guest_idle "pre-launch"
-printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
+if await_guest_idle "pre-launch"; then
+  printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
+else
+  printf 'guest_idle_before_launch=overloaded\n' >> "$evidence/receipt.txt"
+fi
 adb logcat -c
 adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 | tee "$evidence/launch-command.txt"
 
