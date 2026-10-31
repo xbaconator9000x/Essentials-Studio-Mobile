@@ -75,8 +75,55 @@ await_guest_idle() {
   return 1
 }
 
-adb install -r "$apk"
-adb shell pm path "$package" | tee "$evidence/installed-package.txt"
+# A newly booted Google APIs guest can report boot_completed=1 while the
+# package manager is still unstable. Run 41162315865 failed at adb install
+# with "Failure calling service package: Broken pipe (32)" before app launch.
+# Retry only this infrastructure operation, with bounded timeouts and a real
+# package-manager readback. Never turn an unsuccessful install into a pass.
+python3 - "$apk" "$package" "$evidence" <<'PY'
+import pathlib
+import subprocess
+import sys
+import time
+
+apk, package, evidence_dir = sys.argv[1:]
+evidence = pathlib.Path(evidence_dir)
+for attempt in range(1, 4):
+    log = evidence / f"install-attempt-{attempt}.txt"
+    try:
+        result = subprocess.run(
+            ["adb", "install", "-r", apk],
+            capture_output=True, text=True, timeout=150, check=False,
+        )
+        log.write_text(result.stdout + result.stderr, encoding="utf-8")
+        if result.returncode == 0 and "Success" in result.stdout:
+            probe = subprocess.run(
+                ["adb", "shell", "pm", "path", package],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+            (evidence / "installed-package.txt").write_text(
+                probe.stdout + probe.stderr, encoding="utf-8",
+            )
+            if probe.returncode == 0 and "package:" in probe.stdout:
+                print(f"APK installation verified on attempt {attempt}: "
+                      f"{probe.stdout.strip()}", flush=True)
+                break
+            with log.open("a", encoding="utf-8") as output:
+                output.write("\\nInstall returned success but pm path did not confirm the package.\\n")
+    except subprocess.TimeoutExpired as exc:
+        log.write_text(f"ADB install or package verification timed out: {exc}\\n",
+                       encoding="utf-8")
+    if attempt == 3:
+        raise SystemExit("APK installation failed after three bounded attempts; "
+                         "see install-attempt-*.txt")
+    print(f"Install attempt {attempt} failed; allowing package manager to recover.",
+          flush=True)
+    try:
+        subprocess.run(["adb", "wait-for-device"], timeout=30, check=False)
+    except subprocess.TimeoutExpired:
+        pass
+    time.sleep(20)
+PY
 # AOT compilation is a startup optimisation, not an import acceptance gate.
 # On the API30 Google APIs image (run 41157610988) the command stalled for
 # over nine minutes *after* the APK installed, preventing any launch/import
