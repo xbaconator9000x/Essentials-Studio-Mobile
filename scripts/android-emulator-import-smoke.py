@@ -47,12 +47,49 @@ def locate(nodes: list[dict[str, str]], needle: str) -> tuple[int, int] | None:
 
 
 def dump_ui(evidence: Path, name: str) -> list[dict[str, str]]:
-    result = adb("shell", "uiautomator", "dump", "/sdcard/window.xml", check=False, timeout=35)
-    if result.returncode:
-        raise RuntimeError("Cannot inspect UI: " + result.stderr[-350:])
-    result = adb("exec-out", "cat", "/sdcard/window.xml")
-    (evidence / f"{name}.xml").write_text(result.stdout, encoding="utf-8")
-    return entries(result.stdout)
+    """Retry transient UIAutomator failures without accepting stale UI evidence.
+
+    Heavily loaded first-boot emulators sometimes return nonzero with *empty*
+    stderr. Retain stdout, exit status and timeout details so infrastructure
+    failure can be distinguished from a real missing picker control.
+    """
+    failures: list[str] = []
+    for attempt in range(1, 4):
+        try:
+            dump = adb("shell", "uiautomator", "dump", "/sdcard/window.xml",
+                       check=False, timeout=35)
+            if dump.returncode:
+                failures.append(
+                    f"attempt {attempt}: dump exit={dump.returncode} "
+                    f"stdout={dump.stdout[-250:]!r} stderr={dump.stderr[-250:]!r}"
+                )
+            else:
+                xml = adb("exec-out", "cat", "/sdcard/window.xml",
+                          check=False, timeout=20)
+                if xml.returncode:
+                    failures.append(
+                        f"attempt {attempt}: XML read exit={xml.returncode} "
+                        f"stderr={xml.stderr[-250:]!r}"
+                    )
+                else:
+                    try:
+                        nodes = entries(xml.stdout)
+                    except ET.ParseError as exc:
+                        failures.append(f"attempt {attempt}: malformed XML: {exc}")
+                    else:
+                        (evidence / f"{name}.xml").write_text(
+                            xml.stdout, encoding="utf-8"
+                        )
+                        return nodes
+        except subprocess.TimeoutExpired as exc:
+            failures.append(f"attempt {attempt}: UIAutomator timed out: {exc}")
+        if attempt < 3:
+            time.sleep(3 * attempt)
+    message = "\n".join(failures)
+    (evidence / f"{name}-uiautomator-failures.txt").write_text(
+        message + "\n", encoding="utf-8"
+    )
+    raise RuntimeError("Cannot inspect UI after 3 attempts: " + message[-1000:])
 
 
 def reject_editor_anr(nodes: list[dict[str, str]]) -> None:
