@@ -355,23 +355,41 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
             encoding="utf-8",
         )
         return False
-    tap(folder)
-    # On an overloaded API30 emulator DocumentsUI may still be rendering the
-    # parent folder after a fixed two-second sleep. Wait for the actual ZIP
-    # document rather than mistaking that intermediate hierarchy for failure.
+    # The Google API30 grid can ignore a valid coordinate tap while its
+    # document provider is overloaded. Verify the folder transition from
+    # actual UI state, then switch to native list mode for one bounded retry.
     card = None
-    deadline = time.monotonic() + 35
-    while time.monotonic() < deadline:
-        nodes = dump_ui(evidence, "external-storage-download")
-        if not documents_ui_visible(nodes):
-            return False
-        card = picker_file_card(
-            (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
-            filename,
-        )
+    for attempt in range(2):
+        if attempt:
+            nodes = dump_ui(evidence, "external-storage-before-list-retry")
+            if not documents_ui_visible(nodes):
+                return False
+            toggle = picker_list_view_control(nodes)
+            if toggle is None:
+                break
+            tap(toggle)
+            time.sleep(3)
+            root_xml = (evidence / "external-storage-list-retry.xml")
+            nodes = dump_ui(evidence, "external-storage-list-retry")
+            folder = (picker_folder_row(root_xml.read_text(encoding="utf-8"), "Download")
+                      or picker_folder_row(root_xml.read_text(encoding="utf-8"), "Downloads"))
+            if folder is None:
+                break
+        tap(folder)
+        deadline = time.monotonic() + 24
+        while time.monotonic() < deadline:
+            nodes = dump_ui(evidence, "external-storage-download")
+            if not documents_ui_visible(nodes):
+                return False
+            card = picker_file_card(
+                (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
+                filename,
+            )
+            if card is not None:
+                break
+            time.sleep(3)
         if card is not None:
             break
-        time.sleep(3)
     if card is None:
         (evidence / "external-storage-result.txt").write_text(
             "Download directory opened, but synthetic ZIP was absent.\\n",
