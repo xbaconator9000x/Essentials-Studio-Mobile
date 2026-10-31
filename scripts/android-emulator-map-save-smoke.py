@@ -172,7 +172,7 @@ def selftest() -> None:
     observed = []
     def fake_run_adb(*args: str, timeout: int = 45) -> bytes:
         observed.append(args)
-        return b"./projects/import-test/Data/Map001.rxdata\\n"
+        return b"./projects/import-test/Data/Map001.rxdata\n"
     try:
         globals()["run_adb"] = fake_run_adb
         assert private_map_path("com.example.fixture") == "./projects/import-test/Data/Map001.rxdata"
