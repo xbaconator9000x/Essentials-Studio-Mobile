@@ -94,34 +94,63 @@ import time
 
 apk, package, evidence_dir = sys.argv[1:]
 evidence = pathlib.Path(evidence_dir)
+
+def probe_package_manager(attempt: int) -> bool:
+    """Wait for the package service, not merely sys.boot_completed=1."""
+    for probe_number in range(1, 9):
+        try:
+            probe = subprocess.run(
+                ["adb", "shell", "cmd", "package", "list", "packages", "android"],
+                capture_output=True, text=True, timeout=20, check=False,
+            )
+            ready = probe.returncode == 0 and "package:android" in probe.stdout.splitlines()
+            with (evidence / "package-manager-readiness.txt").open("a", encoding="utf-8") as log:
+                log.write(f"attempt={attempt} probe={probe_number} ready={ready} "
+                          f"exit={probe.returncode} stdout={probe.stdout[-250:]!r} "
+                          f"stderr={probe.stderr[-250:]!r}\n")
+            if ready:
+                return True
+        except subprocess.TimeoutExpired as exc:
+            with (evidence / "package-manager-readiness.txt").open("a", encoding="utf-8") as log:
+                log.write(f"attempt={attempt} probe={probe_number} timeout={exc}\n")
+        time.sleep(10)
+    return False
+
 for attempt in range(1, 4):
     log = evidence / f"install-attempt-{attempt}.txt"
-    try:
-        result = subprocess.run(
-            ["adb", "install", "-r", apk],
-            capture_output=True, text=True, timeout=150, check=False,
-        )
-        log.write_text(result.stdout + result.stderr, encoding="utf-8")
-        if result.returncode == 0 and "Success" in result.stdout:
-            probe = subprocess.run(
-                ["adb", "shell", "pm", "path", package],
-                capture_output=True, text=True, timeout=30, check=False,
-            )
-            (evidence / "installed-package.txt").write_text(
-                probe.stdout + probe.stderr, encoding="utf-8",
-            )
-            if probe.returncode == 0 and "package:" in probe.stdout:
-                print(f"APK installation verified on attempt {attempt}: "
-                      f"{probe.stdout.strip()}", flush=True)
-                break
-            with log.open("a", encoding="utf-8") as output:
-                output.write("\\nInstall returned success but pm path did not confirm the package.\\n")
-    except subprocess.TimeoutExpired as exc:
-        log.write_text(f"ADB install or package verification timed out: {exc}\\n",
+    if not probe_package_manager(attempt):
+        log.write_text("Package manager did not become responsive; install not attempted.\n",
                        encoding="utf-8")
+    else:
+        try:
+            # Streamed installs failed with Broken pipe (32) and missing package
+            # service during API30 Google APIs first-boot dexopt (41182715951).
+            # Non-streaming transfers the APK before invoking the device installer.
+            result = subprocess.run(
+                ["adb", "install", "--no-streaming", "-r", apk],
+                capture_output=True, text=True, timeout=150, check=False,
+            )
+            log.write_text(result.stdout + result.stderr, encoding="utf-8")
+            if result.returncode == 0 and "Success" in result.stdout:
+                probe = subprocess.run(
+                    ["adb", "shell", "pm", "path", package],
+                    capture_output=True, text=True, timeout=30, check=False,
+                )
+                (evidence / "installed-package.txt").write_text(
+                    probe.stdout + probe.stderr, encoding="utf-8",
+                )
+                if probe.returncode == 0 and "package:" in probe.stdout:
+                    print(f"APK installation verified on attempt {attempt}: "
+                          f"{probe.stdout.strip()}", flush=True)
+                    break
+                with log.open("a", encoding="utf-8") as output:
+                    output.write("\nInstall returned success but pm path did not confirm the package.\n")
+        except subprocess.TimeoutExpired as exc:
+            log.write_text(f"ADB install or package verification timed out: {exc}\n",
+                           encoding="utf-8")
     if attempt == 3:
         raise SystemExit("APK installation failed after three bounded attempts; "
-                         "see install-attempt-*.txt")
+                         "see package-manager-readiness.txt and install-attempt-*.txt")
     print(f"Install attempt {attempt} failed; allowing package manager to recover.",
           flush=True)
     try:
