@@ -150,14 +150,16 @@ jobs:
       - name: Install and launch compiled APK
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          # Android Test Device (aosp_atd) omits an ACTION_GET_CONTENT
-          # handler: runtime logcat reports "No Activity found to handle Intent"
-          # when the native Tauri dialog picker opens. Use the full AOSP image
-          # with DocumentsUI, and provide additional resources to reduce the
-          # first-boot WebView input-dispatch ANR observed on the earlier run.
-          # Keep the import gate fail-closed on ANR, missing picker or lost data.
-          target: default
+          api-level: 33
+          # API30 full-AOSP DocumentsUI repeatedly displayed the ADB-pushed
+          # synthetic ZIP but ignored file-row, icon and preview selection,
+          # including via ExternalStorageProvider (runs 41127092100,
+          # 41135597817, 41147439712). Its own startup logs also contain
+          # non-visual Context errors in DocumentsApplication. Test the same
+          # native GET_CONTENT contract on a newer Google APIs system image,
+          # retaining strict UI-driven import and project-open assertions.
+          # Never treat a picker display or app launch as an import pass.
+          target: google_apis
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 600
