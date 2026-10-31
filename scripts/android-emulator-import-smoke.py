@@ -272,6 +272,17 @@ def capture(evidence: Path) -> None:
 
 
 
+def external_storage_root(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    """Match the actual AOSP/Google emulator storage root, never Drive/Photos."""
+    for node in nodes:
+        label = node.get("text", "").strip().casefold()
+        if (label.startswith("android sdk built for x86_64")
+                or re.fullmatch(r"sdk_gphone(?:64)?_x86_64", label)):
+            if node.get("bounds"):
+                return center(node["bounds"])
+    return None
+
+
 def try_external_storage_download(evidence: Path, filename: str) -> bool:
     """Exercise the actual external-storage document provider, not Downloads' media index.
 
@@ -284,17 +295,22 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
     nodes = dump_ui(evidence, "before-external-storage")
     if not documents_ui_visible(nodes):
         return False
-    roots = locate(nodes, "Show roots")
-    if roots is None:
-        return False
-    tap(roots)
-    time.sleep(2)
-    nodes = dump_ui(evidence, "external-storage-roots")
-    storage = next((
-        center(n["bounds"]) for n in nodes
-        if n.get("text", "").strip().casefold().startswith("android sdk built for")
-        and n.get("bounds")
-    ), None)
+    # Google APIs calls this root "sdk_gphone_x86_64", whereas AOSP uses
+    # "Android SDK built for x86_64". The drawer may already be open after
+    # a preview attempt; do not require a redundant "Show roots" control.
+    storage = external_storage_root(nodes)
+    if storage is None:
+        roots = locate(nodes, "Show roots")
+        if roots is None:
+            (evidence / "external-storage-result.txt").write_text(
+                "Neither a known emulator storage root nor Show roots was visible.\\n",
+                encoding="utf-8",
+            )
+            return False
+        tap(roots)
+        time.sleep(2)
+        nodes = dump_ui(evidence, "external-storage-roots")
+        storage = external_storage_root(nodes)
     if storage is None:
         (evidence / "external-storage-result.txt").write_text(
             "No AOSP external-storage root available; no alternate selection attempted.\\n",
@@ -561,6 +577,14 @@ def selftest() -> None:
                          'bounds="[168,766][714,817]"/>'
                          '</hierarchy>')
     assert locate(entries(external_root_xml), "Android SDK built for") == (441, 791)
+    assert external_storage_root(entries(external_root_xml)) == (441, 791)
+    google_root_xml = external_root_xml.replace(
+        "Android SDK built for x86_64", "sdk_gphone_x86_64"
+    )
+    assert external_storage_root(entries(google_root_xml)) == (441, 791)
+    assert external_storage_root(entries(google_root_xml.replace(
+        "sdk_gphone_x86_64", "Drive"
+    ))) is None
     assert picker_list_row_icon(grid_xml, "EssentialsSynthetic.zip") is None
     assert picker_list_view_control(entries(grid_xml)) is None
     assert not editor_visible(entries(xml))
