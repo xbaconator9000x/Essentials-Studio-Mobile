@@ -83,7 +83,7 @@ def status_has(nodes: list[dict[str, str]], layer: str, tile: str) -> bool:
                 tx1, ty1, tx2, ty2 = bounds(label["bounds"])
                 vx1, vy1, vx2, vy2 = bounds(value["bounds"])
                 if (max(ly1, ty1, vy1) < min(ly2, ty2, vy2)
-                        and 0 <= tx1 - lx2 <= 50
+                        and -15 <= tx1 - lx2 <= 50
                         and -15 <= vx1 - tx2 <= 50):
                     return True
     return False
