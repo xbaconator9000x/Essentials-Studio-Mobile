@@ -53,6 +53,43 @@ def one_new_path(before: set[str], after: set[str]) -> str:
     return next(iter(new))
 
 
+def wait_for_reimported_map(
+    package: str, evidence: Path, before: set[str], expected_sha: str, seconds: int
+) -> tuple[str, str]:
+    """Require a distinct completed import, not the still-visible previous editor."""
+    deadline = time.monotonic() + seconds
+    last = "No newly imported map observed"
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        nodes = picker.dump_ui(evidence, f"reimport-wait-{attempt}")
+        picker.reject_editor_anr(nodes)
+        if any("Project ZIP import failed" in n.get("text", "") for n in nodes):
+            raise AssertionError("Editor reported exported ZIP re-import failure")
+        paths = private_map_paths(package)
+        if not before.issubset(paths):
+            raise AssertionError("Previously imported project disappeared during re-import")
+        new = paths - before
+        if len(new) > 1:
+            raise AssertionError(f"Re-import created multiple project maps: {sorted(new)!r}")
+        if len(new) == 1:
+            path = one_new_path(before, paths)
+            try:
+                map_bytes = map_helper.read_private_map(package, path)
+            except AssertionError as exc:
+                last = f"New map not yet readable: {exc}"
+            else:
+                actual_sha = hashlib.sha256(map_bytes).hexdigest()
+                if actual_sha == expected_sha and picker.editor_visible(nodes):
+                    return path, actual_sha
+                last = (
+                    f"New map {path} sha={actual_sha}, expected={expected_sha}, "
+                    f"editor_visible={picker.editor_visible(nodes)}"
+                )
+        time.sleep(3)
+    raise AssertionError(f"Re-import did not complete within {seconds}s: {last}")
+
+
 def run(package: str, evidence: Path) -> None:
     imported = json.loads((evidence / "import-receipt.json").read_text())
     painted = json.loads((evidence / "map-edit-receipt.json").read_text())
@@ -84,18 +121,12 @@ def run(package: str, evidence: Path) -> None:
         picker.wait_for_document_picker(evidence, 20)
         if not picker.try_external_storage_download(evidence, export_helper.EXPORT_FILENAME):
             raise AssertionError("Native DocumentsUI did not select exported ZIP")
-        if not picker.wait_for_editor(evidence, 45):
-            raise AssertionError("Exported project did not reopen in Android editor")
-        nodes = picker.dump_ui(evidence, "reimport-editor-after")
-        if not picker.editor_visible(nodes):
-            raise AssertionError("Reimport did not display an open project")
-
-        after = private_map_paths(package)
-        path = one_new_path(before, after)
-        map_bytes = map_helper.read_private_map(package, path)
-        map_sha = hashlib.sha256(map_bytes).hexdigest()
-        if map_sha != painted["map_sha256_after"]:
-            raise AssertionError("Reimported map bytes differ from the on-device saved map")
+        # The old project remains visible while the new ZIP is importing.
+        # A generic "editor visible" check can therefore pass too early.
+        # Wait for a *new* app-private map with the expected saved bytes.
+        path, map_sha = wait_for_reimported_map(
+            package, evidence, before, painted["map_sha256_after"], 75
+        )
         if hashlib.sha256(export_helper.read_remote(export_helper.EXPORTED_REMOTE)).hexdigest() != zip_sha:
             raise AssertionError("SAF-exported ZIP was mutated during reimport")
         if hashlib.sha256(export_helper.read_remote(export_helper.ORIGINAL_REMOTE)).hexdigest() != imported["fixture_sha256"]:
