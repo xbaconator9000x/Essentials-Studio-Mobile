@@ -127,9 +127,9 @@ jobs:
           retention-days: 7
 
   emulator-launch:
-    name: Install and launch x86_64 APK on accelerated macOS emulator
+    name: Install and launch x86_64 APK on KVM-accelerated Linux emulator
     needs: [fixture, build-x86]
-    runs-on: macos-15-intel
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +141,17 @@ jobs:
         with:
           name: android-synthetic-import-${{ github.sha }}
           path: android-synthetic-fixture
+      # GitHub-hosted 2-vCPU Linux runners expose hardware acceleration when
+      # the KVM device is made writable (GitHub Actions changelog 2024-04-02).
+      # Fail immediately if unavailable rather than silently running an
+      # overloaded software emulator and misdiagnosing editor import failures.
+      - name: Enable hardware-accelerated KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
       - uses: android-actions/setup-android@v4
       - name: Confirm downloaded APK and source identity
         run: |
@@ -151,24 +162,18 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          # API33 Google APIs never reached sys.boot_completed on the Intel
-          # macOS runner (run 41152643927): the emulator was limited to one
-          # virtual core and timed out after 600 seconds, before APK install.
-          # API30 AOSP *did* boot and launch the app, but its DocumentsUI
-          # ignored ZIP row/icon/preview taps (runs 41127092100,
-          # 41135597817, 41147439712). Try API30 Google APIs to isolate the
-          # document-provider implementation without the API33 boot blocker.
+          # Retain API30 Google APIs for comparability with the previous
+          # macOS test runs. Linux KVM replaces the CPU-starved macOS Intel
+          # host that intermittently lost ADB/package-manager responsiveness.
           # Never count picker display or app launch as a successful import.
           target: google_apis
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 600
           disable-animations: true
-          # The 4-vCPU/4-GiB full AOSP image hit 100% guest CPU (81% kernel)
-          # during first WebView focus and raised a genuine app ANR in run
-          # 41102608478. Avoid oversubscribing the Intel host and let the
-          # smoke script wait for guest load to settle before app startup.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 2
+          # Force hardware acceleration; never silently fall back to CPU-only
+          # emulation, which caused extreme guest load and unstable DocumentsUI.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 2 -accel on
           script: bash scripts/android-emulator-functional-smoke.sh
       - name: Preserve screenshot, UI hierarchy, ZIP import and failure receipts
         if: always()
