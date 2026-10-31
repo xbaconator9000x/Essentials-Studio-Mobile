@@ -34,3 +34,10 @@ python3 scripts/android-emulator-map-save-smoke.py \
 # map bytes just saved on-device. Physical phone/desktop remain separate.
 python3 scripts/android-emulator-saf-export-smoke.py \
   --evidence android-runtime-evidence
+
+# Fourth gate: re-import the actual SAF-created ZIP through Android DocumentsUI,
+# prove a distinct app-private project was created, and compare its saved map.
+# Desktop RMXP/JoiPlay and physical ARM64 remain separate acceptance gates.
+python3 scripts/android-emulator-export-reimport-smoke.py \
+  --package "$package" \
+  --evidence android-runtime-evidence
