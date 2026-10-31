@@ -409,8 +409,19 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
     copied_hash = adb("shell", "sha256sum", remote).stdout.split()[0]
     if copied_hash != original_hash:
         raise AssertionError("Fixture changed during ADB transfer")
-    adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-        "-d", f"file://{remote}", check=False)
+    # Media scanning is optional indexing, not part of the app import path.
+    # On a heavily loaded API30 emulator this broadcast can hang after the
+    # fixture has already been copied and SHA-verified. Preserve diagnostics
+    # and continue with the real DocumentsUI picker rather than aborting.
+    try:
+        scan = adb("shell", "am", "broadcast", "-a",
+                   "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+                   "-d", f"file://{remote}", timeout=12, check=False)
+        (evidence / "media-scan.txt").write_text(
+            scan.stdout + scan.stderr, encoding="utf-8")
+    except subprocess.TimeoutExpired as exc:
+        (evidence / "media-scan.txt").write_text(
+            f"Optional media scan timed out: {exc}\n", encoding="utf-8")
     receipt: dict[str, object] = {
         "source_sha": __import__("os").environ.get("GITHUB_SHA", "local"),
         "fixture_sha256": original_hash, "package": package, "result": "failed"
