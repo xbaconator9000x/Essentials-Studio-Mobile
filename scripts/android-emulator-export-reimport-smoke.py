@@ -50,7 +50,7 @@ def expected_member_paths(root: str, members: dict[str, bytes]) -> set[str]:
         raise AssertionError(f"Invalid imported project root: {root!r}")
     paths = set()
     for name in members:
-        if (not name or name.startswith("/") or "\\\\" in name
+        if (not name or name.startswith("/") or "\\" in name
                 or any(part in ("", ".", "..") for part in name.split("/"))):
             raise AssertionError(f"Unsafe exported member name: {name!r}")
         paths.add(f"{root}/{name}")
@@ -205,7 +205,7 @@ def selftest() -> None:
         "./projects/import-1/Graphics/Empty",
     }
     for unsafe in ("../Game.rxproj", "/Game.rxproj", "PBS//pokemon.txt",
-                   "Graphics\\\\Tilesets\\\\bad.png"):
+                   r"Graphics\Tilesets\bad.png"):
         try:
             expected_member_paths("./projects/import-1", {unsafe: b""})
         except AssertionError:
