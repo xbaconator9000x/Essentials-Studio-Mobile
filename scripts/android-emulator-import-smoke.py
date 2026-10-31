@@ -332,14 +332,22 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
         )
         return False
     tap(folder)
-    time.sleep(2)
-    nodes = dump_ui(evidence, "external-storage-download")
-    if not documents_ui_visible(nodes):
-        return False
-    card = picker_file_card(
-        (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
-        filename,
-    )
+    # On an overloaded API30 emulator DocumentsUI may still be rendering the
+    # parent folder after a fixed two-second sleep. Wait for the actual ZIP
+    # document rather than mistaking that intermediate hierarchy for failure.
+    card = None
+    deadline = time.monotonic() + 35
+    while time.monotonic() < deadline:
+        nodes = dump_ui(evidence, "external-storage-download")
+        if not documents_ui_visible(nodes):
+            return False
+        card = picker_file_card(
+            (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
+            filename,
+        )
+        if card is not None:
+            break
+        time.sleep(3)
     if card is None:
         (evidence / "external-storage-result.txt").write_text(
             "Download directory opened, but synthetic ZIP was absent.\\n",
