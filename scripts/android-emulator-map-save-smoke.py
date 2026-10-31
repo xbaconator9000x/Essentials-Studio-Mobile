@@ -70,9 +70,23 @@ def read_private_map(package: str, path: str) -> bytes:
 
 
 def status_has(nodes: list[dict[str, str]], layer: str, tile: str) -> bool:
-    """WebView exposes adjacent status spans as separate accessibility nodes."""
-    texts = {n.get("text", "").strip() for n in nodes}
-    return layer in texts and tile in texts
+    """Match split WebView status spans by row and adjacency, not global text."""
+    layer_nodes = [n for n in nodes if n.get("text", "").strip() == layer]
+    labels = [n for n in nodes if n.get("text", "").strip() == "Tile:"]
+    values = [n for n in nodes if n.get("text", "").strip() == tile]
+    for layer_node in layer_nodes:
+        for label in labels:
+            for value in values:
+                if not all(n.get("bounds") for n in (layer_node, label, value)):
+                    continue
+                lx1, ly1, lx2, ly2 = bounds(layer_node["bounds"])
+                tx1, ty1, tx2, ty2 = bounds(label["bounds"])
+                vx1, vy1, vx2, vy2 = bounds(value["bounds"])
+                if (max(ly1, ty1, vy1) < min(ly2, ty2, vy2)
+                        and 0 <= tx1 - lx2 <= 50
+                        and -15 <= vx1 - tx2 <= 50):
+                    return True
+    return False
 
 
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
