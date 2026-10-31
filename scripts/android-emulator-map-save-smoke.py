@@ -69,32 +69,46 @@ def read_private_map(package: str, path: str) -> bytes:
     return payload
 
 
-def paint_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
-    """Derive a first-tile target from current landscape accessibility geometry.
+def status_has(nodes: list[dict[str, str]], layer: str, tile: str) -> bool:
+    """WebView exposes adjacent status spans as separate accessibility nodes."""
+    texts = {n.get("text", "").strip() for n in nodes}
+    return layer in texts and tile in texts
 
-    The map canvas is between the map tree and tileset palette. Reject collapsed
-    or overlapping layouts instead of blindly tapping an unrelated control.
-    """
-    map_node = next((n for n in nodes if "Synthetic Map" in n.get("text", "")
-                     and n.get("bounds")), None)
-    if map_node is None:
-        raise AssertionError("Synthetic Map tree item missing")
-    left_edge = bounds(map_node["bounds"])[2]
-    palettes = [n for n in nodes if n.get("class") == "android.widget.Image"
-                and n.get("bounds")]
-    if not palettes:
-        raise AssertionError("Tileset image missing; cannot prove map canvas width")
-    right_edge = min(bounds(n["bounds"])[0] for n in palettes)
-    if right_edge - left_edge < 180:
-        raise AssertionError(
-            f"Map canvas collapsed or covered: tree right={left_edge}, "
-            f"palette left={right_edge}"
-        )
+
+def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """The left image is the map canvas; the right image is the tileset palette."""
+    images = sorted(
+        (bounds(n["bounds"]) for n in nodes
+         if n.get("class") == "android.widget.Image" and n.get("bounds")),
+        key=lambda rect: rect[0],
+    )
+    if len(images) != 2:
+        raise AssertionError(f"Expected map canvas and tileset images, found {images!r}")
+    canvas, palette = images
+    if canvas[2] > palette[0] or canvas[2] - canvas[0] < 180:
+        raise AssertionError(f"Map canvas collapsed or overlapping tileset: {images!r}")
+    return canvas, palette
+
+
+def paint_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
+    """Touch the second map column inside the real map image, not the toolbar."""
+    canvas, _ = editor_images(nodes)
     toolbar_bottom = max(bounds(find_named(nodes, name)["bounds"])[3]
                          for name in ("Pen", "L1", "L2", "L3", "Ev", "All"))
-    x, y = left_edge + 35, toolbar_bottom + 35
-    if not (left_edge < x < right_edge and 0 < y < height - 80 and x < width):
+    x, y = canvas[0] + 110, canvas[1] + 40
+    if not (canvas[0] < x < canvas[2] and max(toolbar_bottom, canvas[1]) < y
+            < min(canvas[3], height - 80) and x < width):
         raise AssertionError(f"Paint point outside map canvas: {(x,y)}, {width}x{height}")
+    return x, y
+
+
+def palette_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
+    """Select the second synthetic palette tile (385) before painting."""
+    _, palette = editor_images(nodes)
+    x, y = palette[0] + 120, palette[1] + 40
+    if not (palette[0] < x < min(palette[2], width)
+            and palette[1] < y < min(palette[3], height)):
+        raise AssertionError(f"Palette target outside image: {(x, y)}, {width}x{height}")
     return x, y
 
 
@@ -125,9 +139,13 @@ def run(package: str, evidence: Path) -> None:
         nodes = helper.dump_ui(evidence, "map-landscape-before")
         if not helper.editor_visible(nodes):
             raise AssertionError("Project editor disappeared after rotation")
-        if not any("Layer 1/3" in n.get("text", "") and "Tile: 384" in n.get("text", "")
-                   for n in nodes):
+        if not status_has(nodes, "Layer 1/3", "384"):
             raise AssertionError("Expected synthetic map layer 1 and selected tile 384")
+        helper.tap(palette_point(nodes, width, height))
+        time.sleep(2)
+        nodes = helper.dump_ui(evidence, "map-after-palette-selection")
+        if not status_has(nodes, "Layer 1/3", "385"):
+            raise AssertionError("Second synthetic palette tile 385 was not selected")
         point = paint_point(nodes, width, height)
         receipt["paint_point"] = list(point)
         helper.tap(point)
@@ -181,19 +199,26 @@ def selftest() -> None:
     assert observed == [("shell", "run-as", "com.example.fixture", "find", ".",
                          "-type", "f", "-name", "Map001.rxdata", "-print")]
     nodes = [
-        {"text": "🗺 [001] Synthetic Map", "bounds": "[7,301][514,380]"},
-        {"text": "", "class": "android.widget.Image", "bounds": "[1300,354][1800,934]"},
-        *[{"text": name, "bounds": "[700,202][800,309]"}
+        {"text": "🗺 [001] Synthetic Map", "bounds": "[7,301][672,380]"},
+        {"text": "", "class": "android.widget.Image", "bounds": "[679,315][1241,1018]"},
+        {"text": "", "class": "android.widget.Image", "bounds": "[1241,354][1794,1039]"},
+        *[{"text": name, "bounds": "[1399,217][1488,283]"}
           for name in ("Pen", "L1", "L2", "L3", "Ev", "All")],
+        {"text": "Layer 1/3", "bounds": "[895,1031][1018,1068]"},
+        {"text": "Tile: ", "bounds": "[1015,1031][1081,1068]"},
+        {"text": "384", "bounds": "[1076,1031][1128,1068]"},
     ]
-    assert paint_point(nodes, 1920, 1080) == (549, 344)
-    nodes[1]["bounds"] = "[525,354][1080,934]"
+    assert status_has(nodes, "Layer 1/3", "384")
+    assert not status_has(nodes, "Layer 1/3", "385")
+    assert paint_point(nodes, 1794, 1080) == (789, 355)
+    assert palette_point(nodes, 1794, 1080) == (1361, 394)
+    nodes[1]["bounds"] = "[679,315][700,1018]"
     try:
-        paint_point(nodes, 1080, 1920)
+        paint_point(nodes, 1794, 1080)
     except AssertionError as exc:
         assert "collapsed" in str(exc)
     else:
-        raise AssertionError("Portrait collapsed canvas incorrectly passed")
+        raise AssertionError("Collapsed canvas incorrectly passed")
 
 
 def main() -> int:
