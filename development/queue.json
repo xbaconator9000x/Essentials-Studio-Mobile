@@ -230,7 +230,7 @@
         "Logs and device/OS version captured"
       ],
       "evidence": [
-        "2026-10-30: pending CI on test/android-emulator-project-import-20261030 creates a rights-cleared Ruby Marshal synthetic project ZIP from the existing native fixture, installs the exact x86_64 APK, drives actual Android DocumentsUI import via accessibility selectors, checks visible Synthetic RMXP project, and records SHA/screenshot/XML/logcat. Not yet passed; does not establish physical SAF, full Shattered v21.1 or gameplay acceptance."
+        "2026-10-31: PR #50 merged as ce0f6b1c9a58c38fe1460252cbd21b133d638ce0 after seven green PR checks. Real KVM Android 11 emulator run 41222020397 installed/launched the source-pinned debug APK and imported/opened the rights-cleared synthetic RMXP ZIP through actual DocumentsUI ExternalStorageProvider. Receipt emulator_zip_import_open_pass, original fixture SHA-256 b70331c093edc2a61089091e0f9042f87c0c7be595511bb0f7b59c6fa8c22392, screenshot shows Synthetic RMXP project/map/tileset, artifact 13050900273. This proves synthetic emulator import/open only; map editing, physical ARM64 SAF export, desktop reopening, real Shattered v21.1 and gameplay remain unverified. Draft PR #52 now attempts actual landscape touch-paint/Save All with app-private Map001.rxdata SHA readback; pending CI."
       ]
     },
     {

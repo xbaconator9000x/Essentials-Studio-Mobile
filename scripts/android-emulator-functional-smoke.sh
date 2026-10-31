@@ -21,3 +21,10 @@ python3 scripts/android-emulator-import-smoke.py \
   --fixture android-synthetic-fixture/original.zip \
   --package "$package" \
   --evidence android-runtime-evidence
+
+# This second gate uses actual Android touch input and Save All, then reads
+# Map001.rxdata from the debug app sandbox and checks the original ZIP hash.
+# Do not confuse this with physical ARM64 SAF export or desktop reopening.
+python3 scripts/android-emulator-map-save-smoke.py \
+  --package "$package" \
+  --evidence android-runtime-evidence
