@@ -51,7 +51,7 @@ def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
 
 def private_map_path(package: str) -> str:
     output = run_adb("shell", "run-as", package, "sh", "-c",
-                     "find . -type f -name Map001.rxdata").decode(errors="replace")
+                     "find . -type f -name Map001.rxdata -print").decode(errors="replace")
     paths = [line.strip() for line in output.splitlines() if line.strip()]
     if len(paths) != 1 or not re.fullmatch(r"\./[A-Za-z0-9_./-]*Map001\.rxdata", paths[0]):
         raise AssertionError(f"Expected one app-private Map001.rxdata, found {paths!r}")
@@ -165,7 +165,7 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError(f"Accepted invalid bounds {bad}")
-    nodes = [
+    # The find command must print only matching files, not a full sandbox listing.\n    assert "find . -type f -name Map001.rxdata -print".endswith("-print")\n    nodes = [
         {"text": "🗺 [001] Synthetic Map", "bounds": "[7,301][514,380]"},
         {"text": "", "class": "android.widget.Image", "bounds": "[1300,354][1800,934]"},
         *[{"text": name, "bounds": "[700,202][800,309]"}
