@@ -129,7 +129,10 @@ jobs:
   emulator-launch:
     name: Install and launch x86_64 APK on KVM-accelerated Linux emulator
     needs: [fixture, build-x86]
-    runs-on: ubuntu-22.04
+    # Ubuntu 22.04 runner in 41199392719 did not reach a writable KVM
+    # device; use the current GitHub-hosted Linux image and diagnose hardware
+    # availability before spending time downloading an emulator.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -145,13 +148,27 @@ jobs:
       # the KVM device is made writable (GitHub Actions changelog 2024-04-02).
       # Fail immediately if unavailable rather than silently running an
       # overloaded software emulator and misdiagnosing editor import failures.
-      - name: Enable hardware-accelerated KVM
+      - name: Diagnose and enable hardware-accelerated KVM
         run: |
+          set -euo pipefail
+          echo "Runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          uname -a
+          echo "CPU virtualization flags:"
+          grep -m 1 -E 'flags.*(vmx|svm)' /proc/cpuinfo || true
+          echo "KVM device:"
+          ls -l /dev/kvm || true
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::This hosted runner exposes no /dev/kvm device. Hardware-accelerated emulator tests cannot run here; do not classify this as an application import failure."
+            exit 1
+          fi
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -w /dev/kvm
           ls -l /dev/kvm
+          if [[ ! -w /dev/kvm ]]; then
+            echo "::error::KVM exists but is not writable by the runner."
+            exit 1
+          fi
       - uses: android-actions/setup-android@v4
       - name: Confirm downloaded APK and source identity
         run: |
