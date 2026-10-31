@@ -130,35 +130,14 @@ for attempt in range(1, 4):
         pass
     time.sleep(20)
 PY
-# AOT compilation is a startup optimisation, not an import acceptance gate.
-# On the API30 Google APIs image (run 41157610988) the command stalled for
-# over nine minutes *after* the APK installed, preventing any launch/import
-# attempt. Bound the command; preserve diagnostics and let the strict guest
-# idle, foreground, ANR and project-open checks decide whether the app works.
-if python3 - "$package" "$evidence/package-compile.txt" <<'PY'
-import subprocess
-import sys
-
-package, destination = sys.argv[1:]
-with open(destination, "wb") as log:
-    try:
-        result = subprocess.run(
-            ["adb", "shell", "cmd", "package", "compile", "-m", "speed", "-f", package],
-            stdout=log, stderr=subprocess.STDOUT, timeout=75, check=False,
-        )
-        if result.returncode:
-            log.write(f"\nAOT compile exited {result.returncode}; testing normal startup.\n".encode())
-        sys.exit(0 if result.returncode == 0 else 1)
-    except subprocess.TimeoutExpired:
-        log.write(b"\nAOT compile exceeded 75 seconds; testing normal startup.\n")
-        sys.exit(1)
-PY
-then
-  printf 'package_precompile=pass\n' >> "$evidence/receipt.txt"
-else
-  printf 'package_precompile=unavailable\n' >> "$evidence/receipt.txt"
-  echo "Optional package precompile unavailable; retaining evidence and testing actual startup."
-fi
+# Deliberately skip optional ahead-of-time package compilation on the emulator.
+# Run 41177479976 timed out the adb-side compilation after 75 seconds, then
+# the Android guest remained at load 17-45 for six minutes and eventually lost
+# editor focus. Killing adb does not guarantee that Android's dex2oat job has
+# stopped. Launch the normally installed debug APK without adding this
+# unbounded CPU-intensive background workload. Real foreground/ANR/import
+# assertions below remain mandatory.
+printf 'package_precompile=skipped_to_avoid_emulator_cpu_contention\n' >> "$evidence/receipt.txt"
 if await_guest_idle "pre-launch"; then
   printf 'guest_idle_before_launch=pass\n' >> "$evidence/receipt.txt"
 else
