@@ -126,7 +126,23 @@ jobs:
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: npm run tauri android build -- --ci --apk --debug --target x86_64
+        run: |
+          set -euo pipefail
+          # Maven Central can return HTTP 429 while resolving Gradle's Kotlin
+          # buildSrc dependencies. Retry only that transient infrastructure
+          # failure; do not mask compiler, source or Android packaging errors.
+          for attempt in 1 2 3; do
+            log="${RUNNER_TEMP}/android-x86-build-${attempt}.log"
+            if npm run tauri android build -- --ci --apk --debug --target x86_64 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -Eiq 'Received status code 429|Too Many Requests|HTTP 429' "$log"; then
+              echo "::error::Android x86 build failed for a non-retryable reason (or exhausted retries)."
+              exit 1
+            fi
+            echo "::warning::Gradle dependency server returned HTTP 429; waiting before bounded retry ${attempt}/3"
+            sleep $((attempt * 60))
+          done
       - name: Preserve compiled APK
         uses: actions/upload-artifact@v4
         with:
