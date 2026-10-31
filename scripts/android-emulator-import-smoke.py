@@ -42,7 +42,7 @@ def locate(nodes: list[dict[str, str]], needle: str) -> tuple[int, int] | None:
     for node in nodes:
         text = node.get("text", "") + " " + node.get("content-desc", "")
         if needle.casefold() in text.casefold() and node.get("bounds"):
-            return center(node["bounds"])
+            return center(node.attrib["bounds"])
     return None
 
 
@@ -208,10 +208,10 @@ def picker_folder_row(xml_text: str, folder_name: str, target: str = "title") ->
                 and child.get("bounds")
             ), None)
             if icon is not None:
-                return center(icon["bounds"])
+                return center(icon.attrib["bounds"])
         if target == "row" and node.get("bounds"):
             return center(node["bounds"])
-        return center(title["bounds"])
+        return center(title.attrib["bounds"])
     return None
 
 def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None:
