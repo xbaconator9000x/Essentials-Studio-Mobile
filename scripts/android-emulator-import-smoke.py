@@ -178,24 +178,41 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     return None
 
 
-def picker_folder_row(xml_text: str, folder_name: str) -> tuple[int, int] | None:
-    """Target the DocumentsUI folder row, not its non-clickable title label.
+def picker_folder_row(xml_text: str, folder_name: str, target: str = "title") -> tuple[int, int] | None:
+    """Find the *visible named folder* using its current DocumentsUI hierarchy.
 
-    Android 11 exposes directory labels as TextViews nested in item_root.
-    A label-centre tap can leave the provider on the parent directory.
+    The captured Google API30 list has a full-width non-clickable item_root:
+    its midpoint is blank space, while the actual Download title is at x=283.
+    Earlier runs tapped x=540 and stayed in the storage root. Use the title
+    first, then the folder icon; only the last attempt uses the row midpoint.
+    Never use coordinates from before a grid/list layout transition.
     """
+    if target not in {"title", "icon", "row"}:
+        raise ValueError(f"Unknown folder touch target: {target}")
     start = xml_text.find("<?xml")
     root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
     for node in root.iter("node"):
         if not documents_ui_id(node.get("resource-id", ""), "item_root"):
             continue
-        if not node.get("bounds"):
+        title = next((
+            child for child in node.iter("node")
+            if child.get("text", "").strip().casefold() == folder_name.casefold()
+            and child.get("bounds")
+        ), None)
+        if title is None:
             continue
-        if any(child.get("text", "").strip().casefold() == folder_name.casefold()
-               for child in node.iter("node")):
-            return center(node.attrib["bounds"])
+        if target == "icon":
+            icon = next((
+                child for child in node.iter("node")
+                if documents_ui_id(child.get("resource-id", ""), "icon")
+                and child.get("bounds")
+            ), None)
+            if icon is not None:
+                return center(icon["bounds"])
+        if target == "row" and node.get("bounds"):
+            return center(node["bounds"])
+        return center(title["bounds"])
     return None
-
 
 def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None:
     """Alternate touch target for the list row, away from its preview button.
@@ -338,58 +355,51 @@ def try_external_storage_download(evidence: Path, filename: str) -> bool:
         return False
     tap(storage)
     time.sleep(2)
-    nodes = dump_ui(evidence, "external-storage-root")
-    root_xml = (evidence / "external-storage-root.xml").read_text(encoding="utf-8")
-    folder = (picker_folder_row(root_xml, "Download")
-              or picker_folder_row(root_xml, "Downloads"))
-    if folder is None:
-        # Older DocumentsUI builds may expose only the folder label.
-        folder = next((
-            center(n["bounds"]) for n in nodes
-            if n.get("text", "").strip().casefold() in {"download", "downloads"}
-            and n.get("bounds")
-        ), None)
-    if folder is None:
-        (evidence / "external-storage-result.txt").write_text(
-            "External-storage root opened, but Download directory not found.\\n",
-            encoding="utf-8",
-        )
-        return False
-    # The Google API30 grid can ignore a valid coordinate tap while its
-    # document provider is overloaded. Verify the folder transition from
-    # actual UI state, then switch to native list mode for one bounded retry.
+    # Navigate the real provider using freshly captured coordinates for each
+    # attempt. Prior runs toggled grid/list mode and reused the previous
+    # layout's coordinates, repeatedly tapping blank space rather than Download.
     card = None
-    for attempt in range(2):
-        if attempt:
-            nodes = dump_ui(evidence, "external-storage-before-list-retry")
-            if not documents_ui_visible(nodes):
-                return False
-            toggle = picker_list_view_control(nodes)
-            if toggle is None:
-                break
-            tap(toggle)
+    attempts: list[str] = []
+    for attempt, target in enumerate(("title", "icon", "row")):
+        nodes = dump_ui(evidence, f"external-storage-before-folder-{attempt}")
+        if not documents_ui_visible(nodes):
+            return False
+        xml = (evidence / f"external-storage-before-folder-{attempt}.xml").read_text(
+            encoding="utf-8"
+        )
+        card = picker_file_card(xml, filename)
+        if card is not None:
+            break
+        folder = (picker_folder_row(xml, "Download", target)
+                  or picker_folder_row(xml, "Downloads", target))
+        if folder is not None:
+            attempts.append(f"{attempt}:{target}={folder}")
+            tap(folder)
             time.sleep(3)
-            root_xml = (evidence / "external-storage-list-retry.xml")
-            nodes = dump_ui(evidence, "external-storage-list-retry")
-            folder = (picker_folder_row(root_xml.read_text(encoding="utf-8"), "Download")
-                      or picker_folder_row(root_xml.read_text(encoding="utf-8"), "Downloads"))
-            if folder is None:
-                break
-        tap(folder)
-        deadline = time.monotonic() + 24
+        else:
+            attempts.append(f"{attempt}:{target}=folder-not-in-view")
+        # If the root has disappeared, wait for the provider to populate the
+        # actual file list; if it remains, try the next *current* touch target.
+        deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             nodes = dump_ui(evidence, "external-storage-download")
             if not documents_ui_visible(nodes):
                 return False
-            card = picker_file_card(
-                (evidence / "external-storage-download.xml").read_text(encoding="utf-8"),
-                filename,
+            current_xml = (evidence / "external-storage-download.xml").read_text(
+                encoding="utf-8"
             )
+            card = picker_file_card(current_xml, filename)
             if card is not None:
                 break
-            time.sleep(3)
+            if (picker_folder_row(current_xml, "Download") is not None
+                    or picker_folder_row(current_xml, "Downloads") is not None):
+                break
+            time.sleep(2)
         if card is not None:
             break
+    (evidence / "external-storage-navigation.txt").write_text(
+        "\\n".join(attempts) + "\\n", encoding="utf-8"
+    )
     if card is None:
         (evidence / "external-storage-result.txt").write_text(
             "Download directory opened, but synthetic ZIP was absent.\\n",
@@ -623,11 +633,30 @@ def selftest() -> None:
                   'bounds="[0,600][1080,780]">'
                   '<node text="Download" bounds="[160,650][400,700]"/>'
                   '</node></hierarchy>')
-    assert picker_folder_row(folder_xml, "Download") == (540, 690)
+    assert picker_folder_row(folder_xml, "Download") == (280, 675)
+    assert picker_folder_row(folder_xml, "Download", "row") == (540, 690)
     assert picker_folder_row(folder_xml, "Documents") is None
     assert picker_folder_row(folder_xml.replace(
         "com.google.android.documentsui:id/", "com.android.documentsui:id/"),
-        "Download") == (540, 690)
+        "Download") == (280, 675)
+    # Exact geometry observed in Linux KVM Android 11 run 41203690577.
+    # In list mode the old item-root midpoint (540,1680) hit empty space.
+    actual_list_folder = ('<?xml version="1.0"?><hierarchy>'
+                          '<node resource-id="com.google.android.documentsui:id/item_root" '
+                          'bounds="[0,1586][1080,1775]">'
+                          '<node resource-id="com.google.android.documentsui:id/icon" '
+                          'bounds="[0,1586][189,1775]"/>'
+                          '<node resource-id="android:id/title" text="Download" '
+                          'bounds="[189,1652][377,1709]"/></node></hierarchy>')
+    assert picker_folder_row(actual_list_folder, "Download") == (283, 1680)
+    assert picker_folder_row(actual_list_folder, "Download", "icon") == (94, 1680)
+    assert picker_folder_row(actual_list_folder, "Download", "row") == (540, 1680)
+    actual_grid_folder = actual_list_folder.replace(
+        'bounds="[0,1586][1080,1775]"', 'bounds="[545,940][1022,1077]"'
+    ).replace('bounds="[0,1586][189,1775]"', 'bounds="[550,945][674,1072]"'
+    ).replace('bounds="[189,1652][377,1709]"', 'bounds="[674,983][838,1034]"')
+    assert picker_folder_row(actual_grid_folder, "Download") == (756, 1008)
+    assert picker_folder_row(actual_grid_folder, "Download", "icon") == (612, 1008)
 
     assert picker_list_row_icon(list_xml, "missing.zip") is None
     # Exact clickable preview action observed in real AOSP API30 evidence.
