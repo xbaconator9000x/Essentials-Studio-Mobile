@@ -94,16 +94,16 @@ with open(destination, "wb") as log:
             stdout=log, stderr=subprocess.STDOUT, timeout=75, check=False,
         )
         if result.returncode:
-            log.write(f"\\nAOT compile exited {result.returncode}; testing normal startup.\\n".encode())
+            log.write(f"\nAOT compile exited {result.returncode}; testing normal startup.\n".encode())
         sys.exit(0 if result.returncode == 0 else 1)
     except subprocess.TimeoutExpired:
-        log.write(b"\\nAOT compile exceeded 75 seconds; testing normal startup.\\n")
+        log.write(b"\nAOT compile exceeded 75 seconds; testing normal startup.\n")
         sys.exit(1)
 PY
 then
-  printf 'package_precompile=pass\\n' >> "$evidence/receipt.txt"
+  printf 'package_precompile=pass\n' >> "$evidence/receipt.txt"
 else
-  printf 'package_precompile=unavailable\\n' >> "$evidence/receipt.txt"
+  printf 'package_precompile=unavailable\n' >> "$evidence/receipt.txt"
   echo "Optional package precompile unavailable; retaining evidence and testing actual startup."
 fi
 await_guest_idle "pre-launch"
