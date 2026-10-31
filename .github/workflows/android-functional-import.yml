@@ -150,15 +150,15 @@ jobs:
       - name: Install and launch compiled APK
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 33
-          # API30 full-AOSP DocumentsUI repeatedly displayed the ADB-pushed
-          # synthetic ZIP but ignored file-row, icon and preview selection,
-          # including via ExternalStorageProvider (runs 41127092100,
-          # 41135597817, 41147439712). Its own startup logs also contain
-          # non-visual Context errors in DocumentsApplication. Test the same
-          # native GET_CONTENT contract on a newer Google APIs system image,
-          # retaining strict UI-driven import and project-open assertions.
-          # Never treat a picker display or app launch as an import pass.
+          api-level: 30
+          # API33 Google APIs never reached sys.boot_completed on the Intel
+          # macOS runner (run 41152643927): the emulator was limited to one
+          # virtual core and timed out after 600 seconds, before APK install.
+          # API30 AOSP *did* boot and launch the app, but its DocumentsUI
+          # ignored ZIP row/icon/preview taps (runs 41127092100,
+          # 41135597817, 41147439712). Try API30 Google APIs to isolate the
+          # document-provider implementation without the API33 boot blocker.
+          # Never count picker display or app launch as a successful import.
           target: google_apis
           arch: x86_64
           profile: pixel_2
