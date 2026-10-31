@@ -3,19 +3,20 @@
  * If the open/preflight fails, release the newly created private directory.
  * Never delete a project already committed as the active editor project.
  */
-export async function importAndOpenProject(
-  file: File,
+export async function importAndOpenProject<T>(
+  source: T | null,
   io: {
-    importArchive: (file: File, onProgress?: (percent: number) => void) => Promise<string>;
+    importArchive: (source: T, onProgress?: (percent: number) => void) => Promise<string>;
     openProject: (path: string) => Promise<void>;
     discardFailedImport: (path: string) => Promise<void>;
     isActiveProject: (path: string) => boolean;
   },
   onProgress?: (percent: number) => void,
 ): Promise<void> {
+  if (source === null) return;
   let importedPath: string | null = null;
   try {
-    importedPath = await io.importArchive(file, onProgress);
+    importedPath = await io.importArchive(source, onProgress);
     await io.openProject(importedPath);
   } catch (error) {
     if (importedPath && !io.isActiveProject(importedPath)) {

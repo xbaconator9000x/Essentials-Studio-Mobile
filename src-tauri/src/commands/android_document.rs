@@ -1,11 +1,16 @@
-//! Android Storage Access Framework export for an already-validated,
-//! app-private ZIP. Never treat a content:// URI as a filesystem path.
-//! The picker grants a scoped document URI; ContentResolver streams and
-//! verifies the bytes without a 512 MiB WebView Blob allocation.
+//! Android Storage Access Framework import/export for app-private ZIPs.
+//! Never treat a content:// URI as a filesystem path. The picker grants a
+//! scoped document URI; ContentResolver streams ZIPs without a WebView Blob.
 
 use std::fs;
 use tauri::AppHandle;
-use super::project_archive::{exports_root, safe_export_id, MAX_ARCHIVE_BYTES};
+use super::project_archive::{
+    abort_project_archive_import, begin_project_archive_import, exports_root,
+    finish_project_archive_import, import_root, safe_export_id, staging_path, MAX_ARCHIVE_BYTES,
+};
+
+#[cfg(any(target_os = "android", test))]
+const DOCUMENT_IMPORT_CHUNK_BYTES: usize = 64 * 1024;
 
 fn validate_document_uri(uri: &str) -> Result<(), String> {
     let authority = uri.strip_prefix("content://")
@@ -15,6 +20,161 @@ fn validate_document_uri(uri: &str) -> Result<(), String> {
         return Err("Expected a valid Android document content URI".into());
     }
     Ok(())
+}
+
+#[cfg(any(target_os = "android", test))]
+struct BoundedDocumentWriter<W> {
+    inner: W,
+    written: u64,
+    limit: u64,
+}
+
+#[cfg(any(target_os = "android", test))]
+impl<W: std::io::Write> BoundedDocumentWriter<W> {
+    fn new(inner: W, limit: u64) -> Self {
+        Self { inner, written: 0, limit }
+    }
+
+    fn write_chunk(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        if bytes.is_empty() || bytes.len() > DOCUMENT_IMPORT_CHUNK_BYTES {
+            return Err(std::io::Error::other("Invalid Android document chunk size"));
+        }
+        let next = self.written.checked_add(bytes.len() as u64)
+            .ok_or_else(|| std::io::Error::other("Android document size overflow"))?;
+        if next > self.limit {
+            return Err(std::io::Error::other("Android document exceeds 512 MiB limit"));
+        }
+        self.inner.write_all(bytes)?;
+        self.written = next;
+        Ok(())
+    }
+
+    fn finish(mut self) -> std::io::Result<(W, u64)> {
+        if self.written == 0 {
+            return Err(std::io::Error::other("Android document is empty"));
+        }
+        self.inner.flush()?;
+        Ok((self.inner, self.written))
+    }
+}
+
+#[tauri::command]
+pub async fn import_project_archive_from_document(
+    app: AppHandle,
+    document_uri: String,
+) -> Result<String, String> {
+    validate_document_uri(&document_uri)?;
+
+    #[cfg(target_os = "android")]
+    {
+        let import_id = begin_project_archive_import(app.clone()).await?;
+        let result = async {
+            let path = staging_path(&import_root(&app)?, &import_id)?;
+            tauri::async_runtime::spawn_blocking(move || {
+                stream_android_document_to_staging(&path, &document_uri)
+            })
+            .await
+            .map_err(|e| format!("Android document import worker failed: {e}"))??;
+            finish_project_archive_import(app.clone(), import_id.clone()).await
+        }.await;
+        if result.is_err() {
+            let _ = abort_project_archive_import(app, import_id).await;
+        }
+        result
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Err("Android document import is only available on Android".into())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Result<u64, String> {
+    use jni::objects::{JObject, JValue};
+    use std::fs::OpenOptions;
+    use std::io;
+
+    fn transfer(path: &std::path::Path, uri: &str) -> Result<u64, Box<dyn std::error::Error>> {
+        let context = ndk_context::android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }?;
+        let mut env = vm.attach_current_thread()?;
+        let android_context = unsafe { JObject::from_raw(context.context().cast()) };
+        let resolver = env.call_method(
+            &android_context,
+            "getContentResolver",
+            "()Landroid/content/ContentResolver;",
+            &[],
+        )?.l()?;
+        let uri_string = JObject::from(env.new_string(uri)?);
+        let document = env.call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&uri_string)],
+        )?.l()?;
+        let input = env.call_method(
+            &resolver,
+            "openInputStream",
+            "(Landroid/net/Uri;)Ljava/io/InputStream;",
+            &[JValue::Object(&document)],
+        )?.l()?;
+        if input.is_null() {
+            return Err(io::Error::other("Android document provider returned no input stream").into());
+        }
+
+        let read_result = (|| -> Result<u64, Box<dyn std::error::Error>> {
+            let file = OpenOptions::new().write(true).truncate(true).open(path)?;
+            let mut writer = BoundedDocumentWriter::new(file, MAX_ARCHIVE_BYTES);
+            let bytes = env.new_byte_array(DOCUMENT_IMPORT_CHUNK_BYTES as i32)?;
+            let mut buffer = [0i8; DOCUMENT_IMPORT_CHUNK_BYTES];
+            let transfer_result = (|| -> Result<(), Box<dyn std::error::Error>> {
+                loop {
+                    let count = env.call_method(
+                        &input,
+                        "read",
+                        "([B)I",
+                        &[JValue::Object(bytes.as_ref())],
+                    )?.i()?;
+                    if count == -1 {
+                        break;
+                    }
+                    if count <= 0 || count as usize > buffer.len() {
+                        return Err(io::Error::other("Invalid Android document stream length").into());
+                    }
+                    let count = count as usize;
+                    env.get_byte_array_region(&bytes, 0, &mut buffer[..count])?;
+                    let chunk = buffer[..count].iter().map(|byte| *byte as u8).collect::<Vec<_>>();
+                    writer.write_chunk(&chunk)?;
+                }
+                Ok(())
+            })();
+            let delete_result = env.delete_local_ref(bytes);
+            transfer_result?;
+            delete_result?;
+            let (file, written) = writer.finish()?;
+            file.sync_all()?;
+            Ok(written)
+        })();
+
+        let exception_pending = env.exception_check().unwrap_or(false);
+        if exception_pending {
+            let _ = env.exception_clear();
+        }
+        let close_result = env.call_method(&input, "close", "()V", &[]);
+        match read_result {
+            Err(error) => {
+                let _ = close_result;
+                Err(error)
+            }
+            Ok(written) => {
+                close_result?;
+                Ok(written)
+            }
+        }
+    }
+
+    transfer(path, uri).map_err(|e| format!("Android document import stream failed: {e}"))
 }
 
 #[tauri::command]
@@ -161,7 +321,8 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::validate_document_uri;
+    use super::{validate_document_uri, BoundedDocumentWriter, DOCUMENT_IMPORT_CHUNK_BYTES};
+    use std::io::Cursor;
 
     #[test]
     fn rejects_unscoped_filesystem_paths_and_invalid_content_uris() {
@@ -178,5 +339,26 @@ mod tests {
         ] {
             assert!(validate_document_uri(valid).is_ok());
         }
+    }
+
+    #[test]
+    fn bounded_document_writer_streams_chunks_and_rejects_empty_archives() {
+        let mut writer = BoundedDocumentWriter::new(Cursor::new(Vec::new()), 8);
+        writer.write_chunk(b"first").unwrap();
+        writer.write_chunk(b"123").unwrap();
+        let (output, written) = writer.finish().unwrap();
+        assert_eq!(written, 8);
+        assert_eq!(output.into_inner(), b"first123");
+
+        let writer = BoundedDocumentWriter::new(Cursor::new(Vec::new()), 8);
+        assert!(writer.finish().unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn bounded_document_writer_rejects_oversized_chunks_and_total_size() {
+        let mut writer = BoundedDocumentWriter::new(Cursor::new(Vec::new()), 8);
+        assert!(writer.write_chunk(&vec![0; DOCUMENT_IMPORT_CHUNK_BYTES + 1]).is_err());
+        writer.write_chunk(b"12345678").unwrap();
+        assert!(writer.write_chunk(b"x").unwrap_err().to_string().contains("limit"));
     }
 }

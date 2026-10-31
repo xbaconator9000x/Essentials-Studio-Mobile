@@ -49,6 +49,19 @@ export async function importProjectZip(
   }
 }
 
+export async function importProjectZipFromAndroidDocument(
+  documentUri: string,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  if (!documentUri.startsWith("content://")) {
+    throw new Error("Android document picker must return a scoped content URI");
+  }
+  onProgress?.(0);
+  const projectPath = await invoke<string>("import_project_archive_from_document", { documentUri });
+  onProgress?.(100);
+  return projectPath;
+}
+
 /** Discard only a rejected, newly imported app-private project directory.
  * Never invoke this for a project that has become the active editor project.
  */

@@ -1,0 +1,185 @@
+name: Android emulator functional ZIP import
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-functional-import.yml'
+      - 'scripts/android-emulator-import-smoke.py'
+      - 'scripts/android-emulator-functional-smoke.sh'
+      - 'scripts/android-emulator-smoke.sh'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-functional-import.yml'
+      - 'scripts/android-emulator-import-smoke.py'
+      - 'scripts/android-emulator-functional-smoke.sh'
+      - 'scripts/android-emulator-smoke.sh'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-functional-import-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
+            patchelf libasound2-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Generate rights-cleared synthetic RMXP ZIP with native Ruby Marshal models
+        env:
+          PROJECT_ROUNDTRIP_ARTIFACT_DIR: ${{ runner.temp }}/android-fixture
+        run: |
+          npm ci
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml --lib wrapped_rxdata_project_opens_edits_and_reads_back_without_losing_source_members -- --nocapture
+          test -s "$PROJECT_ROUNDTRIP_ARTIFACT_DIR/original.zip"
+          python3 - "$PROJECT_ROUNDTRIP_ARTIFACT_DIR/original.zip" <<'PY'
+          import sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              paths=set(archive.namelist())
+              for name in ("Game.rxproj","Data/Map001.rxdata","Data/MapInfos.rxdata","PBS/pokemon.txt"):
+                  assert any(p.endswith(name) for p in paths), name
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-synthetic-import-${{ github.sha }}
+          path: ${{ runner.temp }}/android-fixture/original.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  build-x86:
+    name: Compile x86_64 Android debug APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Generate Android Gradle project
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android init -- --ci
+      - name: Compile x86_64 Android debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npm run tauri android build -- --ci --apk --debug --target x86_64
+      - name: Check import UI selectors and shell syntax
+        run: |
+          bash -n scripts/android-emulator-smoke.sh
+          python3 scripts/android-emulator-import-smoke.py --self-test
+          bash -n scripts/android-emulator-functional-smoke.sh
+      - name: Preserve compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-x86-debug-${{ github.sha }}
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  emulator-launch:
+    name: Install and launch x86_64 APK on KVM-accelerated Linux emulator
+    needs: [fixture, build-x86]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-x86-debug-${{ github.sha }}
+          path: src-tauri/gen/android/app/build/outputs/apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-synthetic-import-${{ github.sha }}
+          path: android-synthetic-fixture
+      # GitHub-hosted 2-vCPU Linux runners expose hardware acceleration when
+      # the KVM device is made writable (GitHub Actions changelog 2024-04-02).
+      # Fail immediately if unavailable rather than silently running an
+      # overloaded software emulator and misdiagnosing editor import failures.
+      - name: Enable hardware-accelerated KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
+      - uses: android-actions/setup-android@v4
+      - name: Confirm downloaded APK and source identity
+        run: |
+          test -n "$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          echo "Source: ${{ github.sha }}"
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -exec shasum -a 256 {} \;
+      - name: Install and launch compiled APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          # Retain API30 Google APIs for comparability with the previous
+          # macOS test runs. Linux KVM replaces the CPU-starved macOS Intel
+          # host that intermittently lost ADB/package-manager responsiveness.
+          # Never count picker display or app launch as a successful import.
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 600
+          disable-animations: true
+          # Force hardware acceleration; never silently fall back to CPU-only
+          # emulation, which caused extreme guest load and unstable DocumentsUI.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 2 -accel on
+          script: bash scripts/android-emulator-functional-smoke.sh
+      - name: Preserve screenshot, UI hierarchy, ZIP import and failure receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-evidence-${{ github.sha }}
+          path: android-runtime-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
