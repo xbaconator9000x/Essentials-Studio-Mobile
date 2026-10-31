@@ -103,12 +103,20 @@ def wait_for_document_picker(evidence: Path, seconds: int) -> list[dict[str, str
     )
 
 
+def documents_ui_id(resource_id: str, item: str) -> bool:
+    """Accept both AOSP and Google DocumentsUI IDs, never unrelated apps."""
+    return resource_id in {
+        f"com.android.documentsui:id/{item}",
+        f"com.google.android.documentsui:id/{item}",
+    }
+
+
 def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     """Tap the full DocumentsUI item, not its small nameplate or preview icon."""
     start = xml_text.find("<?xml")
     root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
     for node in root.iter("node"):
-        if node.get("resource-id") != "com.android.documentsui:id/item_root":
+        if not documents_ui_id(node.get("resource-id", ""), "item_root"):
             continue
         # On AOSP API30, tapping the *middle of the grid thumbnail* can leave
         # GET_CONTENT open without selecting anything. The recorded failing
@@ -143,7 +151,7 @@ def picker_list_row_icon(xml_text: str, filename: str) -> tuple[int, int] | None
     start = xml_text.find("<?xml")
     root = ET.fromstring(xml_text[start:] if start >= 0 else xml_text)
     for node in root.iter("node"):
-        if (node.get("resource-id") != "com.android.documentsui:id/item_root"
+        if (not documents_ui_id(node.get("resource-id", ""), "item_root")
                 or node.get("class") != "android.widget.LinearLayout"):
             continue
         if not any(child.get("text", "").casefold() == filename.casefold()
@@ -165,7 +173,7 @@ def picker_preview_control(nodes: list[dict[str, str]], filename: str) -> tuple[
     never counts as import success; a subsequent project-open receipt is required.
     """
     for node in nodes:
-        if (node.get("resource-id") == "com.android.documentsui:id/preview_icon"
+        if (documents_ui_id(node.get("resource-id", ""), "preview_icon")
                 and node.get("content-desc", "").casefold() ==
                 f"Preview the file {filename}".casefold()
                 and node.get("clickable") == "true"
@@ -177,7 +185,7 @@ def picker_preview_control(nodes: list[dict[str, str]], filename: str) -> tuple[
 def picker_list_view_control(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     """Prefer DocumentsUI's accessible list mode over the ambiguous grid thumbnail."""
     for node in nodes:
-        if (node.get("resource-id") == "com.android.documentsui:id/sub_menu_list"
+        if (documents_ui_id(node.get("resource-id", ""), "sub_menu_list")
                 and node.get("content-desc") == "List view" and node.get("bounds")):
             return center(node["bounds"])
     return None
@@ -470,6 +478,11 @@ def selftest() -> None:
     picker_xml = '<?xml version="1.0"?><hierarchy><node resource-id="com.android.documentsui:id/item_root" bounds="[10,20][110,220]"><node text="EssentialsSynthetic.zip"/></node></hierarchy>'
     assert picker_file_card(picker_xml, "EssentialsSynthetic.zip") == (60, 120)
     assert picker_file_card(picker_xml, "other.zip") is None
+    google_picker_xml = picker_xml.replace("com.android.documentsui:id/",
+                                            "com.google.android.documentsui:id/")
+    assert picker_file_card(google_picker_xml, "EssentialsSynthetic.zip") == (60, 120)
+    assert picker_file_card(google_picker_xml, "other.zip") is None
+    assert not documents_ui_id("com.example.fake:id/item_root", "item_root")
     # Real API30 DocumentsUI grid: the ZIP nameplate is at y=1139..1190,
     # while the card midpoint y=952 was not accepted by the provider.
     grid_xml = ('<?xml version="1.0"?><hierarchy>'
@@ -482,6 +495,8 @@ def selftest() -> None:
                        'content-desc="List view" bounds="[890,499][1017,625]"/>'
                        '</hierarchy>')
     assert picker_list_view_control(entries(list_toggle_xml)) == (953, 562)
+    assert picker_list_view_control(entries(list_toggle_xml.replace(
+        "com.android.documentsui:id/", "com.google.android.documentsui:id/"))) == (953, 562)
     list_xml = ('<?xml version="1.0"?><hierarchy>'
                 '<node resource-id="com.android.documentsui:id/item_root" '
                 'class="android.widget.LinearLayout" bounds="[0,641][1080,830]">'
@@ -497,6 +512,9 @@ def selftest() -> None:
                    'clickable="true" bounds="[891,641][1080,830]"/>'
                    '</hierarchy>')
     assert picker_preview_control(entries(preview_xml), "EssentialsSynthetic.zip") == (985, 735)
+    assert picker_preview_control(entries(preview_xml.replace(
+        "com.android.documentsui:id/", "com.google.android.documentsui:id/")),
+        "EssentialsSynthetic.zip") == (985, 735)
     assert picker_preview_control(entries(preview_xml), "other.zip") is None
     assert picker_preview_control(entries(preview_xml.replace('clickable="true"', 'clickable="false"')),
                                   "EssentialsSynthetic.zip") is None
