@@ -71,8 +71,14 @@ await_guest_idle() {
     fi
     sleep 10
   done
-  echo "Android guest did not settle before $phase; preserving diagnostics." >&2
-  return 1
+  echo "Android guest remained busy before $phase; recording overload and attempting strict foreground/ANR checks." >&2
+  printf "guest_idle_timeout_phase=%s\n" "$phase" >> "$evidence/receipt.txt"
+  adb shell top -b -n 1 > "$evidence/guest-busy-top.txt" 2>&1 || true
+  adb shell dumpsys cpuinfo > "$evidence/guest-busy-cpuinfo.txt" 2>&1 || true
+  # Idle is a startup optimisation, not proof of editor correctness. The
+  # subsequent process, foreground, screenshot, fatal-exception and ANR
+  # assertions must still pass; do not convert an app failure into success.
+  return 0
 }
 
 # A newly booted Google APIs guest can report boot_completed=1 while the
