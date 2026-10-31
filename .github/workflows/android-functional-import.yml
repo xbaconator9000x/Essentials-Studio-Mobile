@@ -8,6 +8,7 @@ on:
       - '.github/workflows/android-functional-import.yml'
       - 'scripts/android-emulator-import-smoke.py'
       - 'scripts/android-emulator-map-save-smoke.py'
+      - 'scripts/android-emulator-saf-export-smoke.py'
       - 'scripts/android-emulator-functional-smoke.sh'
       - 'scripts/android-emulator-smoke.sh'
       - 'src/**'
@@ -20,6 +21,7 @@ on:
       - '.github/workflows/android-functional-import.yml'
       - 'scripts/android-emulator-import-smoke.py'
       - 'scripts/android-emulator-map-save-smoke.py'
+      - 'scripts/android-emulator-saf-export-smoke.py'
       - 'scripts/android-emulator-functional-smoke.sh'
       - 'scripts/android-emulator-smoke.sh'
       - 'src/**'
@@ -89,6 +91,7 @@ jobs:
           bash -n scripts/android-emulator-smoke.sh
           python3 scripts/android-emulator-import-smoke.py --self-test
           python3 scripts/android-emulator-map-save-smoke.py --self-test
+          python3 scripts/android-emulator-saf-export-smoke.py --self-test
           bash -n scripts/android-emulator-functional-smoke.sh
       - uses: actions/setup-node@v4
         with:
