@@ -9,6 +9,7 @@ on:
       - 'scripts/android-emulator-import-smoke.py'
       - 'scripts/android-emulator-map-save-smoke.py'
       - 'scripts/android-emulator-saf-export-smoke.py'
+      - 'scripts/android-emulator-export-reimport-smoke.py'
       - 'scripts/android-emulator-functional-smoke.sh'
       - 'scripts/android-emulator-smoke.sh'
       - 'src/**'
@@ -22,6 +23,7 @@ on:
       - 'scripts/android-emulator-import-smoke.py'
       - 'scripts/android-emulator-map-save-smoke.py'
       - 'scripts/android-emulator-saf-export-smoke.py'
+      - 'scripts/android-emulator-export-reimport-smoke.py'
       - 'scripts/android-emulator-functional-smoke.sh'
       - 'scripts/android-emulator-smoke.sh'
       - 'src/**'
@@ -38,14 +40,29 @@ concurrency:
 
 jobs:
   fixture:
-    runs-on: ubuntu-22.04
+    # Avoid the Ubuntu 22.04 Azure mirror that stalled apt for the full 60m
+    # in run 41250200427, cancelling an otherwise successful Android build.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux Tauri dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+          set -euo pipefail
+          # Prefer the canonical HTTPS mirror over intermittent Azure HTTP mirrors.
+          for source in /etc/apt/sources.list /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources; do
+            if [[ -f "$source" ]]; then
+              sudo sed -i -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+                -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
+          # Fail promptly on an unhealthy package mirror, not after an hour.
+          timeout 300s sudo apt-get -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          timeout 300s sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
             patchelf libasound2-dev
       - uses: actions/setup-node@v4
@@ -92,6 +109,7 @@ jobs:
           python3 scripts/android-emulator-import-smoke.py --self-test
           python3 scripts/android-emulator-map-save-smoke.py --self-test
           python3 scripts/android-emulator-saf-export-smoke.py --self-test
+          python3 scripts/android-emulator-export-reimport-smoke.py --self-test
           bash -n scripts/android-emulator-functional-smoke.sh
       - uses: actions/setup-node@v4
         with:
@@ -123,7 +141,23 @@ jobs:
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: npm run tauri android build -- --ci --apk --debug --target x86_64
+        run: |
+          set -euo pipefail
+          # Maven Central can return HTTP 429 while resolving Gradle's Kotlin
+          # buildSrc dependencies. Retry only that transient infrastructure
+          # failure; do not mask compiler, source or Android packaging errors.
+          for attempt in 1 2 3; do
+            log="${RUNNER_TEMP}/android-x86-build-${attempt}.log"
+            if npm run tauri android build -- --ci --apk --debug --target x86_64 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -Eiq 'Received status code 429|Too Many Requests|HTTP 429' "$log"; then
+              echo "::error::Android x86 build failed for a non-retryable reason (or exhausted retries)."
+              exit 1
+            fi
+            echo "::warning::Gradle dependency server returned HTTP 429; waiting before bounded retry ${attempt}/3"
+            sleep $((attempt * 60))
+          done
       - name: Preserve compiled APK
         uses: actions/upload-artifact@v4
         with:
