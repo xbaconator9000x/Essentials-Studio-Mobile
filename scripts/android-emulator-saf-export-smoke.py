@@ -205,6 +205,19 @@ def run(evidence: Path) -> None:
         (evidence / "saf-export-receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
         )
+        # The native save picker can disappear without resolving the WebView
+        # callback. Capture actual Android diagnostics on BOTH pass and fail
+        # so we can distinguish a missing picker callback, provider write,
+        # and readback failure rather than blindly retrying an emulator.
+        for name, command in (
+            ("saf-export-logcat.txt", ("logcat", "-d", "-v", "time")),
+            ("saf-export-provider-files.txt", ("shell", "ls", "-la", "/sdcard/Download")),
+            ("saf-export-activity.txt", ("shell", "dumpsys", "activity", "activities")),
+        ):
+            try:
+                (evidence / name).write_bytes(adb_bytes(*command, timeout=25)[-2_000_000:])
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                (evidence / name).write_text(f"Diagnostic unavailable: {exc}\\n")
         try:
             (evidence / "saf-export-screen.png").write_bytes(
                 adb_bytes("exec-out", "screencap", "-p")
