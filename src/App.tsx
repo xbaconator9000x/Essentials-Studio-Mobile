@@ -28,7 +28,7 @@ import {
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
-import { prepareProjectBeforeOpen, ProjectOpenCoordinator } from "./services/projectOpenGuards";
+import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -117,6 +117,7 @@ function AppContent() {
   const currentMapIdRef = useRef<number | null>(null);
   const projectRef = useRef<ProjectInfo | null>(null);
   const projectOpenCoordinator = useRef(new ProjectOpenCoordinator());
+  const mapSelectionCoordinator = useRef(new ProjectOpenCoordinator());
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
   const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
@@ -167,6 +168,8 @@ function AppContent() {
   // ── Project loading ────────────────────────────────────────────────────────
 
   const handleOpenProject = useCallback(async (path: string) => {
+    // Cancel in-flight map loads before preparing another project.
+    mapSelectionCoordinator.current.begin();
     const lease = projectOpenCoordinator.current.begin();
     try {
       setLoading(true);
@@ -345,61 +348,69 @@ function AppContent() {
   const handleSelectMap = useCallback(async (mapId: number, skipGuard = false) => {
     const path = projectRef.current?.path;
     if (!path) return;
+    const lease = mapSelectionCoordinator.current.begin();
+    const isCurrent = () => lease.isCurrent() && projectRef.current?.path === path;
 
-    // Prompt before switching away from a dirty map.
+    // Do not mutate the previous map or clear its dirty state until the
+    // replacement map, tileset and Android graphics have all loaded.
     if (
       !skipGuard &&
       currentMapIdRef.current !== null &&
       mapId !== currentMapIdRef.current &&
       mapIsDirtyRef.current
     ) {
-      if (await confirm("Save tile changes to the current map before switching?")) {
+      const saveFirst = await confirm("Save tile changes to the current map before switching?");
+      if (!isCurrent()) return;
+      if (saveFirst) {
         const md = mapDataRef.current;
         if (md) {
           try {
             await saveMap(path, md.id, md.tiles, md.width, md.height);
           } catch (err) {
-            setError(`Save failed: ${err}`);
-            return; // stay on the current map if save failed
+            if (isCurrent()) setError(`Save failed: ${err}`);
+            return;
           }
+          if (!isCurrent()) return;
         }
       }
-      // Whether saved or discarded, clear the dirty flag.
-      mapIsDirtyRef.current = false;
-      setMapIsDirty(false);
+      // A failed destination load must still leave the previous dirty tiles
+      // available for saving; only clear the flag after successful commit.
     }
 
     try {
       setLoading(true);
       setError(null);
-      const data = await loadMap(path, mapId);
-      setMapData(data);
-      mapDataRef.current = data;
-
-      const tileset = await loadTileset(path, data.tileset_id);
-      setTilesetInfo(tileset);
-
-      console.log("[App] Loading images for tileset:", tileset.tileset_name, "autotiles:", tileset.autotile_names);
-      const images = await loadAllTilesetImages(path, tileset.tileset_name, tileset.autotile_names);
-      console.log("[App] Images loaded:", {
-        tileset: images.tileset ? `${images.tileset.width}x${images.tileset.height}` : "null",
-        autotiles: images.autotiles.map((a, i) => a ? `[${i}]${a.width}x${a.height}` : `[${i}]null`),
+      const prepared = await prepareMapSelection(path, mapId, {
+        loadMap,
+        loadTileset,
+        loadImages: loadAllTilesetImages,
       });
-      setTilesetImage(images.tileset);
-      setAutotileImages(images.autotiles);
-      // Commit selection only after the map, tileset and graphics loaded.
-      // Failed loads must not leave a map ID pointing to the previous map.
+      if (!isCurrent()) return;
+
+      // Reloading the same map after event editing must preserve unsaved tile
+      // painting, while using the newly loaded event list and graphics.
+      const preserveDirty = mapId === currentMapIdRef.current && mapIsDirtyRef.current;
+      const nextMap = preserveUnsavedMapTiles(
+        prepared.map, mapDataRef.current, preserveDirty,
+      );
+      // All reads and compatibility checks succeeded. Commit atomically from
+      // the user's perspective; stale async requests cannot publish state.
+      setMapData(nextMap);
+      mapDataRef.current = nextMap;
+      setTilesetInfo(prepared.tileset);
+      setTilesetImage(prepared.images.tileset);
+      setAutotileImages(prepared.images.autotiles);
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
-
-      mapIsDirtyRef.current = false;
-      setMapIsDirty(false);
+      setEditingEvent(null);
+      mapIsDirtyRef.current = preserveDirty;
+      setMapIsDirty(preserveDirty);
     } catch (err) {
-      setError(String(err));
+      if (isCurrent()) setError(`Could not open map ${mapId}: ${String(err)}`);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, []); // uses refs only — stable reference, no deps needed
+  }, []);
 
   const handleMapDirty = useCallback(() => {
     updateMapDirty(true);
