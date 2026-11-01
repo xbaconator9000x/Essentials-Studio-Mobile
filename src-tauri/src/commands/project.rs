@@ -882,11 +882,11 @@ pub async fn save_map(
     if !map_file.exists() {
         return Err(format!("Map file not found: Map{:03}.rxdata", map_id));
     }
-    let mut value = marshal::load_file(&map_file)
+    let original_bytes = std::fs::read(&map_file)
         .map_err(|e| format!("Failed to read map: {e}"))?;
-    // Save All may submit a map whose tiles have not changed. Do not rewrite
-    // its Marshal stream: original object links, binary string encodings and
-    // unknown metadata must remain byte-for-byte untouched on a no-op save.
+    let mut value = marshal::load(&original_bytes)
+        .map_err(|e| format!("Failed to decode map: {e}"))?;
+    // A no-op Save All must not touch the source Marshal stream.
     if let Some(existing) = RpgMap::from_ruby_value(&value) {
         if existing.width == width
             && existing.height == height
@@ -895,10 +895,53 @@ pub async fn save_map(
             return Ok(());
         }
     }
+
+    // Re-encoding the whole map would discard Ruby object-link identity and
+    // unknown Marshal wrappers. Patch only the exact original Table payload.
+    // Reject missing/ambiguous occurrences rather than silently corrupt data.
+    let before_table = map_table_payload(&value)?.to_vec();
     replace_map_tile_data(&mut value, &tiles, width, height)?;
-    marshal::dump_file(&map_file, &value)
+    let after_table = map_table_payload(&value)?;
+    if before_table.len() != after_table.len() || before_table.len() < 20 {
+        return Err("Map Table payload changed length unexpectedly".into());
+    }
+    let mut matches = original_bytes.windows(before_table.len())
+        .enumerate().filter_map(|(offset, candidate)| {
+            if candidate == before_table.as_slice() { Some(offset) } else { None }
+        });
+    let offset = matches.next().ok_or(
+        "Original map Table payload not found in Marshal stream; save refused"
+    )?;
+    if matches.next().is_some() {
+        return Err("Map Table payload is ambiguous in Marshal stream; save refused".into());
+    }
+    let mut patched = original_bytes.clone();
+    patched[offset..offset + after_table.len()].copy_from_slice(after_table);
+    let decoded = marshal::load(&patched)
+        .map_err(|e| format!("Patched map failed Marshal decode: {e}"))?;
+    if decoded != value {
+        return Err("Patched map differs from requested tile edit; original retained".into());
+    }
+    marshal::writer::write_bytes_file_atomic(&map_file, &patched)
         .map_err(|e| format!("Failed to save map: {e}"))?;
     Ok(())
+}
+
+/// Borrow the opaque XP Table bytes without rebuilding the surrounding map.
+fn map_table_payload(value: &marshal::types::RubyValue) -> Result<&[u8], String> {
+    let marshal::types::RubyValue::Object(obj) = value else {
+        return Err("Map is not an RPG::Map object".into());
+    };
+    if obj.class_name != "RPG::Map" {
+        return Err("Unexpected Ruby map class".into());
+    }
+    let Some(marshal::types::RubyValue::UserDefined { class_name, data }) = obj.get("data") else {
+        return Err("Map has no native XP Table".into());
+    };
+    if class_name != "Table" {
+        return Err("Map data is not an XP Table".into());
+    }
+    Ok(data.as_slice())
 }
 
 #[cfg(test)]
