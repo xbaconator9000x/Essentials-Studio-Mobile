@@ -12,8 +12,29 @@ export async function exportAndroidDocument(
     writeAndVerify: (exportId: string, documentUri: string) => Promise<number>;
   },
   onProgress?: (percent: number) => void,
+  pickerTimeoutMs = 120_000,
 ): Promise<"saved" | "cancelled"> {
-  const documentUri = await io.pickDestination(filename);
+  // The Android DocumentsUI save sheet can close without resolving the
+  // tauri-plugin-dialog callback. Never leave the editor loading forever.
+  // A late callback must never write to a document after this attempt fails.
+  if (!Number.isSafeInteger(pickerTimeoutMs) || pickerTimeoutMs <= 0) {
+    throw new Error("Invalid Android document picker timeout");
+  }
+  onProgress?.(20);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let documentUri: string | null;
+  try {
+    documentUri = await Promise.race([
+      io.pickDestination(filename),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(
+          "Android document picker did not return a destination. No ZIP bytes were written by the editor; retry export."
+        )), pickerTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
   if (documentUri === null) return "cancelled";
   if (!documentUri.startsWith("content://")) {
     throw new Error("Android picker did not return a document content URI");

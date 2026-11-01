@@ -336,13 +336,21 @@ function AppContent() {
     setArchiveProgress(0);
     setError(null);
     try {
-      const outcome = await exportProjectZip(active.path, active.name, setArchiveProgress);
+      const outcome = await exportProjectZip(active.path, active.name, (percent) => {
+        setArchiveProgress(percent);
+        if (percent === 20) {
+          setArchiveOutcome("Waiting for Android to return the selected export destination...");
+        } else if (percent === 95) {
+          setArchiveOutcome("Writing and byte-verifying the selected Android document...");
+        }
+      });
       setArchiveOutcome(outcome === "saved"
         ? "ZIP saved to the selected Android document and byte-verified."
         : outcome === "cancelled"
           ? "ZIP export cancelled. No destination document was written."
           : "ZIP share/download requested. Verify the file in the destination app.");
     } catch (err) {
+      setArchiveOutcome(null);
       setError(`Project ZIP export failed: ${String(err)}`);
     } finally {
       setLoading(false);
