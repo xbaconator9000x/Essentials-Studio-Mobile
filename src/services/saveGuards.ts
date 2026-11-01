@@ -14,3 +14,18 @@ export async function saveThenMarkClean(
   }
   markClean();
 }
+
+
+/**
+ * An asynchronous save or map load may complete after the user paints again
+ * or changes projects. Object identity is intentional: an event refresh may
+ * replace the current MapRenderData while preserving its tiles.
+ */
+export function mapStillUnchanged<T>(
+  snapshot: { projectPath: string; map: T | null; revision: number },
+  current: { projectPath: string | undefined; map: T | null; revision: number },
+): boolean {
+  return snapshot.projectPath === current.projectPath
+    && snapshot.map === current.map
+    && snapshot.revision === current.revision;
+}
