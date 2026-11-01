@@ -88,11 +88,37 @@ export async function prepareMapSelection(
     throw new Error("Selected XP map has a missing or mismatched tileset");
   }
   const images = await io.loadImages(projectPath, tileset.tileset_name, tileset.autotile_names);
-  if (!images || !Array.isArray(images.autotiles) ||
-      (tileset.tileset_name && !images.tileset)) {
+  assertRequiredXpGraphics(tileset, images);
+  return { map, tileset, images };
+}
+
+/**
+ * A decoded XP map is not renderable when its referenced tileset or any
+ * nonempty autotile slot failed to load. Never activate a project/map with
+ * silent holes in its graphics: this also protects first-import rendering,
+ * which otherwise bypassed the later map-selection image checks.
+ *
+ * Empty autotile slots are valid; missing named slots are not.
+ */
+export function assertRequiredXpGraphics(
+  tileset: TilesetRenderInfo,
+  images: LoadedMapImages | null,
+): void {
+  if (!Array.isArray(tileset.autotile_names)) {
+    throw new Error("XP tileset has invalid autotile slot metadata");
+  }
+  if (!images || !Array.isArray(images.autotiles)) {
+    throw new Error("XP map graphics did not load");
+  }
+  if (tileset.tileset_name && !images.tileset) {
     throw new Error("Selected XP map's required tileset graphic did not load");
   }
-  return { map, tileset, images };
+  for (let slot = 0; slot < tileset.autotile_names.length; slot++) {
+    const name = tileset.autotile_names[slot];
+    if (name && !images.autotiles[slot]) {
+      throw new Error(`XP autotile graphic did not load: ${name} (slot ${slot + 1})`);
+    }
+  }
 }
 
 /** A same-map refresh (e.g. after editing event dialogue) must not discard
