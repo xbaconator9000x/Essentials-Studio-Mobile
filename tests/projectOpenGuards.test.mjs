@@ -105,3 +105,61 @@ test("invalid tile cells and tileset IDs reject before switching projects", asyn
     loadTileset: async () => ({ id: 4 }),
   }), /mismatched tileset/);
 });
+
+
+test("preparing the first map returns its validated render data without duplicate native loads", async () => {
+  const { prepareProjectBeforeOpen } = await import("../src/services/projectOpenGuards.ts");
+  const calls = [];
+  const prepared = await prepareProjectBeforeOpen("/candidate", {
+    openProject: async () => { calls.push("project"); return candidate; },
+    loadMap: async () => { calls.push("map"); return map; },
+    loadTileset: async () => { calls.push("tileset"); return { id: 3, tileset_name: "Synthetic", autotile_names: [] }; },
+  });
+  assert.equal(prepared.project, candidate);
+  assert.equal(prepared.initialMap, map);
+  assert.equal(prepared.initialTileset.id, 3);
+  assert.deepEqual(calls, ["project", "map", "tileset"]);
+});
+
+test("preparing a corrupt project never returns partial initial render state", async () => {
+  const { prepareProjectBeforeOpen } = await import("../src/services/projectOpenGuards.ts");
+  let previous = "/private/working-project";
+  await assert.rejects(async () => {
+    const prepared = await prepareProjectBeforeOpen("/candidate", {
+      openProject: async () => candidate,
+      loadMap: async () => map,
+      loadTileset: async () => { throw new Error("Tileset decode failed"); },
+    });
+    previous = prepared.project.path;
+  }, /Tileset decode failed/);
+  assert.equal(previous, "/private/working-project");
+});
+
+test("newer project-open lease invalidates stale preparation and async metadata", async () => {
+  const { ProjectOpenCoordinator } = await import("../src/services/projectOpenGuards.ts");
+  const coordinator = new ProjectOpenCoordinator();
+  const older = coordinator.begin();
+  assert.equal(older.isCurrent(), true);
+  const newer = coordinator.begin();
+  assert.equal(older.isCurrent(), false);
+  assert.equal(newer.isCurrent(), true);
+  assert.throws(() => older.assertCurrent(), /superseded/);
+  assert.doesNotThrow(() => newer.assertCurrent());
+
+  let activeProject = "existing";
+  let pbsIndex = "existing-index";
+  const commit = (lease, name) => {
+    lease.assertCurrent();
+    activeProject = name;
+  };
+  const publishLatePbs = (lease, index) => {
+    if (lease.isCurrent()) pbsIndex = index;
+  };
+  assert.throws(() => commit(older, "stale"), /superseded/);
+  commit(newer, "latest");
+  publishLatePbs(older, "stale-index");
+  assert.equal(activeProject, "latest");
+  assert.equal(pbsIndex, "existing-index");
+  publishLatePbs(newer, "latest-index");
+  assert.equal(pbsIndex, "latest-index");
+});

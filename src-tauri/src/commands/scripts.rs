@@ -568,16 +568,17 @@ mod fidelity_tests {
     }
 
     #[tokio::test]
-    async fn no_op_save_preserves_noncanonical_bare_string_marshal_stream() {
-        // Ruby 1.8 can encode strings without the 'I' wrapper. Our writer
-        // cannot reproduce those source bytes, so do not invoke it for no-op
-        // Save All even when the decoded value is equivalent.
+    async fn no_op_save_preserves_noncanonical_marshal_stream() {
+        // Ruby Marshal accepts a long-form fixnum encoding for script ID 1
+        // (i, 1, 1), even though writers normally use the compact (i, 6).
+        // A no-op Save All must preserve this source encoding byte-for-byte,
+        // including bare Ruby 1.8 strings, without canonicalizing the file.
         let compressed = compress_zlib("puts :ok").unwrap();
         assert!(compressed.len() < 120);
         let mut original_bytes = vec![
             4, 8, b'[', 6, // top-level array with one script
             b'[', 8,       // script tuple with three fields
-            b'i', 6,       // script ID 1
+            b'i', 1, 1,    // script ID 1, valid noncanonical long-form fixnum
             b'"', 9,       // bare title string of length four
         ];
         original_bytes.extend_from_slice(b"Main");
