@@ -187,6 +187,12 @@ export function usePbsFile(
   }, [projectPath, filename]);
 
   const cancel = useCallback(() => {
+    // Discarding while the native writer is active would display an older
+    // baseline as clean even though the writer may still replace disk bytes.
+    if (savingRef.current) {
+      setError("Wait for the PBS save to finish before discarding changes");
+      return;
+    }
     revisionRef.current += 1;
     sectionsRef.current = snapshotRef.current;
     setSections(snapshotRef.current);
