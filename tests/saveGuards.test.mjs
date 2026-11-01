@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { saveThenMarkClean } from "../src/services/saveGuards.ts";
+import { saveThenMarkClean, mapStillUnchanged } from "../src/services/saveGuards.ts";
 
 test("successful disk write clears dirty state only after the write resolves", async () => {
   let resolveSave;
@@ -65,4 +65,31 @@ test("unchanged map revision still clears dirty after the native write succeeds"
     () => revision === 7,
   );
   assert.equal(dirty, false);
+});
+
+
+test("map navigation cannot discard painting performed during destination graphics load", () => {
+  const map = { tiles: [1, 2, 3] };
+  const snapshot = { projectPath: "/private/project", map, revision: 7 };
+  assert.equal(mapStillUnchanged(snapshot, { ...snapshot, revision: 8 }), false);
+  assert.equal(mapStillUnchanged(snapshot, { ...snapshot, map: { ...map } }), false);
+  assert.equal(mapStillUnchanged(snapshot, { ...snapshot, projectPath: "/private/other" }), false);
+  assert.equal(mapStillUnchanged(snapshot, { ...snapshot }), true);
+});
+
+test("pending navigation save must snapshot mutable tile data", async () => {
+  const map = { tiles: [1, 2, 3] };
+  const source = map.tiles.slice();
+  const original = { projectPath: "/private/project", map, revision: 4 };
+  let resolveSave;
+  const write = new Promise(resolve => { resolveSave = resolve; });
+  const operation = saveThenMarkClean(
+    () => write,
+    () => {},
+    () => mapStillUnchanged(original, { ...original, revision: 5 }),
+  );
+  map.tiles[0] = 99;
+  assert.deepEqual(source, [1, 2, 3], "native save must receive immutable snapshot");
+  resolveSave();
+  await assert.rejects(operation, /Map changed while saving/);
 });
