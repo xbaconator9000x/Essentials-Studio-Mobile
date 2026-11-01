@@ -672,8 +672,36 @@ pub async fn discard_project_archive_export(
 
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
+/// Validate the final resolved path even after a case-insensitive lookup.
+/// Android app-private filesystems are case-sensitive; Windows RMXP projects
+/// often reference graphics with different filename capitalization.
+fn checked_private_image_path(
+    candidate: &Path,
+    project: &Path,
+    ext: &str,
+) -> Result<(PathBuf, &'static str), String> {
+    let resolved = candidate.canonicalize().map_err(|e| e.to_string())?;
+    if !resolved.starts_with(project) {
+        return Err("Image resolves outside the private project".into());
+    }
+    let mime = match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => return Err("Unsupported image format".into()),
+    };
+    let size = fs::metadata(&resolved).map_err(|e| e.to_string())?.len();
+    if size > MAX_IMAGE_BYTES {
+        return Err("Project image exceeds the 32 MiB per-image limit".into());
+    }
+    Ok((resolved, mime))
+}
+
 /// Resolve an image strictly within a previously imported, app-private project.
-/// Never expose arbitrary filesystem paths to the Android WebView.
+/// Prefer exact names, then a unique case-insensitive match within the single
+/// known graphics directory. Reject ambiguous matches rather than guessing,
+/// and never rewrite source asset filenames or bytes.
 fn private_project_image_path(
     root: &Path,
     requested_project: &Path,
@@ -691,28 +719,49 @@ fn private_project_image_path(
     if base != "Graphics" {
         return Err("Only project graphics can be read as images".into());
     }
-    let stem = project.join(base).join(directory).join(asset_name);
+    let image_dir = project.join(base).join(directory);
+    let stem = image_dir.join(asset_name);
+
+    // Exact matches always win, preserving existing extension preference.
     for ext in extensions {
         let candidate = stem.with_extension(ext);
-        if !candidate.is_file() {
-            continue;
+        if candidate.is_file() {
+            return checked_private_image_path(&candidate, &project, ext);
         }
-        let resolved = candidate.canonicalize().map_err(|e| e.to_string())?;
-        if !resolved.starts_with(&project) {
-            return Err("Image resolves outside the private project".into());
+    }
+
+    // Android/Linux is case-sensitive; desktop Windows RMXP is not. Restrict
+    // the fallback to one validated graphics directory and supported types.
+    // Read once, check all possible extension spellings in original order.
+    let entries = match fs::read_dir(&image_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(format!("Project image not found: {asset_type}/{asset_name}"));
         }
-        let mime = match *ext {
-            "png" => "image/png",
-            "jpg" | "jpeg" => "image/jpeg",
-            "gif" => "image/gif",
-            "bmp" => "image/bmp",
-            _ => return Err("Unsupported image format".into()),
-        };
-        let size = fs::metadata(&resolved).map_err(|e| e.to_string())?.len();
-        if size > MAX_IMAGE_BYTES {
-            return Err("Project image exceeds the 32 MiB per-image limit".into());
+        Err(e) => return Err(format!("Could not inspect project graphics: {e}")),
+    };
+    let mut available = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Could not inspect project graphics: {e}"))?;
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        available.push((name, entry.path()));
+    }
+    for ext in extensions {
+        let expected = stem.with_extension(ext)
+            .file_name().ok_or("Invalid image filename")?
+            .to_string_lossy().to_lowercase();
+        let mut matches = available.iter().filter(|(name, _)| *name == expected);
+        if let Some((_, candidate)) = matches.next() {
+            if matches.next().is_some() {
+                return Err(format!(
+                    "Ambiguous case-insensitive project image: {asset_type}/{asset_name}"
+                ));
+            }
+            if !candidate.is_file() {
+                return Err(format!("Project image is not a regular file: {asset_type}/{asset_name}"));
+            }
+            return checked_private_image_path(candidate, &project, ext);
         }
-        return Ok((resolved, mime));
     }
     Err(format!("Project image not found: {asset_type}/{asset_name}"))
 }
