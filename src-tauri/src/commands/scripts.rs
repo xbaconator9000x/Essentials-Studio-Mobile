@@ -568,10 +568,10 @@ mod fidelity_tests {
     }
 
     #[tokio::test]
-    async fn no_op_save_preserves_noncanonical_bare_string_marshal_stream() {
-        // Ruby 1.8 can encode strings without the 'I' wrapper. Our writer
-        // cannot reproduce those source bytes, so do not invoke it for no-op
-        // Save All even when the decoded value is equivalent.
+    async fn no_op_save_preserves_bare_string_marshal_stream() {
+        // Ruby 1.8 can encode strings without the 'I' wrapper. The Marshal
+        // writer now preserves that encoding exactly, but Save All must still
+        // avoid rewriting source bytes when nothing has changed.
         let compressed = compress_zlib("puts :ok").unwrap();
         assert!(compressed.len() < 120);
         let mut original_bytes = vec![
@@ -585,7 +585,7 @@ mod fidelity_tests {
         original_bytes.push((compressed.len() + 5) as u8);
         original_bytes.extend_from_slice(&compressed);
         let decoded = marshal::load(&original_bytes).unwrap();
-        assert_ne!(marshal::dump(&decoded).unwrap(), original_bytes);
+        assert_eq!(marshal::dump(&decoded).unwrap(), original_bytes);
 
         let (root, path, _) = test_project_with_scripts(
             "essentials-bare-script", vec![script(1, "Main", "puts :ok")],
