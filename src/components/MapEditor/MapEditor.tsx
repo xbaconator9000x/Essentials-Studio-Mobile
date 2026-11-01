@@ -392,6 +392,9 @@ export function MapEditor({
         const changes = paintTile(mapData, x, y, selectedLayer, selectedTileId);
         if (changes.length > 0) {
           paintChanges.current.push(...changes);
+          // Mark dirty on mutation, not only on mouseup: Save All can be
+          // pending while a drag stroke is still in progress.
+          onMapDirty();
           rendererRef.current?.setMapData(
             mapData.tiles,
             mapData.width,
@@ -403,6 +406,9 @@ export function MapEditor({
         const changes = eraseTile(mapData, x, y, selectedLayer);
         if (changes.length > 0) {
           paintChanges.current.push(...changes);
+          // Mark dirty on mutation, not only on mouseup: Save All can be
+          // pending while a drag stroke is still in progress.
+          onMapDirty();
           rendererRef.current?.setMapData(
             mapData.tiles,
             mapData.width,
@@ -412,7 +418,7 @@ export function MapEditor({
         }
       }
     },
-    [mapData, paintTool, selectedLayer, selectedTileId]
+    [mapData, paintTool, selectedLayer, selectedTileId, onMapDirty]
   );
 
   // Mouse wheel: scroll to pan, Ctrl+scroll (pinch-to-zoom) to zoom
