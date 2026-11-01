@@ -186,10 +186,10 @@ pub async fn load_script_source(
     Err(format!("Script with id {} not found", script_id))
 }
 
-/// Reconcile the frontend's known script entries with the original Marshal
-/// array. A full rebuild silently discarded opaque entries, extra tuple fields,
-/// non-standard nil placeholders and every untouched compressed byte stream.
-/// Preserve them unless the corresponding script was actually edited/deleted.
+/// Reconcile the frontend's submitted script entries with the original Marshal
+/// array. Save All is NOT a delete command: a partially loaded editor list must
+/// never erase omitted scripts, opaque entries, extra tuple fields or nil slots.
+/// Explicit deletion is handled separately by delete_script.
 fn merge_script_entries(original: &[RubyValue], scripts: &[ScriptData]) -> Result<Vec<RubyValue>, String> {
     ensure_unique_script_ids(original)?;
     let mut submitted = HashMap::new();
@@ -206,7 +206,8 @@ fn merge_script_entries(original: &[RubyValue], scripts: &[ScriptData]) -> Resul
             if !seen_original.insert(id) {
                 return Err(format!("Duplicate original script ID {id}; refusing destructive save"));
             }
-            // Omission of a recognised script is an intentional deletion.
+            // A partial editor payload must not delete a script. Only the
+            // explicit delete_script command is permitted to remove entries.
             if let Some(script) = submitted.get(&id) {
                 let RubyValue::Array(parts) = entry else { unreachable!() };
                 let mut parts = parts.clone();
@@ -221,6 +222,8 @@ fn merge_script_entries(original: &[RubyValue], scripts: &[ScriptData]) -> Resul
                     parts[2] = RubyValue::String(RubyString::new(compress_zlib(&script.source)?));
                 }
                 merged.push(RubyValue::Array(parts));
+            } else {
+                merged.push(entry.clone());
             }
         } else {
             // Preserve unknown/custom Marshal entries and nil slots in place.
@@ -252,6 +255,12 @@ pub async fn save_all_scripts(
         .join("Scripts.rxdata");
     let original = load_scripts_raw(&project_path)?;
     let merged = merge_script_entries(&original, &scripts)?;
+    // The original Marshal stream may use bare Ruby 1.8 strings or object
+    // references that our generic writer cannot reproduce byte-for-byte.
+    // A no-op Save All must therefore never rewrite Scripts.rxdata.
+    if merged == original {
+        return Ok(());
+    }
     marshal::dump_file(&path, &RubyValue::Array(merged))
         .map_err(|e| format!("Failed to save Scripts.rxdata: {}", e))?;
     eprintln!("[scripts] Saved {} scripts to {:?}", scripts.len(), path);
@@ -526,6 +535,104 @@ mod fidelity_tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+
+    #[test]
+    fn partial_script_save_never_deletes_omitted_entries() {
+        let original = vec![
+            RubyValue::Nil,
+            script(11, "Main", "old source"),
+            RubyValue::Symbol("opaque_custom_entry".into()),
+            script(12, "Other", "keep me"),
+            script(13, "Third", "also keep me"),
+        ];
+        let merged = merge_script_entries(
+            &original,
+            &[source(11, "Main", "new source")],
+        ).unwrap();
+        assert_eq!(merged.len(), original.len());
+        assert_eq!(merged[0], original[0]);
+        assert_eq!(merged[2], original[2]);
+        assert_eq!(merged[3], original[3], "omitted script must not be deleted");
+        assert_eq!(merged[4], original[4], "omitted script must not be deleted");
+        assert_eq!(
+            decompress_zlib(parse_script_entry(&merged[1]).unwrap().2).unwrap(),
+            "new source"
+        );
+        assert_eq!(
+            merge_script_entries(&original, &[]).unwrap(),
+            original,
+            "empty Save All payload is a no-op, not a delete-all operation"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_op_save_preserves_noncanonical_bare_string_marshal_stream() {
+        // Ruby 1.8 can encode strings without the 'I' wrapper. Our writer
+        // cannot reproduce those source bytes, so do not invoke it for no-op
+        // Save All even when the decoded value is equivalent.
+        let compressed = compress_zlib("puts :ok").unwrap();
+        assert!(compressed.len() < 120);
+        let mut original_bytes = vec![
+            4, 8, b'[', 6, // top-level array with one script
+            b'[', 8,       // script tuple with three fields
+            b'i', 6,       // script ID 1
+            b'"', 9,       // bare title string of length four
+        ];
+        original_bytes.extend_from_slice(b"Main");
+        original_bytes.push(b'"');
+        original_bytes.push((compressed.len() + 5) as u8);
+        original_bytes.extend_from_slice(&compressed);
+        let decoded = marshal::load(&original_bytes).unwrap();
+        assert_ne!(marshal::dump(&decoded).unwrap(), original_bytes);
+
+        let (root, path, _) = test_project_with_scripts(
+            "essentials-bare-script", vec![script(1, "Main", "puts :ok")],
+        );
+        std::fs::write(&path, &original_bytes).unwrap();
+        let project = root.to_string_lossy().into_owned();
+        save_all_scripts(project.clone(), vec![source(1, "Main", "puts :ok")])
+            .await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
+        save_all_scripts(project, vec![]).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn partial_script_save_keeps_other_scripts_on_disk() {
+        let (root, path, _) = test_project_with_scripts(
+            "essentials-partial-script",
+            vec![
+                script(1, "Main", "puts :old"),
+                script(2, "Untouched", "puts :safe"),
+                RubyValue::Symbol("extension_slot".into()),
+            ],
+        );
+        let project = root.to_string_lossy().into_owned();
+        save_all_scripts(project.clone(), vec![source(1, "Main", "puts :new")])
+            .await.unwrap();
+        let decoded = marshal::load_file(&path).unwrap();
+        let arr = decoded.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[2], RubyValue::Symbol("extension_slot".into()));
+        assert_eq!(
+            decompress_zlib(parse_script_entry(&arr[0]).unwrap().2).unwrap(),
+            "puts :new"
+        );
+        assert_eq!(
+            decompress_zlib(parse_script_entry(&arr[1]).unwrap().2).unwrap(),
+            "puts :safe"
+        );
+        // Explicit deletion remains available and removes only the selected ID.
+        delete_script(project, 2).await.unwrap();
+        let deleted = marshal::load_file(&path).unwrap();
+        let arr = deleted.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(parse_script_entry(&arr[0]).unwrap().0, 1);
+        assert_eq!(arr[1], RubyValue::Symbol("extension_slot".into()));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

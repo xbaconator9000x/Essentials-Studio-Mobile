@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import type { ScriptEntry, ScriptData } from "../../types";
+import type { ScriptEntry } from "../../types";
+import { collectDirtyScriptPayload } from "./scriptSavePayload";
 import {
   loadScriptList,
   loadScriptSource,
@@ -140,23 +141,16 @@ export function ScriptEditor({ projectPath, onClose }: Props) {
 
     setSaving(true);
     try {
-      // Build the full script list with sources
-      const allScripts: ScriptData[] = [];
-      for (const script of scripts) {
-        const source = cacheRef.current.get(script.id);
-        if (source !== undefined) {
-          allScripts.push({ id: script.id, title: script.title, source });
-        } else {
-          // Load from backend if we haven't cached this one
-          const s = await loadScriptSource(projectPath, script.id);
-          allScripts.push({ id: script.id, title: script.title, source: s });
-        }
-      }
+      // Send only dirty scripts, not hundreds of untouched sources.
+      // Native Save All preserves omissions; explicit deleteScript deletes.
+      const changedScripts = await collectDirtyScriptPayload(
+        scripts, dirtyIds, cacheRef.current,
+        (id) => loadScriptSource(projectPath, id),
+      );
+      await saveAllScripts(projectPath, changedScripts);
 
-      await saveAllScripts(projectPath, allScripts);
-
-      // Update originals and clear dirty state
-      for (const script of allScripts) {
+      // Clear dirty state only after native save succeeds.
+      for (const script of changedScripts) {
         originalsRef.current.set(script.id, script.source);
       }
       setDirtyIds(new Set());
