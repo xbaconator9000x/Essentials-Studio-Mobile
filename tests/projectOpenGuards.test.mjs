@@ -263,3 +263,34 @@ test("resized same-map refresh fails closed instead of misplacing unsaved tiles"
   assert.throws(() => preserveUnsavedMapTiles({ ...map, width: 3 }, painted, true), /Cannot reload resized map/);
   assert.throws(() => preserveUnsavedMapTiles(map, null, true), /Cannot reload resized map/);
 });
+
+test("first-import render rejects missing named XP graphics before project activation", async () => {
+  const { assertRequiredXpGraphics } = await import("../src/services/projectOpenGuards.ts");
+  const tileset = { id: 3, tileset_name: "Forest", autotile_names: ["Water", "", "Lava"] };
+  const graphic = { width: 256, height: 512 };
+  assert.doesNotThrow(() => assertRequiredXpGraphics(tileset, {
+    tileset: graphic, autotiles: [graphic, null, graphic],
+  }));
+  assert.throws(() => assertRequiredXpGraphics(tileset, {
+    tileset: graphic, autotiles: [graphic, null, null],
+  }), /Lava.*slot 3/);
+  assert.throws(() => assertRequiredXpGraphics(tileset, {
+    tileset: null, autotiles: [graphic, null, graphic],
+  }), /required tileset graphic/);
+  assert.throws(() => assertRequiredXpGraphics(tileset, null), /graphics did not load/);
+});
+
+test("later XP map selection rejects a missing named autotile without replacing active map", async () => {
+  const { prepareMapSelection } = await import("../src/services/projectOpenGuards.ts");
+  const previous = { ...map, tiles: [901, ...map.tiles.slice(1)] };
+  let active = previous;
+  await assert.rejects(async () => {
+    const next = await prepareMapSelection("/private/game", 2, {
+      loadMap: async () => ({ ...map, id: 2 }),
+      loadTileset: async () => ({ id: 3, tileset_name: "Forest", autotile_names: ["Water"] }),
+      loadImages: async () => ({ tileset: { width: 256 }, autotiles: [null] }),
+    });
+    active = next.map;
+  }, /Water.*slot 1/);
+  assert.equal(active, previous);
+});
