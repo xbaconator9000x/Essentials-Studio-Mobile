@@ -12,6 +12,7 @@ import importlib.util
 import json
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -131,6 +132,102 @@ def wait_for_reimported_map(
     raise AssertionError(f"Re-import did not complete within {seconds}s: {last}")
 
 
+
+def current_picker_location(xml: str) -> str:
+    """Return the LAST breadcrumb: ExternalStorageProvider has nested crumbs."""
+    start = xml.find("<?xml")
+    root = ET.fromstring(xml[start:] if start >= 0 else xml)
+    names = [
+        node.get("text", "").strip()
+        for node in root.iter("node")
+        if picker.documents_ui_id(node.get("resource-id", ""), "breadcrumb_text")
+    ]
+    return names[-1] if names else ""
+
+
+def reimport_picker_snapshot(evidence: Path, label: str):
+    nodes = picker.dump_ui(evidence, label)
+    if not picker.documents_ui_visible(nodes):
+        raise AssertionError("Native DocumentsUI disappeared before ZIP selection")
+    xml = (evidence / f"{label}.xml").read_text(encoding="utf-8")
+    return nodes, xml
+
+
+def select_exported_zip(evidence: Path, filename: str) -> bool:
+    """Select the exact SAF export through the external-storage document provider.
+
+    The Android 11 landscape picker displays ZIP thumbnails while their file
+    titles are BELOW the visible viewport. In run 41254689133, this made the
+    generic grid selector fail even though Download had actually opened.
+    Switch to native list view and require the exact filename, never select a
+    neighbouring ZIP or infer success from the previously open editor.
+    """
+    nodes, xml = reimport_picker_snapshot(evidence, "reimport-picker-initial")
+    storage = picker.external_storage_root(nodes)
+    if storage is None:
+        roots = picker.locate(nodes, "Show roots")
+        if roots is None:
+            raise AssertionError("Native picker has no Show roots action")
+        picker.tap(roots)
+        time.sleep(2)
+        nodes, xml = reimport_picker_snapshot(evidence, "reimport-picker-roots")
+        storage = picker.external_storage_root(nodes)
+    if storage is None:
+        raise AssertionError("ExternalStorageProvider root unavailable")
+    picker.tap(storage)
+    time.sleep(2)
+
+    for attempt, target in enumerate(("title", "icon", "row", "title")):
+        nodes, xml = reimport_picker_snapshot(evidence, f"reimport-root-{attempt}")
+        if current_picker_location(xml).casefold() in {"download", "downloads"}:
+            break
+        folder = (picker.picker_folder_row(xml, "Download", target)
+                  or picker.picker_folder_row(xml, "Downloads", target))
+        if folder is None:
+            raise AssertionError("External storage root has no Download folder")
+        picker.tap(folder)
+        time.sleep(3)
+    nodes, xml = reimport_picker_snapshot(evidence, "reimport-download")
+    if current_picker_location(xml).casefold() not in {"download", "downloads"}:
+        raise AssertionError(
+            "DocumentsUI did not enter external storage Download: "
+            + repr(current_picker_location(xml))
+        )
+
+    # AOSP API30 grid in landscape clips filenames below the screen edge.
+    # Native list mode exposes full rows and exact text in accessibility XML.
+    list_action = picker.picker_list_view_control(nodes)
+    if list_action is not None:
+        picker.tap(list_action)
+        time.sleep(2)
+    for attempt in range(5):
+        nodes, xml = reimport_picker_snapshot(evidence, f"reimport-file-{attempt}")
+        if current_picker_location(xml).casefold() not in {"download", "downloads"}:
+            raise AssertionError("Picker left Download before exact file selection")
+        card = picker.picker_file_card(xml, filename)
+        if card is not None:
+            picker.tap(card)
+            time.sleep(3)
+            nodes = picker.dump_ui(evidence, "reimport-after-exact-file-tap")
+            if not picker.documents_ui_visible(nodes):
+                return True
+            # Keyboard fallback is safe ONLY when focus identifies this exact ZIP.
+            if picker.activate_picker_item_keyboard(
+                evidence, filename, "reimport-exact-file", steps=18
+            ):
+                time.sleep(3)
+                nodes = picker.dump_ui(evidence, "reimport-after-exact-keyboard")
+                if not picker.documents_ui_visible(nodes):
+                    return True
+            raise AssertionError(
+                f"DocumentsUI did not return after selecting exact ZIP {filename!r}"
+            )
+        time.sleep(2)
+    raise AssertionError(
+        f"Exported ZIP {filename!r} absent from external storage Download list"
+    )
+
+
 def run(package: str, evidence: Path) -> None:
     imported = json.loads((evidence / "import-receipt.json").read_text())
     painted = json.loads((evidence / "map-edit-receipt.json").read_text())
@@ -160,7 +257,7 @@ def run(package: str, evidence: Path) -> None:
             raise AssertionError("Loaded editor has no Android ZIP import control")
         picker.tap(target)
         picker.wait_for_document_picker(evidence, 20)
-        if not picker.try_external_storage_download(evidence, export_helper.EXPORT_FILENAME):
+        if not select_exported_zip(evidence, export_helper.EXPORT_FILENAME):
             raise AssertionError("Native DocumentsUI did not select exported ZIP")
         # The old project remains visible while the new ZIP is importing.
         # A generic "editor visible" check can therefore pass too early.
@@ -195,6 +292,13 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    xml = ('<?xml version="1.0"?><hierarchy>'
+           '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
+           'text="sdk_gphone_x86_64" />'
+           '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
+           'text="Download" /></hierarchy>')
+    assert current_picker_location(xml) == "Download"
+    assert current_picker_location('<hierarchy/>') == ""
     assert expected_member_paths("./projects/import-1", {
         "Game.rxproj": b"", "Data/Map001.rxdata": b"",
         "PBS/pokemon.txt": b"", "Graphics/Empty": b"",
