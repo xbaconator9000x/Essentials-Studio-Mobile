@@ -1,9 +1,17 @@
 name: Android emulator functional ZIP import
 
 on:
-  # Explicit milestone gate only: do not launch costly emulators for every
-  # source PR or main push. Run after native roundtrip + ARM64 build are green.
+  # Milestone gate: only an integrated main candidate or explicit dispatch,
+  # never each intermediate PR commit. Native and ARM64 checks remain PR gates.
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/android-emulator-*.py'
+      - 'scripts/android-emulator-*.sh'
+      - '.github/workflows/android-functional-import.yml'
 
 permissions:
   contents: read
