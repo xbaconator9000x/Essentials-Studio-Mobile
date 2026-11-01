@@ -672,8 +672,36 @@ pub async fn discard_project_archive_export(
 
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
+/// Validate the final resolved path even after a case-insensitive lookup.
+/// Android app-private filesystems are case-sensitive; Windows RMXP projects
+/// often reference graphics with different filename capitalization.
+fn checked_private_image_path(
+    candidate: &Path,
+    project: &Path,
+    ext: &str,
+) -> Result<(PathBuf, &'static str), String> {
+    let resolved = candidate.canonicalize().map_err(|e| e.to_string())?;
+    if !resolved.starts_with(project) {
+        return Err("Image resolves outside the private project".into());
+    }
+    let mime = match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => return Err("Unsupported image format".into()),
+    };
+    let size = fs::metadata(&resolved).map_err(|e| e.to_string())?.len();
+    if size > MAX_IMAGE_BYTES {
+        return Err("Project image exceeds the 32 MiB per-image limit".into());
+    }
+    Ok((resolved, mime))
+}
+
 /// Resolve an image strictly within a previously imported, app-private project.
-/// Never expose arbitrary filesystem paths to the Android WebView.
+/// Prefer exact names, then a unique case-insensitive match within the single
+/// known graphics directory. Reject ambiguous matches rather than guessing,
+/// and never rewrite source asset filenames or bytes.
 fn private_project_image_path(
     root: &Path,
     requested_project: &Path,
@@ -691,28 +719,49 @@ fn private_project_image_path(
     if base != "Graphics" {
         return Err("Only project graphics can be read as images".into());
     }
-    let stem = project.join(base).join(directory).join(asset_name);
+    let image_dir = project.join(base).join(directory);
+    let stem = image_dir.join(asset_name);
+
+    // Exact matches always win, preserving existing extension preference.
     for ext in extensions {
         let candidate = stem.with_extension(ext);
-        if !candidate.is_file() {
-            continue;
+        if candidate.is_file() {
+            return checked_private_image_path(&candidate, &project, ext);
         }
-        let resolved = candidate.canonicalize().map_err(|e| e.to_string())?;
-        if !resolved.starts_with(&project) {
-            return Err("Image resolves outside the private project".into());
+    }
+
+    // Android/Linux is case-sensitive; desktop Windows RMXP is not. Restrict
+    // the fallback to one validated graphics directory and supported types.
+    // Read once, check all possible extension spellings in original order.
+    let entries = match fs::read_dir(&image_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(format!("Project image not found: {asset_type}/{asset_name}"));
         }
-        let mime = match *ext {
-            "png" => "image/png",
-            "jpg" | "jpeg" => "image/jpeg",
-            "gif" => "image/gif",
-            "bmp" => "image/bmp",
-            _ => return Err("Unsupported image format".into()),
-        };
-        let size = fs::metadata(&resolved).map_err(|e| e.to_string())?.len();
-        if size > MAX_IMAGE_BYTES {
-            return Err("Project image exceeds the 32 MiB per-image limit".into());
+        Err(e) => return Err(format!("Could not inspect project graphics: {e}")),
+    };
+    let mut available = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Could not inspect project graphics: {e}"))?;
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        available.push((name, entry.path()));
+    }
+    for ext in extensions {
+        let expected = stem.with_extension(ext)
+            .file_name().ok_or("Invalid image filename")?
+            .to_string_lossy().to_lowercase();
+        let mut matches = available.iter().filter(|(name, _)| *name == expected);
+        if let Some((_, candidate)) = matches.next() {
+            if matches.next().is_some() {
+                return Err(format!(
+                    "Ambiguous case-insensitive project image: {asset_type}/{asset_name}"
+                ));
+            }
+            if !candidate.is_file() {
+                return Err(format!("Project image is not a regular file: {asset_type}/{asset_name}"));
+            }
+            return checked_private_image_path(candidate, &project, ext);
         }
-        return Ok((resolved, mime));
     }
     Err(format!("Project image not found: {asset_type}/{asset_name}"))
 }
@@ -1702,6 +1751,73 @@ mod archive_roundtrip_tests {
         assert!(private_project_image_path(&projects, &outside, "tileset", "Forest").is_err());
         assert!(private_project_image_path(&projects, &inside, "tileset", "../Forest").is_err());
         assert!(private_project_image_path(&projects, &inside, "bgm", "Forest").is_err());
+    }
+
+    #[test]
+    fn private_image_lookup_accepts_unique_windows_style_case_mismatch() {
+        use super::private_project_image_path;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        let original = graphics.join("Trainer_YOUNGSTER_1.PNG");
+        fs::write(&original, b"unchanged original graphic bytes").unwrap();
+
+        let (resolved, mime) = private_project_image_path(
+            &projects, &inside, "character", "trainer_youngster_1"
+        ).unwrap();
+        assert_eq!(mime, "image/png");
+        assert_eq!(fs::read(&resolved).unwrap(), b"unchanged original graphic bytes");
+        assert!(original.exists(), "case fallback must never rename source files");
+        assert!(private_project_image_path(
+            &projects, &inside, "character", "not_present"
+        ).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_image_lookup_rejects_ambiguous_casefold_but_prefers_exact_name() {
+        use super::private_project_image_path;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        fs::write(graphics.join("Hero.png"), b"upper").unwrap();
+        fs::write(graphics.join("hero.PNG"), b"lower").unwrap();
+
+        let (exact, _) = private_project_image_path(
+            &projects, &inside, "character", "Hero"
+        ).unwrap();
+        assert_eq!(fs::read(exact).unwrap(), b"upper");
+        let error = private_project_image_path(
+            &projects, &inside, "character", "hErO"
+        ).unwrap_err();
+        assert!(error.contains("Ambiguous case-insensitive"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_image_casefold_does_not_follow_external_symlink() {
+        use super::private_project_image_path;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        let outside = sandbox.path("private.PNG");
+        fs::write(&outside, b"secret outside game").unwrap();
+        symlink(&outside, graphics.join("SECRET.PNG")).unwrap();
+        let error = private_project_image_path(
+            &projects, &inside, "character", "secret"
+        ).unwrap_err();
+        assert!(error.contains("outside the private project"), "{error}");
+        assert_eq!(fs::read(outside).unwrap(), b"secret outside game");
     }
 
     #[cfg(unix)]
