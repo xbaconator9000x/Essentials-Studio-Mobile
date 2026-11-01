@@ -43,5 +43,5 @@ export function snapshotPbsSections<
 
 /** Entity panels contain nested arrays and objects, not just flat PBS fields. */
 export function snapshotPbsEntities<T>(items: readonly T[]): T[] {
-  return structuredClone(items);
+  return structuredClone([...items]);
 }
