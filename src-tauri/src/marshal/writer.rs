@@ -149,36 +149,36 @@ impl<W: Write> MarshalWriter<W> {
             }
 
             RubyValue::String(s) => {
-                // RMXP/Essentials .rxdata stores strings Marshal-wrapped with a single
-                // encoding instance variable (the 'I' wrapper). We always emit the
-                // wrapper to match the files the toolchain produces; the encoding ivar
-                // mirrors `s.encoding`.
-                //
-                // NOTE: This intentionally always wraps. Faithfully reproducing a mix of
-                // bare (Ruby 1.8) and wrapped (1.9+) strings would require the reader to
-                // record whether each string was wrapped; today the reader collapses that
-                // distinction into `encoding: Option`, so round-tripping to "always
-                // wrapped" is the behavior the rest of the app already depends on.
+                // Ruby Marshal distinguishes a bare binary string (\"...\"), used by
+                // classic RMXP, from an I-wrapped string with an encoding ivar.
+                // Never turn a bare string into E=false: Ruby interprets E=false
+                // as US-ASCII, not ASCII-8BIT. That can corrupt arbitrary bytes.
+                if s.encoding.is_none() {
+                    self.write_byte(b'"')?;
+                    self.object_count += 1;
+                    return self.write_raw_string(&s.bytes);
+                }
+
                 self.write_byte(b'I')?;
                 self.write_byte(b'"')?;
                 self.object_count += 1;
                 self.write_raw_string(&s.bytes)?;
-                self.write_long(1)?; // exactly one ivar (the encoding marker)
-                match &s.encoding {
-                    Some(enc) if enc == "UTF-8" => {
+                self.write_long(1)?;
+                match s.encoding.as_deref() {
+                    Some("UTF-8") => {
                         self.write_symbol("E")?;
-                        self.write_byte(b'T')?; // E = true  → UTF-8
+                        self.write_byte(b'T')?;
+                    }
+                    Some("US-ASCII") => {
+                        self.write_symbol("E")?;
+                        self.write_byte(b'F')?;
                     }
                     Some(enc) => {
                         self.write_symbol("encoding")?;
-                        // Encoding name written as a bare (unwrapped) string.
                         self.write_byte(b'"')?;
                         self.write_raw_string(enc.as_bytes())?;
                     }
-                    None => {
-                        self.write_symbol("E")?;
-                        self.write_byte(b'F')?; // E = false → ASCII-8BIT
-                    }
+                    None => unreachable!("bare strings returned above"),
                 }
                 Ok(())
             }
@@ -306,6 +306,13 @@ pub fn dump(value: &RubyValue) -> Result<Vec<u8>, MarshalWriteError> {
 /// Windows retains legacy replacement behaviour pending a separate Win32 test.
 pub fn dump_file(path: &std::path::Path, value: &RubyValue) -> Result<(), MarshalWriteError> {
     let bytes = dump(value)?;
+    write_bytes_file_atomic(path, &bytes)
+}
+
+/// Commit already-encoded Marshal bytes with the same atomic staging guarantees
+/// as `dump_file`. Used for surgical Table updates that must not re-encode
+/// unrelated Ruby objects or alter Marshal object-link identity.
+pub fn write_bytes_file_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), MarshalWriteError> {
     #[cfg(windows)]
     {
         std::fs::write(path, &bytes)?;

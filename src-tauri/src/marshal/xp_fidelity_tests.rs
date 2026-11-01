@@ -119,3 +119,32 @@ fn xp_table_binary_encoding_is_exact_for_three_layers() {
     assert_eq!(decoded.data, table.data);
     assert_eq!(decoded.to_bytes(), bytes);
 }
+
+#[test]
+fn real_rmxp_bare_binary_strings_and_explicit_us_ascii_roundtrip_byte_exactly() {
+    // Independent Ruby Marshal 4.8 reference bytes. Ruby 3.3 emits a bare
+    // binary string for ASCII-8BIT, but E=false for explicit US-ASCII.
+    // Conflating these changes the encoding of arbitrary RMXP payloads.
+    let bare = b"\x04\x08\"\x0ahello";
+    let non_utf8_binary = b"\x04\x08\"\x06\xff";
+    let explicit_us_ascii = b"\x04\x08I\"\x0ahello\x06:\x06EF";
+    for fixture in [
+        bare.as_slice(),
+        non_utf8_binary.as_slice(),
+        explicit_us_ascii.as_slice(),
+    ] {
+        let value = load(fixture).expect("decode Ruby Marshal reference");
+        let output = dump(&value).expect("re-encode without changing encoding");
+        assert_eq!(output, fixture, "Marshal string wrapper/encoding changed");
+    }
+    assert_eq!(
+        load(bare).unwrap(),
+        RubyValue::String(RubyString::new(b"hello".to_vec()))
+    );
+    assert_eq!(
+        load(explicit_us_ascii).unwrap(),
+        RubyValue::String(RubyString::with_encoding(
+            b"hello".to_vec(), "US-ASCII".to_string()
+        ))
+    );
+}

@@ -336,7 +336,9 @@ def wait_for_editor(evidence: Path, seconds: int) -> bool:
             reject_editor_anr(nodes)
             if editor_visible(nodes):
                 return True
-            if any("Project ZIP import failed" in n.get("text", "") for n in nodes):
+            if any("Project ZIP import failed" in n.get("text", "")
+                   or "No project ZIP was returned" in n.get("text", "")
+                   for n in nodes):
                 return False
         except (ET.ParseError, RuntimeError, subprocess.CalledProcessError):
             pass
@@ -657,6 +659,11 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             # rejects the ZIP; never count a live WebView as successful import.
             nodes = dump_ui(evidence, "import-attempt-final")
             visible = [n.get("text", "") for n in nodes if n.get("text")]
+            if any("No project ZIP was returned" in text for text in visible):
+                # DocumentsUI reported a selection but the app-side picker
+                # callback yielded none: a native-bridge defect, not a
+                # harness tap or a Rust ZIP-import rejection.
+                raise AssertionError("Android picker returned no document to the editor: " + repr(visible[-16:]))
             raise AssertionError("Project did not open after DocumentsUI selection: " + repr(visible[-16:]))
         nodes = dump_ui(evidence, "imported-final")
         if not editor_visible(nodes):

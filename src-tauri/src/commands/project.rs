@@ -396,6 +396,20 @@ pub async fn save_event(
                                 event.id, map_id
                             ));
                         }
+                        // An unchanged typed event must not reserialize its entire RMXP
+                        // map. Doing so can alter opaque fields, Ruby object links and
+                        // binary strings even when the editor made no visible change.
+                        // Ambiguous IDs and mismatched payload IDs were rejected above.
+                        if let Some(existing_typed) = RpgEvent::from_ruby_value(original) {
+                            if let (Ok(before), Ok(after)) = (
+                                serde_json::to_value(&existing_typed),
+                                serde_json::to_value(&event),
+                            ) {
+                                if before == after {
+                                    return Ok(());
+                                }
+                            }
+                        }
                         // Finish validation and merging before mutating the hash.
                         let merged = super::event_merge::preserve_unedited_event_fields(
                             original, &event.to_ruby_value()
@@ -453,6 +467,40 @@ mod event_save_integrity_tests {
             ])),
             ("extension_marker", RubyValue::Integer(extension)),
         ])
+    }
+
+    #[tokio::test]
+    async fn unchanged_event_save_keeps_original_map_bytes_and_opaque_fields() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-event-noop-{}-{nonce}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+        let event = object("RPG::Event", vec![
+            ("id", RubyValue::Integer(1)),
+            ("name", RubyValue::String(RubyString::new(b"Original".to_vec()))),
+            ("x", RubyValue::Integer(0)),
+            ("y", RubyValue::Integer(0)),
+            ("pages", RubyValue::Array(vec![])),
+            ("unknown_binary", RubyValue::String(RubyString::new(vec![0xff, 0x00, 0x80]))),
+        ]);
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map object") };
+        obj.instance_vars.iter_mut()
+            .find(|(name, _)| name == "@events").unwrap().1 =
+                RubyValue::Hash(vec![(RubyValue::Integer(1), event.clone())]);
+        let original = marshal::dump(&map).unwrap();
+        std::fs::write(&map_file, &original).unwrap();
+
+        let unchanged = RpgEvent::from_ruby_value(&event).unwrap();
+        save_event(root.to_string_lossy().into_owned(), 1, unchanged)
+            .await.unwrap();
+        assert_eq!(std::fs::read(&map_file).unwrap(), original,
+            "No-op event save must preserve the original Marshal stream");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -834,17 +882,158 @@ pub async fn save_map(
     if !map_file.exists() {
         return Err(format!("Map file not found: Map{:03}.rxdata", map_id));
     }
-    let mut value = marshal::load_file(&map_file)
+    let original_bytes = std::fs::read(&map_file)
         .map_err(|e| format!("Failed to read map: {e}"))?;
+    let mut value = marshal::load(&original_bytes)
+        .map_err(|e| format!("Failed to decode map: {e}"))?;
+    // A no-op Save All must not touch the source Marshal stream.
+    if let Some(existing) = RpgMap::from_ruby_value(&value) {
+        if existing.width == width
+            && existing.height == height
+            && existing.data.data == tiles
+        {
+            return Ok(());
+        }
+    }
+
+    // Re-encoding the whole map would discard Ruby object-link identity and
+    // unknown Marshal wrappers. Patch only the exact original Table payload.
+    // Reject missing/ambiguous occurrences rather than silently corrupt data.
+    let before_table = map_table_payload(&value)?.to_vec();
     replace_map_tile_data(&mut value, &tiles, width, height)?;
-    marshal::dump_file(&map_file, &value)
+    let after_table = map_table_payload(&value)?;
+    if before_table.len() != after_table.len() || before_table.len() < 20 {
+        return Err("Map Table payload changed length unexpectedly".into());
+    }
+    let mut matches = original_bytes.windows(before_table.len())
+        .enumerate().filter_map(|(offset, candidate)| {
+            if candidate == before_table.as_slice() { Some(offset) } else { None }
+        });
+    let offset = matches.next().ok_or(
+        "Original map Table payload not found in Marshal stream; save refused"
+    )?;
+    if matches.next().is_some() {
+        return Err("Map Table payload is ambiguous in Marshal stream; save refused".into());
+    }
+    let mut patched = original_bytes.clone();
+    patched[offset..offset + after_table.len()].copy_from_slice(after_table);
+    let decoded = marshal::load(&patched)
+        .map_err(|e| format!("Patched map failed Marshal decode: {e}"))?;
+    if decoded != value {
+        return Err("Patched map differs from requested tile edit; original retained".into());
+    }
+    marshal::writer::write_bytes_file_atomic(&map_file, &patched)
         .map_err(|e| format!("Failed to save map: {e}"))?;
     Ok(())
+}
+
+/// Borrow the opaque XP Table bytes without rebuilding the surrounding map.
+fn map_table_payload(value: &marshal::types::RubyValue) -> Result<&[u8], String> {
+    let marshal::types::RubyValue::Object(obj) = value else {
+        return Err("Map is not an RPG::Map object".into());
+    };
+    if obj.class_name != "RPG::Map" {
+        return Err("Unexpected Ruby map class".into());
+    }
+    let Some(marshal::types::RubyValue::UserDefined { class_name, data }) = obj.get("data") else {
+        return Err("Map has no native XP Table".into());
+    };
+    if class_name != "Table" {
+        return Err("Map data is not an XP Table".into());
+    }
+    Ok(data.as_slice())
 }
 
 #[cfg(test)]
 mod map_tile_fidelity_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn changed_tile_save_preserves_every_marshal_byte_outside_table_payload() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-table-patch-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+        let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+        obj.instance_vars.push((
+            "@opaque_binary".into(),
+            marshal::types::RubyValue::String(
+                marshal::types::RubyString::new(vec![0xff, 0, 0x80])
+            ),
+        ));
+        let before = marshal::dump(&raw).unwrap();
+        std::fs::write(&map_file, &before).unwrap();
+        let mut requested = vec![0i16; 12];
+        requested[0] = 384;
+        requested[11] = 1024;
+        save_map(root.to_string_lossy().into_owned(), 1,
+                 requested.clone(), 2, 2).await.unwrap();
+        let actual = std::fs::read(&map_file).unwrap();
+        let mut expected_value = raw.clone();
+        replace_map_tile_data(&mut expected_value, &requested, 2, 2).unwrap();
+        assert_eq!(marshal::load(&actual).unwrap(), expected_value);
+        let old_table = map_table_payload(&raw).unwrap();
+        let new_table = map_table_payload(&expected_value).unwrap();
+        let offset = before.windows(old_table.len())
+            .position(|part| part == old_table).unwrap();
+        let mut expected_bytes = before.clone();
+        expected_bytes[offset..offset + new_table.len()].copy_from_slice(new_table);
+        assert_eq!(actual, expected_bytes,
+            "Changed tiles must not reserialize any other Marshal bytes");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn ambiguous_table_payload_fails_closed_without_touching_map() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-ambiguous-table-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+        let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let duplicate = map_table_payload(&raw).unwrap().to_vec();
+        let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+        obj.instance_vars.push((
+            "@opaque_duplicate".into(),
+            marshal::types::RubyValue::String(
+                marshal::types::RubyString::new(duplicate)
+            ),
+        ));
+        let before = marshal::dump(&raw).unwrap();
+        std::fs::write(&map_file, &before).unwrap();
+        let mut changed = vec![0i16; 12];
+        changed[0] = 384;
+        let err = save_map(root.to_string_lossy().into_owned(), 1,
+                           changed, 2, 2).await.unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn save_all_with_unchanged_tiles_keeps_original_marshal_bytes() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-noop-map-{}-{nonce}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+        let map = RpgMap::new_blank(2, 2, 1);
+        let bytes = marshal::dump(&map.to_ruby_value()).unwrap();
+        std::fs::write(&map_file, &bytes).unwrap();
+        save_map(root.to_string_lossy().into_owned(), 1,
+                 map.data.data.clone(), 2, 2).await.unwrap();
+        assert_eq!(std::fs::read(&map_file).unwrap(), bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn targeted_layer_edit_preserves_custom_map_fields_and_table_extension_bytes() {
