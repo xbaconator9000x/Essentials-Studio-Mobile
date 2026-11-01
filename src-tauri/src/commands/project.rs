@@ -857,6 +857,25 @@ pub async fn save_map(
 mod map_tile_fidelity_tests {
     use super::*;
 
+    #[tokio::test]
+    async fn save_all_with_unchanged_tiles_keeps_original_marshal_bytes() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-noop-map-{}-{nonce}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+        let map = RpgMap::new_blank(2, 2, 1);
+        let bytes = marshal::dump(&map.to_ruby_value()).unwrap();
+        std::fs::write(&map_file, &bytes).unwrap();
+        save_map(root.to_string_lossy().into_owned(), 1,
+                 map.data.data.clone(), 2, 2).await.unwrap();
+        assert_eq!(std::fs::read(&map_file).unwrap(), bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn targeted_layer_edit_preserves_custom_map_fields_and_table_extension_bytes() {
         let mut original = RpgMap::new_blank(2, 2, 1).to_ruby_value();
