@@ -199,7 +199,15 @@ def select_exported_zip(evidence: Path, filename: str) -> bool:
     list_action = picker.picker_list_view_control(nodes)
     if list_action is not None:
         picker.tap(list_action)
-        time.sleep(2)
+        for switch_attempt in range(5):
+            time.sleep(1)
+            nodes, xml = reimport_picker_snapshot(
+                evidence, f"reimport-list-switch-{switch_attempt}"
+            )
+            if picker.picker_list_view_control(nodes) is None:
+                break
+        else:
+            raise AssertionError("DocumentsUI did not switch to list view")
     for attempt in range(5):
         nodes, xml = reimport_picker_snapshot(evidence, f"reimport-file-{attempt}")
         if current_picker_location(xml).casefold() not in {"download", "downloads"}:
@@ -299,6 +307,19 @@ def selftest() -> None:
            'text="Download" /></hierarchy>')
     assert current_picker_location(xml) == "Download"
     assert current_picker_location('<hierarchy/>') == ""
+    # A neighbouring original ZIP must never be selected instead of the SAF
+    # export. In list mode picker_file_card returns the exact matching row.
+    list_xml = ('<?xml version="1.0"?><hierarchy>'
+                '<node resource-id="com.google.android.documentsui:id/item_root" '
+                'class="android.widget.LinearLayout" bounds="[10,100][500,200]">'
+                '<node resource-id="android:id/title" text="EssentialsSynthetic.zip" '
+                'bounds="[50,110][320,150]" /></node>'
+                '<node resource-id="com.google.android.documentsui:id/item_root" '
+                'class="android.widget.LinearLayout" bounds="[10,210][500,310]">'
+                '<node resource-id="android:id/title" text="Synthetic_RMXP.zip" '
+                'bounds="[50,220][320,260]" /></node></hierarchy>')
+    assert picker.picker_file_card(list_xml, "Synthetic_RMXP.zip") == (255, 260)
+    assert picker.picker_file_card(list_xml, "not-present.zip") is None
     assert expected_member_paths("./projects/import-1", {
         "Game.rxproj": b"", "Data/Map001.rxdata": b"",
         "PBS/pokemon.txt": b"", "Graphics/Empty": b"",
