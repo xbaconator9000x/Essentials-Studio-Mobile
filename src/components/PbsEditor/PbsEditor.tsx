@@ -76,10 +76,11 @@ export function PbsEditor({ projectPath, onClose }: Props) {
 
   // Confirm before discarding unsaved edits, then discard and close.
   const requestClose = useCallback(() => {
+    if (saving) return; // Do not unmount editors during native PBS writes.
     if (hasDirty && !window.confirm("You have unsaved PBS changes. Discard them and close?")) return;
     discardAll("pbs-");
     onClose();
-  }, [hasDirty, discardAll, onClose]);
+  }, [saving, hasDirty, discardAll, onClose]);
 
   return (
     <PbsContext.Provider value={{ pbsIndex, projectPath }}>
@@ -87,7 +88,7 @@ export function PbsEditor({ projectPath, onClose }: Props) {
         {/* Header */}
         <div className="pbs-header">
           <span className="pbs-title">PBS Data Editor</span>
-          <button className="pbs-close-btn" onClick={requestClose}>×</button>
+          <button className="pbs-close-btn" onClick={requestClose} disabled={saving}>×</button>
         </div>
 
         {/* Tab bar */}
@@ -135,6 +136,7 @@ export function PbsEditor({ projectPath, onClose }: Props) {
           <button
             className="pbs-btn"
             onClick={requestClose}
+            disabled={saving}
           >
             Cancel
           </button>
