@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { listPbsFiles } from "../../services/tauriApi";
 import { buildPbsIndex } from "../../services/pbsIndex";
 import { useProjectSave } from "../../context/ProjectSaveContext";
+import { hasPendingPbsWrite } from "../../services/pbsSaveGuards";
 import { PbsContext } from "./PbsContext";
 import { PbsFileTab } from "./PbsFileTab";
 import type { PbsIndex } from "../../services/pbsIndex";
@@ -63,6 +64,7 @@ export function PbsEditor({ projectPath, onClose }: Props) {
   }, [projectPath]);
 
   const handleApply = useCallback(async (): Promise<boolean> => {
+    if (hasPendingPbsWrite()) return false;
     setSaving(true);
     try {
       await saveAll("pbs-");
@@ -76,10 +78,14 @@ export function PbsEditor({ projectPath, onClose }: Props) {
 
   // Confirm before discarding unsaved edits, then discard and close.
   const requestClose = useCallback(() => {
+    if (saving || hasPendingPbsWrite()) {
+      window.alert("Wait for the PBS save to finish before closing.");
+      return;
+    }
     if (hasDirty && !window.confirm("You have unsaved PBS changes. Discard them and close?")) return;
     discardAll("pbs-");
     onClose();
-  }, [hasDirty, discardAll, onClose]);
+  }, [saving, hasDirty, discardAll, onClose]);
 
   return (
     <PbsContext.Provider value={{ pbsIndex, projectPath }}>
@@ -87,7 +93,7 @@ export function PbsEditor({ projectPath, onClose }: Props) {
         {/* Header */}
         <div className="pbs-header">
           <span className="pbs-title">PBS Data Editor</span>
-          <button className="pbs-close-btn" onClick={requestClose}>×</button>
+          <button className="pbs-close-btn" onClick={requestClose} disabled={saving}>×</button>
         </div>
 
         {/* Tab bar */}
@@ -135,6 +141,7 @@ export function PbsEditor({ projectPath, onClose }: Props) {
           <button
             className="pbs-btn"
             onClick={requestClose}
+            disabled={saving}
           >
             Cancel
           </button>

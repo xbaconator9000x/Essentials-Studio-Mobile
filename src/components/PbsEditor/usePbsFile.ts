@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { PbsSection } from "../../types/pbsTypes";
 import { loadPbsFile, savePbsFile } from "../../services/tauriApi";
 import { useEditorRegistration } from "../../context/ProjectSaveContext";
+import { savePbsSnapshot, snapshotPbsSections } from "../../services/pbsSaveGuards";
 
 export interface UsePbsFileResult {
   sections: PbsSection[];
@@ -36,13 +37,20 @@ export function usePbsFile(
 
   const snapshotRef = useRef<PbsSection[]>([]);
   const sectionsRef = useRef<PbsSection[]>([]);
-  const filenameRef = useRef(filename);
-  filenameRef.current = filename;
+  const revisionRef = useRef(0);
+  const identityRef = useRef("");
+  const savingRef = useRef<Promise<void> | null>(null);
+  identityRef.current = `${projectPath}\0${filename}`;
   sectionsRef.current = sections;
 
   // Load on mount / filename change
   useEffect(() => {
     let cancelled = false;
+    // A stale save from the previous project/file must not clean this one.
+    revisionRef.current += 1;
+    snapshotRef.current = [];
+    sectionsRef.current = [];
+    setSections([]);
     setLoading(true);
     setError(null);
     setSelectedHeader(null);
@@ -51,8 +59,10 @@ export function usePbsFile(
     loadPbsFile(projectPath, filename)
       .then((data) => {
         if (cancelled) return;
+        revisionRef.current += 1;
+        sectionsRef.current = data;
         setSections(data);
-        snapshotRef.current = data;
+        snapshotRef.current = snapshotPbsSections(data);
         if (data.length > 0) setSelectedHeader(data[0].header);
       })
       .catch((err) => {
@@ -74,6 +84,7 @@ export function usePbsFile(
   }, []);
 
   const updateField = useCallback((key: string, value: string) => {
+    revisionRef.current += 1;
     setSections((prev) => {
       if (selectedHeader === null) return prev;
       return prev.map((s) => {
@@ -89,6 +100,7 @@ export function usePbsFile(
   }, [selectedHeader]);
 
   const addField = useCallback((key: string) => {
+    revisionRef.current += 1;
     setSections((prev) => {
       if (selectedHeader === null) return prev;
       return prev.map((s) => {
@@ -101,6 +113,7 @@ export function usePbsFile(
   }, [selectedHeader]);
 
   const deleteField = useCallback((key: string) => {
+    revisionRef.current += 1;
     setSections((prev) => {
       if (selectedHeader === null) return prev;
       return prev.map((s) => {
@@ -112,6 +125,7 @@ export function usePbsFile(
   }, [selectedHeader]);
 
   const addSection = useCallback((header: string) => {
+    revisionRef.current += 1;
     setSections((prev) => {
       if (prev.some((s) => s.header === header)) return prev; // no duplicates
       const newSection: PbsSection = { header, fields: [{ key: "Name", value: header }] };
@@ -122,6 +136,7 @@ export function usePbsFile(
   }, []);
 
   const deleteSection = useCallback((header: string) => {
+    revisionRef.current += 1;
     setSections((prev) => {
       const filtered = prev.filter((s) => s.header !== header);
       return filtered;
@@ -135,20 +150,51 @@ export function usePbsFile(
   }, []);
 
   const save = useCallback(async () => {
-    try {
+    if (savingRef.current) {
+      throw new Error("PBS save already in progress");
+    }
+    const identity = identityRef.current;
+    const revision = revisionRef.current;
+    const payload = snapshotPbsSections(sectionsRef.current);
+    const operation = (async () => {
       setLoading(true);
       setError(null);
-      await savePbsFile(projectPath, filenameRef.current, sectionsRef.current);
-      snapshotRef.current = sectionsRef.current;
-      setDirty(false);
-    } catch (err) {
-      setError(`Save failed: ${err}`);
+      try {
+        await savePbsSnapshot(
+          payload,
+          (snapshot) => savePbsFile(projectPath, filename, snapshot),
+          () => {
+            if (identityRef.current === identity) snapshotRef.current = payload;
+          },
+          () => setDirty(false),
+          () => identityRef.current === identity && revisionRef.current === revision,
+        );
+      } catch (err) {
+        if (identityRef.current === identity) setError(`Save failed: ${err}`);
+        // ProjectSaveContext.saveAll must see the rejection; otherwise OK
+        // closes the editor and the SAF export can omit the user's changes.
+        throw err;
+      } finally {
+        if (identityRef.current === identity) setLoading(false);
+      }
+    })();
+    savingRef.current = operation;
+    try {
+      await operation;
     } finally {
-      setLoading(false);
+      if (savingRef.current === operation) savingRef.current = null;
     }
-  }, [projectPath]);
+  }, [projectPath, filename]);
 
   const cancel = useCallback(() => {
+    // Discarding while the native writer is active would display an older
+    // baseline as clean even though the writer may still replace disk bytes.
+    if (savingRef.current) {
+      setError("Wait for the PBS save to finish before discarding changes");
+      return;
+    }
+    revisionRef.current += 1;
+    sectionsRef.current = snapshotRef.current;
     setSections(snapshotRef.current);
     setDirty(false);
   }, []);

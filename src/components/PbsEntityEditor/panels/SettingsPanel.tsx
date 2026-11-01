@@ -3,6 +3,7 @@ import { loadMetadata } from "../../../services/pbsUnified";
 import { saveMetadata } from "../../../services/pbsDistributor";
 import { usePbsEntityContext } from "../PbsEntityContext";
 import { useEditorRegistration } from "../../../context/ProjectSaveContext";
+import { savePbsSnapshot } from "../../../services/pbsSaveGuards";
 import type { MetadataEntry, PlayerChar } from "../../../types/pbsEntityTypes";
 import { ChipListEditor } from "../shared/ChipListEditor";
 import { previewAudioSafe } from "../../../services/tauriApi";
@@ -159,15 +160,29 @@ export function SettingsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef<MetadataEntry | null>(null);
+  const metaRef = useRef<MetadataEntry | null>(null);
+  const revisionRef = useRef(0);
+  const savingRef = useRef<Promise<void> | null>(null);
+  const identityRef = useRef(projectPath);
+  identityRef.current = projectPath;
+  metaRef.current = meta;
 
   useEffect(() => {
     let cancelled = false;
+    revisionRef.current += 1;
+    metaRef.current = null;
+    snapshotRef.current = null;
+    setMeta(null);
+    setDirty(false);
+    setError(null);
     setLoading(true);
     loadMetadata(projectPath)
       .then((data) => {
         if (cancelled) return;
+        revisionRef.current += 1;
+        metaRef.current = data;
         setMeta(data);
-        snapshotRef.current = data;
+        snapshotRef.current = structuredClone(data);
         setDirty(false);
       })
       .catch((err) => { if (!cancelled) setError(String(err)); })
@@ -176,26 +191,59 @@ export function SettingsPanel() {
   }, [projectPath]);
 
   const update = (patch: Partial<MetadataEntry>) => {
+    revisionRef.current += 1;
     setMeta((prev) => prev ? { ...prev, ...patch } : prev);
     setDirty(true);
   };
 
   const doSave = useCallback(async () => {
-    if (!meta) return;
-    try {
-      setLoading(true);
-      await saveMetadata(projectPath, meta);
-      snapshotRef.current = meta;
-      setDirty(false);
-    } catch (err) {
-      setError(`Save failed: ${err}`);
-    } finally {
-      setLoading(false);
+    if (!metaRef.current) {
+      const msg = "Cannot save settings: metadata has not loaded successfully";
+      setError(msg);
+      throw new Error(msg);
     }
-  }, [projectPath, meta]);
+    if (savingRef.current) throw new Error("PBS settings save already in progress");
+
+    const payload = structuredClone(metaRef.current);
+    const revision = revisionRef.current;
+    const identity = identityRef.current;
+    const operation = (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await savePbsSnapshot(
+          payload,
+          (snapshot) => saveMetadata(projectPath, snapshot),
+          () => {
+            if (identityRef.current === identity) snapshotRef.current = payload;
+          },
+          () => setDirty(false),
+          () => identityRef.current === identity && revisionRef.current === revision,
+        );
+      } catch (err) {
+        if (identityRef.current === identity) setError(`Save failed: ${err}`);
+        throw err; // The active Settings panel must propagate failures to Save All.
+      } finally {
+        if (identityRef.current === identity) setLoading(false);
+      }
+    })();
+    savingRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      if (savingRef.current === operation) savingRef.current = null;
+    }
+  }, [projectPath]);
 
   const doCancel = useCallback(() => {
-    if (snapshotRef.current) { setMeta(snapshotRef.current); setDirty(false); }
+    if (savingRef.current) {
+      setError("Wait for the PBS settings save to finish before discarding changes");
+      return;
+    }
+    revisionRef.current += 1;
+    metaRef.current = snapshotRef.current;
+    setMeta(snapshotRef.current);
+    setDirty(false);
   }, []);
 
   useEditorRegistration("pbs-settings", doSave, doCancel, dirty);

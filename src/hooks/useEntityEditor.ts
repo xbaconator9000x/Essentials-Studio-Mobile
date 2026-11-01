@@ -5,6 +5,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useEditorRegistration } from "../context/ProjectSaveContext";
+import { savePbsSnapshot, snapshotPbsEntities } from "../services/pbsSaveGuards";
 
 export interface UseEntityEditorResult<T> {
   items: T[];
@@ -41,6 +42,12 @@ export function useEntityEditor<T>(
 
   const snapshotRef = useRef<T[]>([]);
   const itemsRef = useRef<T[]>([]);
+  const revisionRef = useRef(0);
+  const savingRef = useRef<Promise<void> | null>(null);
+  const loadRef = useRef(load);
+  const saveRef = useRef(save);
+  loadRef.current = load;
+  saveRef.current = save;
   itemsRef.current = items;
   // True only after a successful load. Guards doSave so a failed load can never
   // persist an empty array over the real file.
@@ -49,6 +56,10 @@ export function useEntityEditor<T>(
   // Load on mount
   useEffect(() => {
     let cancelled = false;
+    revisionRef.current += 1;
+    itemsRef.current = [];
+    snapshotRef.current = [];
+    setItems([]);
     setLoading(true);
     setError(null);
     setSelectedId(null);
@@ -58,8 +69,10 @@ export function useEntityEditor<T>(
     load()
       .then((data) => {
         if (cancelled) return;
+        revisionRef.current += 1;
+        itemsRef.current = data;
         setItems(data);
-        snapshotRef.current = data;
+        snapshotRef.current = snapshotPbsEntities(data);
         loadedRef.current = true;
         if (data.length > 0) setSelectedId(getId(data[0]));
       })
@@ -71,9 +84,9 @@ export function useEntityEditor<T>(
       });
 
     return () => { cancelled = true; };
-    // load/getId/save are stable references passed from the component
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registrationId]);
+    // The same panel can be reused for a different imported project.
+    // Reload when its project-scoped loader changes.
+  }, [registrationId, load, getId]);
 
   const selected = useMemo(
     () => selectedId !== null
@@ -87,6 +100,7 @@ export function useEntityEditor<T>(
   }, []);
 
   const update = useCallback((id: string, patch: Partial<T>) => {
+    revisionRef.current += 1;
     // If the patch renames the entity's key, the selection (which tracks the old
     // id) would otherwise point at nothing and the detail panel would vanish.
     const current = itemsRef.current.find((item) => getId(item) === id);
@@ -101,12 +115,14 @@ export function useEntityEditor<T>(
   }, [getId]);
 
   const add = useCallback((item: T) => {
+    revisionRef.current += 1;
     setItems((prev) => [...prev, item]);
     setSelectedId(getId(item));
     setDirty(true);
   }, [getId]);
 
   const remove = useCallback((id: string) => {
+    revisionRef.current += 1;
     setItems((prev) => {
       const filtered = prev.filter((item) => getId(item) !== id);
       return filtered;
@@ -125,21 +141,55 @@ export function useEntityEditor<T>(
       setError(msg);
       throw new Error(msg);
     }
-    try {
+    if (savingRef.current) {
+      throw new Error("PBS entity save already in progress");
+    }
+
+    // These panels are the actual PBS UI used by App.tsx. A shallow array
+    // copy is insufficient: Pokémon entries contain nested forms/moves/stats.
+    const payload = snapshotPbsEntities(itemsRef.current);
+    const revision = revisionRef.current;
+    const expectedLoad = loadRef.current;
+    const expectedSave = saveRef.current;
+    const isSameDocument = () =>
+      loadRef.current === expectedLoad && saveRef.current === expectedSave;
+
+    const operation = (async () => {
       setLoading(true);
       setError(null);
-      await save(itemsRef.current);
-      snapshotRef.current = itemsRef.current;
-      setDirty(false);
-    } catch (err) {
-      setError(`Save failed: ${err}`);
-      throw err;
+      try {
+        await savePbsSnapshot(
+          payload,
+          (snapshot) => expectedSave(snapshot),
+          () => {
+            if (isSameDocument()) snapshotRef.current = payload;
+          },
+          () => setDirty(false),
+          () => isSameDocument() && revisionRef.current === revision,
+        );
+      } catch (err) {
+        if (isSameDocument()) setError(`Save failed: ${err}`);
+        throw err; // Keep Save All/OK from closing after a failed native write.
+      } finally {
+        if (isSameDocument()) setLoading(false);
+      }
+    })();
+
+    savingRef.current = operation;
+    try {
+      await operation;
     } finally {
-      setLoading(false);
+      if (savingRef.current === operation) savingRef.current = null;
     }
-  }, [save]);
+  }, []);
 
   const doCancel = useCallback(() => {
+    if (savingRef.current) {
+      setError("Wait for the PBS save to finish before discarding changes");
+      return;
+    }
+    revisionRef.current += 1;
+    itemsRef.current = snapshotRef.current;
     setItems(snapshotRef.current);
     setDirty(false);
   }, []);

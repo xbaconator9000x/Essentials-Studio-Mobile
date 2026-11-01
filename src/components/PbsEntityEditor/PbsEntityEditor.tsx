@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { buildPbsIndex } from "../../services/pbsIndex";
 import { useProjectSave } from "../../context/ProjectSaveContext";
+import { hasPendingPbsWrite } from "../../services/pbsSaveGuards";
 import { PbsEntityContext } from "./PbsEntityContext";
 import { PokemonPanel } from "./panels/PokemonPanel";
 import { MovesPanel } from "./panels/MovesPanel";
@@ -63,6 +64,7 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
   }, [projectPath]);
 
   const handleApply = useCallback(async (): Promise<boolean> => {
+    if (hasPendingPbsWrite()) return false;
     setSaving(true);
     try {
       await saveAll("pbs-");
@@ -78,10 +80,15 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
 
   // Confirm before discarding unsaved edits, then discard and close.
   const requestClose = useCallback(() => {
+    // Global Ctrl+S can start a write without toggling this modal's saving flag.
+    if (saving || hasPendingPbsWrite()) {
+      window.alert("Wait for the PBS save to finish before closing.");
+      return;
+    }
     if (hasDirty && !window.confirm("You have unsaved PBS changes. Discard them and close?")) return;
     discardAll("pbs-");
     onClose();
-  }, [hasDirty, discardAll, onClose]);
+  }, [saving, hasDirty, discardAll, onClose]);
 
   return (
     <PbsEntityContext.Provider value={{ pbsIndex, projectPath, mapNames }}>
@@ -90,7 +97,7 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
         <div className="pbs-entity-header">
           <span className="pbs-entity-title">PBS Data Editor</span>
           {hasDirty && <span className="pbs-entity-dirty-badge">Unsaved changes</span>}
-          <button className="pbs-entity-close" onClick={requestClose}>×</button>
+          <button className="pbs-entity-close" onClick={requestClose} disabled={saving}>×</button>
         </div>
 
         <div className="pbs-entity-body">
@@ -139,6 +146,7 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
           <button
             className="pbs-btn"
             onClick={requestClose}
+            disabled={saving}
           >
             Cancel
           </button>
