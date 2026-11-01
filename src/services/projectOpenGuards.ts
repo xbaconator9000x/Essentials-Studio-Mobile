@@ -65,3 +65,25 @@ export async function inspectProjectBeforeOpen(
   return (await prepareProjectBeforeOpen(path, io)).project;
 }
 
+
+/**
+ * A project-open request may finish after a newer request (especially when
+ * loading Android private graphics). Only the latest request may activate its
+ * project or publish late PBS/tileset/system metadata.
+ */
+export class ProjectOpenCoordinator {
+  private generation = 0;
+
+  begin(): { isCurrent: () => boolean; assertCurrent: () => void } {
+    const generation = ++this.generation;
+    const isCurrent = () => this.generation === generation;
+    return {
+      isCurrent,
+      assertCurrent: () => {
+        if (!isCurrent()) {
+          throw new Error("Project open superseded by a newer request");
+        }
+      },
+    };
+  }
+}
