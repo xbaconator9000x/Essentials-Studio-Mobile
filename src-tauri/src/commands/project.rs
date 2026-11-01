@@ -949,6 +949,74 @@ mod map_tile_fidelity_tests {
     use super::*;
 
     #[tokio::test]
+    async fn changed_tile_save_preserves_every_marshal_byte_outside_table_payload() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-table-patch-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+        let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+        obj.instance_vars.push((
+            "@opaque_binary".into(),
+            marshal::types::RubyValue::String(
+                marshal::types::RubyString::new(vec![0xff, 0, 0x80])
+            ),
+        ));
+        let before = marshal::dump(&raw).unwrap();
+        std::fs::write(&map_file, &before).unwrap();
+        let mut requested = vec![0i16; 12];
+        requested[0] = 384;
+        requested[11] = 1024;
+        save_map(root.to_string_lossy().into_owned(), 1,
+                 requested.clone(), 2, 2).await.unwrap();
+        let actual = std::fs::read(&map_file).unwrap();
+        let mut expected_value = raw.clone();
+        replace_map_tile_data(&mut expected_value, &requested, 2, 2).unwrap();
+        assert_eq!(marshal::load(&actual).unwrap(), expected_value);
+        let old_table = map_table_payload(&raw).unwrap();
+        let new_table = map_table_payload(&expected_value).unwrap();
+        let offset = before.windows(old_table.len())
+            .position(|part| part == old_table).unwrap();
+        let mut expected_bytes = before.clone();
+        expected_bytes[offset..offset + new_table.len()].copy_from_slice(new_table);
+        assert_eq!(actual, expected_bytes,
+            "Changed tiles must not reserialize any other Marshal bytes");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn ambiguous_table_payload_fails_closed_without_touching_map() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-ambiguous-table-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+        let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let duplicate = map_table_payload(&raw).unwrap().to_vec();
+        let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+        obj.instance_vars.push((
+            "@opaque_duplicate".into(),
+            marshal::types::RubyValue::String(
+                marshal::types::RubyString::new(duplicate)
+            ),
+        ));
+        let before = marshal::dump(&raw).unwrap();
+        std::fs::write(&map_file, &before).unwrap();
+        let mut changed = vec![0i16; 12];
+        changed[0] = 384;
+        let err = save_map(root.to_string_lossy().into_owned(), 1,
+                           changed, 2, 2).await.unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
+        assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn save_all_with_unchanged_tiles_keeps_original_marshal_bytes() {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
