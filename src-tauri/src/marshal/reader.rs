@@ -264,9 +264,12 @@ impl<R: Read> MarshalReader<R> {
                     let val = self.read_value()?;
                     // Check for encoding marker
                     if name == "E" {
-                        // E=true means UTF-8, E=false means ASCII-8BIT
-                        if let RubyValue::True = val {
-                            encoding = Some("UTF-8".to_string());
+                        // E=true is UTF-8; E=false is US-ASCII in Ruby Marshal.
+                        // A bare string is ASCII-8BIT and must remain distinct.
+                        match val {
+                            RubyValue::True => encoding = Some("UTF-8".to_string()),
+                            RubyValue::False => encoding = Some("US-ASCII".to_string()),
+                            _ => {}
                         }
                     } else if name == "encoding" {
                         if let RubyValue::String(ref s) = val {
