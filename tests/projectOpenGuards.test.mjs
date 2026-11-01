@@ -163,3 +163,103 @@ test("newer project-open lease invalidates stale preparation and async metadata"
   publishLatePbs(newer, "latest-index");
   assert.equal(pbsIndex, "latest-index");
 });
+
+test("map selection prepares map, tileset and images before publishing anything", async () => {
+  const { prepareMapSelection } = await import("../src/services/projectOpenGuards.ts");
+  const calls = [];
+  const graphic = { width: 256, height: 512 };
+  const prepared = await prepareMapSelection("/private/game", 1, {
+    loadMap: async (path, id) => {
+      calls.push(["map", path, id]);
+      return map;
+    },
+    loadTileset: async (path, id) => {
+      calls.push(["tileset", path, id]);
+      return { id: 3, tileset_name: "Synthetic", autotile_names: ["Water"] };
+    },
+    loadImages: async (path, name, autotiles) => {
+      calls.push(["images", path, name, autotiles]);
+      return { tileset: graphic, autotiles: [graphic] };
+    },
+  });
+  assert.equal(prepared.map, map);
+  assert.equal(prepared.images.tileset, graphic);
+  assert.deepEqual(calls, [
+    ["map", "/private/game", 1],
+    ["tileset", "/private/game", 3],
+    ["images", "/private/game", "Synthetic", ["Water"]],
+  ]);
+});
+
+test("bad destination map or graphics cannot replace an active dirty map", async () => {
+  const { prepareMapSelection } = await import("../src/services/projectOpenGuards.ts");
+  const oldMap = { ...map, tiles: [901, ...map.tiles.slice(1)] };
+  let active = oldMap;
+  const switchMap = async (overrides) => {
+    const next = await prepareMapSelection("/private/game", 2, {
+      loadMap: async () => ({ ...map, id: 2 }),
+      loadTileset: async () => ({ id: 3, tileset_name: "Synthetic", autotile_names: [] }),
+      loadImages: async () => ({ tileset: { width: 256 }, autotiles: [] }),
+      ...overrides,
+    });
+    active = next.map;
+  };
+  await assert.rejects(switchMap({
+    loadMap: async () => ({ ...map, id: 2, tiles: Array(8).fill(384) }),
+  }), /three-layer/);
+  assert.equal(active, oldMap);
+  await assert.rejects(switchMap({
+    loadTileset: async () => ({ id: 4, tileset_name: "Wrong", autotile_names: [] }),
+  }), /mismatched tileset/);
+  assert.equal(active, oldMap);
+  await assert.rejects(switchMap({
+    loadImages: async () => { throw new Error("Android image read failed"); },
+  }), /Android image read failed/);
+  assert.equal(active, oldMap);
+  await assert.rejects(switchMap({
+    loadImages: async () => ({ tileset: null, autotiles: [] }),
+  }), /required tileset graphic/);
+  assert.equal(active, oldMap);
+});
+
+test("stale map loads cannot publish after a newer selection or project switch", async () => {
+  const { prepareMapSelection, ProjectOpenCoordinator } = await import("../src/services/projectOpenGuards.ts");
+  const coordinator = new ProjectOpenCoordinator();
+  let resolveImages;
+  let active = "previous";
+  const olderLease = coordinator.begin();
+  const older = prepareMapSelection("/private/old", 1, {
+    loadMap: async () => map,
+    loadTileset: async () => ({ id: 3, tileset_name: "Old", autotile_names: [] }),
+    loadImages: () => new Promise(resolve => { resolveImages = resolve; }),
+  }).then(result => { if (olderLease.isCurrent()) active = result.map.id; });
+  // Wait for the old request to reach the image promise before switching.
+  for (let i = 0; i < 10 && !resolveImages; i++) await Promise.resolve();
+  assert.equal(typeof resolveImages, "function");
+  const newerLease = coordinator.begin();
+  active = "new-project";
+  resolveImages({ tileset: { width: 256 }, autotiles: [] });
+  await older;
+  assert.equal(active, "new-project");
+  assert.equal(olderLease.isCurrent(), false);
+  assert.equal(newerLease.isCurrent(), true);
+});
+
+test("same-map event refresh preserves unsaved painted tiles and loads new events", async () => {
+  const { preserveUnsavedMapTiles } = await import("../src/services/projectOpenGuards.ts");
+  const painted = { ...map, tiles: [650, ...map.tiles.slice(1)], events: [{ id: 1, name: "Before" }] };
+  const reloaded = { ...map, tiles: [...map.tiles], events: [{ id: 1, name: "After" }] };
+  const result = preserveUnsavedMapTiles(reloaded, painted, true);
+  assert.notEqual(result, reloaded);
+  assert.equal(result.tiles[0], 650);
+  assert.deepEqual(result.events, reloaded.events);
+  assert.equal(reloaded.tiles[0], 384);
+  assert.equal(preserveUnsavedMapTiles(reloaded, painted, false), reloaded);
+});
+
+test("resized same-map refresh fails closed instead of misplacing unsaved tiles", async () => {
+  const { preserveUnsavedMapTiles } = await import("../src/services/projectOpenGuards.ts");
+  const painted = { ...map, tiles: [650, ...map.tiles.slice(1)] };
+  assert.throws(() => preserveUnsavedMapTiles({ ...map, width: 3 }, painted, true), /Cannot reload resized map/);
+  assert.throws(() => preserveUnsavedMapTiles(map, null, true), /Cannot reload resized map/);
+});
