@@ -836,6 +836,17 @@ pub async fn save_map(
     }
     let mut value = marshal::load_file(&map_file)
         .map_err(|e| format!("Failed to read map: {e}"))?;
+    // Save All may submit a map whose tiles have not changed. Do not rewrite
+    // its Marshal stream: original object links, binary string encodings and
+    // unknown metadata must remain byte-for-byte untouched on a no-op save.
+    if let Some(existing) = RpgMap::from_ruby_value(&value) {
+        if existing.width == width
+            && existing.height == height
+            && existing.data.data == tiles
+        {
+            return Ok(());
+        }
+    }
     replace_map_tile_data(&mut value, &tiles, width, height)?;
     marshal::dump_file(&map_file, &value)
         .map_err(|e| format!("Failed to save map: {e}"))?;
