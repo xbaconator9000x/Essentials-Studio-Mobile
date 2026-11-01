@@ -28,7 +28,7 @@ import {
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
-import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, ProjectOpenCoordinator } from "./services/projectOpenGuards";
+import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -201,6 +201,9 @@ function AppContent() {
       const initialImages = initialMap && initialTileset
         ? await loadAllTilesetImages(proj.path, initialTileset.tileset_name, initialTileset.autotile_names)
         : null;
+      if (initialMap && initialTileset) {
+        assertRequiredXpGraphics(initialTileset, initialImages);
+      }
       lease.assertCurrent();
 
       // Commit the project and its first render as one logical operation.
