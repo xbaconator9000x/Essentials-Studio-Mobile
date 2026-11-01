@@ -6,7 +6,11 @@
 export async function saveThenMarkClean(
   save: () => Promise<void>,
   markClean: () => void,
+  canMarkClean: () => boolean = () => true,
 ): Promise<void> {
   await save();
+  if (!canMarkClean()) {
+    throw new Error("Map changed while saving; newer edits remain unsaved. Save again.");
+  }
   markClean();
 }

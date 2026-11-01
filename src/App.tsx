@@ -114,6 +114,9 @@ function AppContent() {
   // Refs let callbacks always read the latest values without stale closures.
   const mapDataRef = useRef<MapRenderData | null>(null);
   const mapIsDirtyRef = useRef(false);
+  // Increment for every paint operation, even while the map is already dirty.
+  // A pending Save All must not clear edits made after its disk snapshot.
+  const mapEditRevisionRef = useRef(0);
   const currentMapIdRef = useRef<number | null>(null);
   const projectRef = useRef<ProjectInfo | null>(null);
   const projectOpenCoordinator = useRef(new ProjectOpenCoordinator());
@@ -126,6 +129,7 @@ function AppContent() {
 
   /** Update map dirty flag in both state (for renders) and ref (for callbacks). */
   const updateMapDirty = useCallback((val: boolean) => {
+    if (val) mapEditRevisionRef.current += 1;
     mapIsDirtyRef.current = val;
     setMapIsDirty(val);
   }, []);
@@ -136,11 +140,18 @@ function AppContent() {
     const md = mapDataRef.current;
     const proj = projectRef.current;
     if (!proj || !md) return;
+    // The map editor mutates the tile array in place. Snapshot it before the
+    // asynchronous native write, and keep newer paints dirty until saved again.
+    const tilesSnapshot = md.tiles.slice();
+    const savedRevision = mapEditRevisionRef.current;
     setLoading(true);
     try {
       await saveThenMarkClean(
-        () => saveMap(proj.path, md.id, md.tiles, md.width, md.height),
+        () => saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height),
         () => updateMapDirty(false),
+        () => projectRef.current?.path === proj.path
+          && mapDataRef.current === md
+          && mapEditRevisionRef.current === savedRevision,
       );
     } catch (err) {
       setError(`Save failed: ${err}`);

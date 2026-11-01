@@ -22,3 +22,47 @@ test("failed disk write preserves dirty state and rejects to Save All", async ()
   );
   assert.equal(dirty, true, "failed write must never clear dirty state");
 });
+
+test("painting again during a pending save rejects and keeps the map dirty", async () => {
+  let resolveSave;
+  const pending = new Promise((resolve) => { resolveSave = resolve; });
+  let dirty = true;
+  let revision = 5;
+  const savedRevision = revision;
+  const operation = saveThenMarkClean(
+    () => pending,
+    () => { dirty = false; },
+    () => revision === savedRevision,
+  );
+  revision += 1; // A new tile paint occurred while the native write was pending.
+  resolveSave();
+  await assert.rejects(operation, /Map changed while saving/);
+  assert.equal(dirty, true, "newer tile edits must not be marked saved");
+});
+
+test("switching maps during a pending save cannot clear the new map's dirty flag", async () => {
+  let resolveSave;
+  const pending = new Promise((resolve) => { resolveSave = resolve; });
+  let dirty = true;
+  let activeMapId = 1;
+  const operation = saveThenMarkClean(
+    () => pending,
+    () => { dirty = false; },
+    () => activeMapId === 1,
+  );
+  activeMapId = 2;
+  resolveSave();
+  await assert.rejects(operation, /Map changed while saving/);
+  assert.equal(dirty, true);
+});
+
+test("unchanged map revision still clears dirty after the native write succeeds", async () => {
+  let dirty = true;
+  const revision = 7;
+  await saveThenMarkClean(
+    async () => {},
+    () => { dirty = false; },
+    () => revision === 7,
+  );
+  assert.equal(dirty, false);
+});
