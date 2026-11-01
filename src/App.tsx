@@ -28,7 +28,7 @@ import {
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean } from "./services/saveGuards";
-import { prepareProjectBeforeOpen } from "./services/projectOpenGuards";
+import { prepareProjectBeforeOpen, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -116,6 +116,7 @@ function AppContent() {
   const mapIsDirtyRef = useRef(false);
   const currentMapIdRef = useRef<number | null>(null);
   const projectRef = useRef<ProjectInfo | null>(null);
+  const projectOpenCoordinator = useRef(new ProjectOpenCoordinator());
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
   const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
@@ -166,6 +167,7 @@ function AppContent() {
   // ── Project loading ────────────────────────────────────────────────────────
 
   const handleOpenProject = useCallback(async (path: string) => {
+    const lease = projectOpenCoordinator.current.begin();
     try {
       setLoading(true);
       setError(null);
@@ -174,6 +176,7 @@ function AppContent() {
       const { project: proj, initialMap, initialTileset } = await prepareProjectBeforeOpen(path, {
         openProject, loadMap, loadTileset,
       });
+      lease.assertCurrent();
 
       // Load the first map's actual graphics BEFORE making the imported project
       // active. A broken Android asset path must reject the import instead of
@@ -183,6 +186,7 @@ function AppContent() {
       const initialImages = initialMap && initialTileset
         ? await loadAllTilesetImages(proj.path, initialTileset.tileset_name, initialTileset.autotile_names)
         : null;
+      lease.assertCurrent();
 
       // Commit the project and its first render as one logical operation.
       // No awaited operation before this point can replace the active project.
@@ -196,18 +200,31 @@ function AppContent() {
       setCurrentMapId(initialMap?.id ?? null);
       currentMapIdRef.current = initialMap?.id ?? null;
       updateMapDirty(false);
-      buildPbsIndex(proj.path).then(setPbsIndex).catch(() => {});
+      // Close project-bound editors so stale event IDs cannot write to the new project.
+      setEditingEvent(null);
+      setPropsMapId(null);
+      setCreateMapParentId(null);
+      setClipboardEvent(null);
+      setShowDatabase(false);
+      setShowScripts(false);
+      setShowPbs(false);
+      setPbsIndex(new Map());
+      setTilesetNames([]);
+      setStartPosition(null);
+      buildPbsIndex(proj.path)
+        .then(index => { if (lease.isCurrent()) setPbsIndex(index); })
+        .catch(err => { if (lease.isCurrent()) console.warn("PBS index unavailable:", err); });
 
       try {
         const names = await listTilesetNames(proj.path);
-        setTilesetNames(names);
+        if (lease.isCurrent()) setTilesetNames(names);
       } catch (err) {
         console.warn("Failed to load tileset names:", err);
       }
 
       try {
         const sys = await loadSystemData(proj.path);
-        setStartPosition({ mapId: sys.start_map_id, x: sys.start_x, y: sys.start_y });
+        if (lease.isCurrent()) setStartPosition({ mapId: sys.start_map_id, x: sys.start_x, y: sys.start_y });
       } catch (err) {
         console.warn("Failed to load system start position:", err);
       }
@@ -215,9 +232,8 @@ function AppContent() {
       // Initial map, tileset and graphics were already loaded and validated
       // before project activation; do not reload them or swallow errors.
     } finally {
-      // Let project-open errors propagate to the import caller; only clear
-      // the loading state here, including when RXDATA validation fails.
-      setLoading(false);
+      // An older project open must not clear the loading indicator of a newer one.
+      if (lease.isCurrent()) setLoading(false);
     }
   }, [updateMapDirty]);
 
