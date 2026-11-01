@@ -134,3 +134,32 @@ test("preparing a corrupt project never returns partial initial render state", a
   }, /Tileset decode failed/);
   assert.equal(previous, "/private/working-project");
 });
+
+test("newer project-open lease invalidates stale preparation and async metadata", async () => {
+  const { ProjectOpenCoordinator } = await import("../src/services/projectOpenGuards.ts");
+  const coordinator = new ProjectOpenCoordinator();
+  const older = coordinator.begin();
+  assert.equal(older.isCurrent(), true);
+  const newer = coordinator.begin();
+  assert.equal(older.isCurrent(), false);
+  assert.equal(newer.isCurrent(), true);
+  assert.throws(() => older.assertCurrent(), /superseded/);
+  assert.doesNotThrow(() => newer.assertCurrent());
+
+  let activeProject = "existing";
+  let pbsIndex = "existing-index";
+  const commit = (lease, name) => {
+    lease.assertCurrent();
+    activeProject = name;
+  };
+  const publishLatePbs = (lease, index) => {
+    if (lease.isCurrent()) pbsIndex = index;
+  };
+  assert.throws(() => commit(older, "stale"), /superseded/);
+  commit(newer, "latest");
+  publishLatePbs(older, "stale-index");
+  assert.equal(activeProject, "latest");
+  assert.equal(pbsIndex, "existing-index");
+  publishLatePbs(newer, "latest-index");
+  assert.equal(pbsIndex, "latest-index");
+});
