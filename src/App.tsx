@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectInfo, MapRenderData, TilesetRenderInfo, MapProperties, RpgEvent, EventInfo } from "./types";
 import { FIRST_REGULAR_TILE } from "./types";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
@@ -71,6 +71,14 @@ function AppContent() {
   const isAndroid = /Android/i.test(navigator.userAgent);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  // A new Map on every App render invalidates project-scoped PBS loaders and
+  // can reload Encounters/World panels while the user has unsaved edits.
+  const pbsMapNames = useMemo(
+    () => new Map<number, string>(
+      Object.entries(project?.map_infos ?? {}).map(([id, info]) => [Number(id), info.name])
+    ),
+    [project?.map_infos]
+  );
   const [pbsIndex, setPbsIndex] = useState<PbsIndex>(new Map());
   const [currentMapId, setCurrentMapId] = useState<number | null>(null);
   const [mapData, setMapData] = useState<MapRenderData | null>(null);
@@ -886,7 +894,7 @@ function AppContent() {
           <div className="editor-modal">
             <PbsEntityEditor
               projectPath={project.path}
-              mapNames={new Map(Object.entries(project.map_infos).map(([k, v]) => [Number(k), v.name]))}
+              mapNames={pbsMapNames}
               onClose={() => setShowPbs(false)}
             />
           </div>
