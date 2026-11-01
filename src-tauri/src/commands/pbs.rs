@@ -95,6 +95,9 @@ fn parse_pbs_content(content: &str) -> Vec<PbsSection> {
 }
 
 fn pbs_header(line: &str) -> Option<String> {
+    // UTF-8 BOMs occur in real Essentials PBS exports. Recognize the first
+    // section without stripping the BOM from the source bytes on save.
+    let line = line.strip_prefix('\u{feff}').unwrap_or(line);
     if !line.starts_with('[') { return None; }
     let close = line.find(']')?;
     let rest = line[close + 1..].trim();
@@ -103,7 +106,9 @@ fn pbs_header(line: &str) -> Option<String> {
 }
 
 fn pbs_field(line: &str) -> Option<(String, String, usize)> {
-    if line.trim().is_empty() || line.starts_with('#') { return None; }
+    // A comment may be indented and contain '='. Never expose it as a
+    // structured field or allow a field edit to rewrite that comment.
+    if line.trim().is_empty() || line.trim_start().starts_with('#') { return None; }
     let eq = line.find('=')?;
     let key = line[..eq].trim();
     if key.is_empty() { return None; }
@@ -313,6 +318,34 @@ pub async fn write_raw_pbs_file(
 #[cfg(test)]
 mod pbs_preservation_tests {
     use super::*;
+
+    #[test]
+    fn utf8_bom_and_indented_equals_comments_survive_structured_pbs_edits() {
+        // BOM + indented comment containing '=' previously caused the first
+        // section to disappear or the comment to masquerade as a field.
+        let original = "\u{feff}[PIKACHU]\r\nName = Pikachu\r\n  # Note = never a field\r\nTypes = ELECTRIC\r\n";
+        let mut sections = parse_pbs_content(original);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].header, "PIKACHU");
+        assert_eq!(sections[0].fields.len(), 2);
+        assert_eq!(merge_pbs_existing(original, &sections).unwrap(), original);
+        sections[0].fields[1].value = "ELECTRIC,FAIRY".into();
+        let expected = original.replace("Types = ELECTRIC", "Types = ELECTRIC,FAIRY");
+        let edited = merge_pbs_existing(original, &sections).unwrap();
+        assert_eq!(edited.as_bytes()[..3], [0xEF, 0xBB, 0xBF]);
+        assert_eq!(edited, expected);
+        assert_eq!(parse_pbs_content(&edited), sections);
+    }
+
+    #[test]
+    fn indented_comments_with_equals_are_not_editable_pbs_fields() {
+        let original = "[ONE]\n  # This = a comment\nValue = intact\n";
+        let mut sections = parse_pbs_content(original);
+        assert_eq!(sections[0].fields.len(), 1);
+        sections[0].fields[0].value = "changed".into();
+        assert_eq!(merge_pbs_existing(original, &sections).unwrap(),
+                   "[ONE]\n  # This = a comment\nValue = changed\n");
+    }
 
     #[test]
     fn no_op_and_targeted_edit_preserve_comments_unknown_lines_and_crlf() {
