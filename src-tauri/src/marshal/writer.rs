@@ -306,6 +306,13 @@ pub fn dump(value: &RubyValue) -> Result<Vec<u8>, MarshalWriteError> {
 /// Windows retains legacy replacement behaviour pending a separate Win32 test.
 pub fn dump_file(path: &std::path::Path, value: &RubyValue) -> Result<(), MarshalWriteError> {
     let bytes = dump(value)?;
+    write_bytes_file_atomic(path, &bytes)
+}
+
+/// Commit already-encoded Marshal bytes with the same atomic staging guarantees
+/// as `dump_file`. Used for surgical Table updates that must not re-encode
+/// unrelated Ruby objects or alter Marshal object-link identity.
+pub fn write_bytes_file_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), MarshalWriteError> {
     #[cfg(windows)]
     {
         std::fs::write(path, &bytes)?;
