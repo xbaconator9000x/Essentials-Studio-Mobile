@@ -1753,6 +1753,73 @@ mod archive_roundtrip_tests {
         assert!(private_project_image_path(&projects, &inside, "bgm", "Forest").is_err());
     }
 
+    #[test]
+    fn private_image_lookup_accepts_unique_windows_style_case_mismatch() {
+        use super::private_project_image_path;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        let original = graphics.join("Trainer_YOUNGSTER_1.PNG");
+        fs::write(&original, b"unchanged original graphic bytes").unwrap();
+
+        let (resolved, mime) = private_project_image_path(
+            &projects, &inside, "character", "trainer_youngster_1"
+        ).unwrap();
+        assert_eq!(mime, "image/png");
+        assert_eq!(fs::read(&resolved).unwrap(), b"unchanged original graphic bytes");
+        assert!(original.exists(), "case fallback must never rename source files");
+        assert!(private_project_image_path(
+            &projects, &inside, "character", "not_present"
+        ).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_image_lookup_rejects_ambiguous_casefold_but_prefers_exact_name() {
+        use super::private_project_image_path;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        fs::write(graphics.join("Hero.png"), b"upper").unwrap();
+        fs::write(graphics.join("hero.PNG"), b"lower").unwrap();
+
+        let (exact, _) = private_project_image_path(
+            &projects, &inside, "character", "Hero"
+        ).unwrap();
+        assert_eq!(fs::read(exact).unwrap(), b"upper");
+        let error = private_project_image_path(
+            &projects, &inside, "character", "hErO"
+        ).unwrap_err();
+        assert!(error.contains("Ambiguous case-insensitive"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_image_casefold_does_not_follow_external_symlink() {
+        use super::private_project_image_path;
+        use std::os::unix::fs::symlink;
+        let sandbox = Sandbox::new();
+        let projects = sandbox.path("projects");
+        let inside = projects.join("import-test");
+        let graphics = inside.join("Graphics/Characters");
+        fs::create_dir_all(&graphics).unwrap();
+        fs::write(inside.join("Game.rxproj"), b"project").unwrap();
+        let outside = sandbox.path("private.PNG");
+        fs::write(&outside, b"secret outside game").unwrap();
+        symlink(&outside, graphics.join("SECRET.PNG")).unwrap();
+        let error = private_project_image_path(
+            &projects, &inside, "character", "secret"
+        ).unwrap_err();
+        assert!(error.contains("outside the private project"), "{error}");
+        assert_eq!(fs::read(outside).unwrap(), b"secret outside game");
+    }
+
     #[cfg(unix)]
     #[test]
     fn private_image_lookup_rejects_symlinks_outside_project() {
