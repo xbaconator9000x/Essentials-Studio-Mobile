@@ -576,12 +576,10 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
         # bounded File.slice -> native chunk importer. The native Tauri dialog
         # remains separately visible as a fallback; selecting it here would
         # reproduce the unresolved GET_CONTENT callback path instead.
+        primary = wait_for(evidence, "landing", "Choose Essentials Project ZIP", 50)
         landing = dump_ui(evidence, "landing-entrypoints")
         if locate(landing, "Use native Android document picker") is None:
             raise AssertionError("Android native document-picker fallback is missing")
-        primary = locate(landing, "Choose Essentials Project ZIP")
-        if primary is None:
-            raise AssertionError("Android WebView ZIP import control is missing")
         receipt["import_entrypoint"] = "webview_file_input"
         tap(primary)
         wait_for_document_picker(evidence, 15)
