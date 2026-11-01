@@ -163,36 +163,40 @@ def select_exported_zip(evidence: Path, filename: str) -> bool:
     neighbouring ZIP or infer success from the previously open editor.
     """
     nodes, xml = reimport_picker_snapshot(evidence, "reimport-picker-initial")
-    storage = picker.external_storage_root(nodes)
-    if storage is None:
-        roots = picker.locate(nodes, "Show roots")
-        if roots is None:
-            raise AssertionError("Native picker has no Show roots action")
-        picker.tap(roots)
-        time.sleep(2)
-        nodes, xml = reimport_picker_snapshot(evidence, "reimport-picker-roots")
-        storage = picker.external_storage_root(nodes)
-    if storage is None:
-        raise AssertionError("ExternalStorageProvider root unavailable")
-    picker.tap(storage)
-    time.sleep(2)
-
-    for attempt, target in enumerate(("title", "icon", "row", "title")):
-        nodes, xml = reimport_picker_snapshot(evidence, f"reimport-root-{attempt}")
-        if current_picker_location(xml).casefold() in {"download", "downloads"}:
-            break
-        folder = (picker.picker_folder_row(xml, "Download", target)
-                  or picker.picker_folder_row(xml, "Downloads", target))
-        if folder is None:
-            raise AssertionError("External storage root has no Download folder")
-        picker.tap(folder)
-        time.sleep(3)
-    nodes, xml = reimport_picker_snapshot(evidence, "reimport-download")
+    # GET_CONTENT often starts in the Downloads virtual root, already showing
+    # the exact SAF export. Never leave that valid location just to navigate
+    # back via the physical storage root: landscape grid folder taps can fail.
     if current_picker_location(xml).casefold() not in {"download", "downloads"}:
-        raise AssertionError(
-            "DocumentsUI did not enter external storage Download: "
-            + repr(current_picker_location(xml))
-        )
+        storage = picker.external_storage_root(nodes)
+        if storage is None:
+            roots = picker.locate(nodes, "Show roots")
+            if roots is None:
+                raise AssertionError("Native picker has no Show roots action")
+            picker.tap(roots)
+            time.sleep(2)
+            nodes, xml = reimport_picker_snapshot(evidence, "reimport-picker-roots")
+            storage = picker.external_storage_root(nodes)
+        if storage is None:
+            raise AssertionError("ExternalStorageProvider root unavailable")
+        picker.tap(storage)
+        time.sleep(2)
+
+        for attempt, target in enumerate(("title", "icon", "row", "title")):
+            nodes, xml = reimport_picker_snapshot(evidence, f"reimport-root-{attempt}")
+            if current_picker_location(xml).casefold() in {"download", "downloads"}:
+                break
+            folder = (picker.picker_folder_row(xml, "Download", target)
+                      or picker.picker_folder_row(xml, "Downloads", target))
+            if folder is None:
+                raise AssertionError("External storage root has no Download folder")
+            picker.tap(folder)
+            time.sleep(3)
+        nodes, xml = reimport_picker_snapshot(evidence, "reimport-download")
+        if current_picker_location(xml).casefold() not in {"download", "downloads"}:
+            raise AssertionError(
+                "DocumentsUI did not enter external storage Download: "
+                + repr(current_picker_location(xml))
+            )
 
     # AOSP API30 grid in landscape clips filenames below the screen edge.
     # Native list mode exposes full rows and exact text in accessibility XML.
@@ -306,6 +310,17 @@ def selftest() -> None:
            '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
            'text="Download" /></hierarchy>')
     assert current_picker_location(xml) == "Download"
+    # Captured Android 11 DocumentsUI starts in virtual Downloads with the
+    # exported ZIP already listed. It must not be navigated away from.
+    downloads_xml = ('<?xml version="1.0"?><hierarchy>'
+                     '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
+                     'text="Downloads" />'
+                     '<node resource-id="com.google.android.documentsui:id/item_root" '
+                     'class="android.widget.LinearLayout" bounds="[0,641][1794,830]">'
+                     '<node resource-id="android:id/title" text="Synthetic_RMXP.zip" '
+                     'bounds="[189,685][557,742]" /></node></hierarchy>')
+    assert current_picker_location(downloads_xml).casefold() in {"download", "downloads"}
+    assert picker.picker_file_card(downloads_xml, "Synthetic_RMXP.zip") == (897, 735)
     assert current_picker_location('<hierarchy/>') == ""
     # A neighbouring original ZIP must never be selected instead of the SAF
     # export. In list mode picker_file_card returns the exact matching row.
