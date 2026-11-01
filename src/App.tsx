@@ -763,7 +763,7 @@ function AppContent() {
                 }} />
             </label>
           )}
-          {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>
+          {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
           <button className="app-titlebar-btn" onClick={handleBrowseProject}>
             Open...
           </button>
