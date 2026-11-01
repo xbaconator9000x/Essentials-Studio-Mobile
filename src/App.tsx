@@ -272,7 +272,15 @@ function AppContent() {
         // validator reject anything that is not a safe project archive.
         // This does not grant filesystem access or bypass the SAF picker.
       });
-      if (selected === null) return;
+      if (selected === null) {
+        // tauri-plugin-dialog reports both a cancelled picker and a failed
+        // native picker callback as null on Android. Never leave that silent.
+        console.info("[android-import] document picker returned no selection");
+        setArchiveOutcome("No project ZIP was returned by the Android document picker; nothing was imported.");
+        return;
+      }
+      console.info("[android-import] document picker returned a selection");
+      setArchiveOutcome(null);
       if (typeof selected !== "string") {
         throw new Error("Android document picker returned an unsupported selection");
       }
@@ -655,6 +663,7 @@ function AppContent() {
               </label>
             )}
             {archiveProgress !== null && <p>Importing project: {archiveProgress}%</p>}
+            {archiveOutcome && <p role="status" aria-live="polite">{archiveOutcome}</p>}
             <p className="app-welcome-hint">
               Select a folder containing a Game.rxproj file
               <br />

@@ -1329,6 +1329,162 @@ mod archive_roundtrip_tests {
         assert!(!imports.join("import-rxdata-extracted").exists());
     }
 
+    /// Rights-cleared synthetic end-to-end gate through the production
+    /// import/open/save/export commands, including a second generation that
+    /// re-publishes the exported ZIP through `finish_import`. It never uses
+    /// private game data and does not prove physical Android/SAF behaviour.
+    #[test]
+    fn nested_import_edit_export_reimport_second_generation_is_byte_stable_and_fails_closed() {
+        let sandbox = Sandbox::new();
+        let source_archive = sandbox.path("original-rxdata.zip");
+        let wrapper = "Repository/Essentials/Project/";
+        write_synthetic_project_zip(&source_archive, wrapper, false);
+        let original_hashes = member_sha256(&source_archive, wrapper);
+
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let publish = |zip: &Path, id: &str| {
+            let staged = imports.join(format!("{id}.zip"));
+            fs::copy(zip, &staged).unwrap();
+            PathBuf::from(
+                finish_import(staged, imports.clone(), projects.clone(), id.into())
+                    .expect("publish ZIP into app-private storage"),
+            )
+        };
+        let imported = publish(&source_archive, "import-gen1");
+        let original_map = fs::read(imported.join("Data/Map001.rxdata")).unwrap();
+        assert_eq!(
+            member_sha256(&source_archive, wrapper)
+                .get("Data/Map001.rxdata"),
+            Some(&format!("{:x}", Sha256::digest(&original_map))),
+            "import must publish the original map bytes"
+        );
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let project_path = imported.to_string_lossy().into_owned();
+        let tiled_map = runtime.block_on(async {
+            crate::commands::project::open_project(project_path.clone()).await.unwrap();
+            let map = crate::commands::project::load_map(project_path.clone(), 1).await.unwrap();
+            let event = crate::commands::project::load_event(project_path.clone(), 1, 7)
+                .await.unwrap();
+
+            // No-op saves are source-byte-preserving.
+            crate::commands::project::save_map(
+                project_path.clone(), 1, map.tiles.clone(), 2, 2,
+            ).await.unwrap();
+            crate::commands::project::save_event(project_path.clone(), 1, event).await.unwrap();
+            assert_eq!(fs::read(imported.join("Data/Map001.rxdata")).unwrap(), original_map);
+
+            // Invalid tile payloads fail closed and leave the original bytes.
+            for (tiles, width, height) in [
+                (map.tiles.clone(), 3, 2),
+                (map.tiles[..map.tiles.len() - 1].to_vec(), 2, 2),
+            ] {
+                assert!(
+                    crate::commands::project::save_map(
+                        project_path.clone(), 1, tiles, width, height,
+                    ).await.is_err(),
+                    "invalid map dimensions must be refused"
+                );
+                assert_eq!(
+                    fs::read(imported.join("Data/Map001.rxdata")).unwrap(),
+                    original_map,
+                    "refused save must not alter the map"
+                );
+            }
+
+            let mut edited = map.tiles.clone();
+            edited[4] = 777;
+            crate::commands::project::save_map(project_path.clone(), 1, edited, 2, 2)
+                .await.unwrap();
+            fs::read(imported.join("Data/Map001.rxdata")).unwrap()
+        });
+        // A single-cell edit rewrites only that cell inside the XP Table.
+        assert_eq!(tiled_map.len(), original_map.len());
+        let changed = tiled_map.iter().zip(&original_map).filter(|(a, b)| a != b).count();
+        assert!((1..=2).contains(&changed), "{changed} bytes changed for one tile cell");
+
+        let export1 = sandbox.path("export-gen1.zip");
+        export_zip(&imported, &export1).unwrap();
+        let hashes1 = member_sha256(&export1, "");
+        assert_eq!(original_hashes.keys().collect::<Vec<_>>(), hashes1.keys().collect::<Vec<_>>());
+        for (name, hash) in &original_hashes {
+            if name == "Data/Map001.rxdata" {
+                assert_ne!(hashes1.get(name), Some(hash));
+            } else {
+                assert_eq!(hashes1.get(name), Some(hash), "untouched member changed: {name}");
+            }
+        }
+
+        // Second generation: the exported ZIP is itself a valid import source.
+        let regenerated = publish(&export1, "import-gen2");
+        assert_eq!(fs::read(regenerated.join("Data/Map001.rxdata")).unwrap(), tiled_map);
+        assert!(regenerated.join("Graphics/Empty").is_dir());
+        let gen2_path = regenerated.to_string_lossy().into_owned();
+        runtime.block_on(async {
+            crate::commands::project::open_project(gen2_path.clone()).await.unwrap();
+            let map = crate::commands::project::load_map(gen2_path.clone(), 1).await.unwrap();
+            assert_eq!(map.tiles[4], 777);
+            let mut event = crate::commands::project::load_event(gen2_path.clone(), 1, 7)
+                .await.unwrap();
+            event.pages[0].list[0].parameters[0] =
+                serde_json::Value::String("Second generation dialogue".into());
+            crate::commands::project::save_event(gen2_path.clone(), 1, event).await.unwrap();
+            let mut pbs = crate::commands::pbs::load_pbs_file(
+                gen2_path.clone(), "pokemon.txt".into(),
+            ).await.unwrap();
+            pbs[0].fields.iter_mut().find(|field| field.key == "Name").unwrap().value =
+                "Second".into();
+            crate::commands::pbs::save_pbs_file(
+                gen2_path.clone(), "pokemon.txt".into(), pbs,
+            ).await.unwrap();
+        });
+        let export2 = sandbox.path("export-gen2.zip");
+        export_zip(&regenerated, &export2).unwrap();
+        let hashes2 = member_sha256(&export2, "");
+        assert_eq!(hashes1.keys().collect::<Vec<_>>(), hashes2.keys().collect::<Vec<_>>());
+        for (name, hash) in &hashes1 {
+            if name == "Data/Map001.rxdata" || name == "PBS/pokemon.txt" {
+                assert_ne!(hashes2.get(name), Some(hash), "edited member unchanged: {name}");
+            } else {
+                assert_eq!(hashes2.get(name), Some(hash), "untouched member changed: {name}");
+            }
+        }
+
+        let gen3 = extract_archive(&export2, &sandbox.path("reopened-gen3")).unwrap();
+        let gen3_path = gen3.to_string_lossy().into_owned();
+        runtime.block_on(async {
+            crate::commands::project::open_project(gen3_path.clone()).await.unwrap();
+            let map = crate::commands::project::load_map(gen3_path.clone(), 1).await.unwrap();
+            assert_eq!(map.tiles[4], 777);
+            let event = crate::commands::project::load_event(gen3_path.clone(), 1, 7)
+                .await.unwrap();
+            assert_eq!(
+                event.pages[0].list[0].parameters[0],
+                serde_json::Value::String("Second generation dialogue".into())
+            );
+            let pbs = crate::commands::pbs::load_pbs_file(
+                gen3_path.clone(), "pokemon.txt".into(),
+            ).await.unwrap();
+            assert_eq!(
+                pbs[0].fields.iter().find(|field| field.key == "Name").unwrap().value,
+                "Second"
+            );
+        });
+        let reopened_map = crate::marshal::load_file(&gen3.join("Data/Map001.rxdata")).unwrap();
+        let RubyValue::Object(reopened_map) = reopened_map else { panic!("RPG::Map expected") };
+        assert_eq!(
+            reopened_map.get("plugin_metadata"),
+            Some(&RubyValue::Symbol("keep-map".into())),
+            "opaque map metadata must survive two generations"
+        );
+    }
+
     #[test]
     fn malformed_rxdata_is_rejected_and_failed_private_import_is_removed() {
         let sandbox = Sandbox::new();
