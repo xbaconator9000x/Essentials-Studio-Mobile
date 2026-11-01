@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { savePbsSnapshot, snapshotPbsSections } from "../src/services/pbsSaveGuards.ts";
+import { savePbsSnapshot, snapshotPbsSections, snapshotPbsEntities, hasPendingPbsWrite } from "../src/services/pbsSaveGuards.ts";
 
 function deferred() {
   let resolve;
@@ -76,4 +76,33 @@ test("snapshot copies each PBS field and section without modifying source", () =
   assert.notEqual(snapshot[0].fields[0], source[0].fields[0]);
   snapshot[0].fields[0].value = "B";
   assert.equal(source[0].fields[0].value, "A");
+});
+
+test("entity editor snapshot deeply isolates nested forms, moves and stats", () => {
+  const source = [{ id: "VULPIX", baseStats: { hp: 38 }, forms: [
+    { id: "GHOST", moves: [{ id: "EMBER", level: 1 }] },
+  ] }];
+  const snapshot = snapshotPbsEntities(source);
+  source[0].baseStats.hp = 60;
+  source[0].forms[0].moves[0].id = "SHADOWBALL";
+  assert.equal(snapshot[0].baseStats.hp, 38);
+  assert.equal(snapshot[0].forms[0].moves[0].id, "EMBER");
+});
+
+test("global PBS close guard stays active until the native writer resolves", async () => {
+  const pending = deferred();
+  const save = savePbsSnapshot([], () => pending.promise, () => {}, () => {}, () => true);
+  assert.equal(hasPendingPbsWrite(), true);
+  pending.resolve();
+  await save;
+  assert.equal(hasPendingPbsWrite(), false);
+});
+
+test("global PBS close guard clears after native write failure", async () => {
+  const pending = deferred();
+  const save = savePbsSnapshot([], () => pending.promise, () => {}, () => {}, () => true);
+  assert.equal(hasPendingPbsWrite(), true);
+  pending.reject(new Error("provider refused write"));
+  await assert.rejects(save, /provider refused write/);
+  assert.equal(hasPendingPbsWrite(), false);
 });
