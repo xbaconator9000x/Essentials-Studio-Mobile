@@ -396,6 +396,20 @@ pub async fn save_event(
                                 event.id, map_id
                             ));
                         }
+                        // An unchanged typed event must not reserialize its entire RMXP
+                        // map. Doing so can alter opaque fields, Ruby object links and
+                        // binary strings even when the editor made no visible change.
+                        // Ambiguous IDs and mismatched payload IDs were rejected above.
+                        if let Some(existing_typed) = RpgEvent::from_ruby_value(original) {
+                            if let (Ok(before), Ok(after)) = (
+                                serde_json::to_value(&existing_typed),
+                                serde_json::to_value(&event),
+                            ) {
+                                if before == after {
+                                    return Ok(());
+                                }
+                            }
+                        }
                         // Finish validation and merging before mutating the hash.
                         let merged = super::event_merge::preserve_unedited_event_fields(
                             original, &event.to_ruby_value()
@@ -453,6 +467,40 @@ mod event_save_integrity_tests {
             ])),
             ("extension_marker", RubyValue::Integer(extension)),
         ])
+    }
+
+    #[tokio::test]
+    async fn unchanged_event_save_keeps_original_map_bytes_and_opaque_fields() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-event-noop-{}-{nonce}", std::process::id()
+        ));
+        let data = root.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let map_file = data.join("Map001.rxdata");
+        let event = object("RPG::Event", vec![
+            ("id", RubyValue::Integer(1)),
+            ("name", RubyValue::String(RubyString::new(b"Original".to_vec()))),
+            ("x", RubyValue::Integer(0)),
+            ("y", RubyValue::Integer(0)),
+            ("pages", RubyValue::Array(vec![])),
+            ("unknown_binary", RubyValue::String(RubyString::new(vec![0xff, 0x00, 0x80]))),
+        ]);
+        let mut map = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+        let RubyValue::Object(ref mut obj) = map else { panic!("map object") };
+        obj.instance_vars.iter_mut()
+            .find(|(name, _)| name == "@events").unwrap().1 =
+                RubyValue::Hash(vec![(RubyValue::Integer(1), event.clone())]);
+        let original = marshal::dump(&map).unwrap();
+        std::fs::write(&map_file, &original).unwrap();
+
+        let unchanged = RpgEvent::from_ruby_value(&event).unwrap();
+        save_event(root.to_string_lossy().into_owned(), 1, unchanged)
+            .await.unwrap();
+        assert_eq!(std::fs::read(&map_file).unwrap(), original,
+            "No-op event save must preserve the original Marshal stream");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
