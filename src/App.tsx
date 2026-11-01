@@ -27,7 +27,7 @@ import {
   discardFailedProjectImport,
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
-import { saveThenMarkClean } from "./services/saveGuards";
+import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
@@ -149,9 +149,10 @@ function AppContent() {
       await saveThenMarkClean(
         () => saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height),
         () => updateMapDirty(false),
-        () => projectRef.current?.path === proj.path
-          && mapDataRef.current === md
-          && mapEditRevisionRef.current === savedRevision,
+        () => mapStillUnchanged(
+          { projectPath: proj.path, map: md, revision: savedRevision },
+          { projectPath: projectRef.current?.path, map: mapDataRef.current, revision: mapEditRevisionRef.current },
+        ),
       );
     } catch (err) {
       setError(`Save failed: ${err}`);
@@ -376,18 +377,33 @@ function AppContent() {
         const md = mapDataRef.current;
         if (md) {
           try {
-            await saveMap(path, md.id, md.tiles, md.width, md.height);
+            // MapEditor mutates tiles in place. Never pass a live array to an
+            // asynchronous write or switch away after a newer paint operation.
+            const savedRevision = mapEditRevisionRef.current;
+            const tilesSnapshot = md.tiles.slice();
+            await saveMap(path, md.id, tilesSnapshot, md.width, md.height);
+            if (!isCurrent()) return;
+            if (!mapStillUnchanged(
+              { projectPath: path, map: md, revision: savedRevision },
+              { projectPath: projectRef.current?.path, map: mapDataRef.current, revision: mapEditRevisionRef.current },
+            )) {
+              setError("Map changed while saving for navigation. Newer edits remain unsaved; save again.");
+              return;
+            }
           } catch (err) {
             if (isCurrent()) setError(`Save failed: ${err}`);
             return;
           }
-          if (!isCurrent()) return;
         }
       }
       // A failed destination load must still leave the previous dirty tiles
       // available for saving; only clear the flag after successful commit.
     }
 
+    // A destination map may take time to load its graphics. Do not discard
+    // tile edits painted on the source map during that asynchronous read.
+    const sourceMap = mapDataRef.current;
+    const sourceRevision = mapEditRevisionRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -397,6 +413,13 @@ function AppContent() {
         loadImages: loadAllTilesetImages,
       });
       if (!isCurrent()) return;
+      if (mapId !== currentMapIdRef.current && !mapStillUnchanged(
+        { projectPath: path, map: sourceMap, revision: sourceRevision },
+        { projectPath: projectRef.current?.path, map: mapDataRef.current, revision: mapEditRevisionRef.current },
+      )) {
+        setError("Map changed while opening another map. Newer edits remain on the current map; retry navigation.");
+        return;
+      }
 
       // Reloading the same map after event editing must preserve unsaved tile
       // painting, while using the newly loaded event list and graphics.
