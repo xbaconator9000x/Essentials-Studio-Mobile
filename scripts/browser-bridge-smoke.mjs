@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -20,17 +20,7 @@ const temp = mkdtempSync(join(tmpdir(), "essentials-browser-smoke-"));
 const token = randomBytes(32).toString("hex");
 let bridge;
 
-function findRoot(dir, depth = 0) {
-  if (existsSync(join(dir, "Game.rxproj"))) return dir;
-  if (depth >= 5) return null;
-  for (const item of readdirSync(dir, { withFileTypes: true })) {
-    if (item.isDirectory()) {
-      const found = findRoot(join(dir, item.name), depth + 1);
-      if (found) return found;
-    }
-  }
-  return null;
-}
+const archiveCli = resolve("src-tauri/target/debug/browser_archive");
 
 function call(command, args = {}, auth = token) {
   const body = JSON.stringify({ command, args });
@@ -84,13 +74,12 @@ function waitForReady(child) {
 }
 
 try {
-  execFileSync("python3", ["-c",
-    "import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])",
-    originalZip, temp,
-  ]);
-  const project = findRoot(temp);
-  assert.ok(project, "Synthetic ZIP must contain one RMXP project root");
+  // Real native ZIP preflight and extraction, not Python's permissive extractall.
+  const project = execFileSync(archiveCli, [
+    "import", originalZip, join(temp, "editable"),
+  ], { encoding: "utf8" }).trim();
   const root = realpathSync(project);
+  assert.ok(root.startsWith(realpathSync(temp) + "/"), "Import must remain in the new working copy");
   const protectedPaths = [
     "Data/Scripts.rxdata", "Data/System.rxdata",
     "Graphics/Tilesets/Synthetic.png", "Game.rxproj", "Game.ini",
@@ -157,6 +146,42 @@ try {
   assert.notEqual(hash(join(root, "Data/Map001.rxdata")), mapBefore);
   assert.notEqual(hash(join(root, "PBS/pokemon.txt")), pbsBefore);
   assert.equal(hash(originalZip), originalHash, "Original ZIP was modified");
+
+  // Export the edited project using the same bounded Rust writer as the APK,
+  // then independently verify every archive member's bytes and CRC.
+  const exportedZip = join(temp, "edited.zip");
+  const written = Number(execFileSync(archiveCli, [
+    "export", root, exportedZip,
+  ], { encoding: "utf8" }).trim());
+  assert.equal(written, statSync(exportedZip).size);
+  const verification = JSON.parse(execFileSync("python3", [
+    "scripts/verify_project_roundtrip.py", originalZip, exportedZip,
+    "--allow-changed", "Data/Map001.rxdata",
+    "--allow-changed", "PBS/pokemon.txt",
+  ], { encoding: "utf8" }));
+  assert.equal(verification.status, "verified");
+  assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
+
+  // Refuse overwriting an existing ZIP, including failure cleanup paths.
+  const existingZip = join(temp, "existing.zip");
+  writeFileSync(existingZip, "preserve this original");
+  assert.throws(() => execFileSync(archiveCli, ["export", root, existingZip], { stdio: "pipe" }));
+  assert.equal(readFileSync(existingZip, "utf8"), "preserve this original");
+  assert.throws(() => execFileSync(archiveCli, ["export", root, join(root, "nested.zip")], { stdio: "pipe" }));
+  assert.ok(!existsSync(join(root, "nested.zip")), "Export inside project must be rejected");
+
+  // Malicious traversal archives must not create any destination or escaped file.
+  const traversalZip = join(temp, "traversal.zip");
+  execFileSync("python3", ["-c",
+    "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],'w'); z.writestr('../escaped.txt','bad'); z.writestr('Game.rxproj','bad'); z.close()",
+    traversalZip,
+  ]);
+  const rejectedDir = join(temp, "rejected");
+  assert.throws(() => execFileSync(archiveCli, ["import", traversalZip, rejectedDir], { stdio: "pipe" }));
+  assert.ok(!existsSync(rejectedDir), "Failed import must clean its newly-created working copy");
+  assert.ok(!existsSync(join(temp, "escaped.txt")), "ZIP traversal must not escape the working copy");
+  assert.equal(hash(originalZip), originalHash, "Original ZIP must remain unchanged after export");
+
   console.log(JSON.stringify({
     status: "synthetic HTTP bridge roundtrip passed",
     project: "rights-cleared synthetic RMXP fixture",
@@ -164,6 +189,8 @@ try {
     editedMapSha256: hash(join(root, "Data/Map001.rxdata")),
     editedPbsSha256: hash(join(root, "PBS/pokemon.txt")),
     unchangedMembers: protectedPaths.length,
+    exportedZipSha256: hash(exportedZip),
+    independentZipVerification: verification,
     runtimeNotVerified: ["React browser UI", "Android SAF provider", "desktop RMXP", "JoiPlay/NaviaXP"],
   }, null, 2));
 } finally {
