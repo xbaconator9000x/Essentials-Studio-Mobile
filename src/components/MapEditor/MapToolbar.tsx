@@ -11,6 +11,9 @@ interface MapToolbarProps {
   setShowGrid: (show: boolean) => void;
   zoom: number;
   setZoom: (zoom: number) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  historyDisabled?: boolean;
 }
 
 export function MapToolbar({
@@ -23,6 +26,9 @@ export function MapToolbar({
   setShowGrid,
   zoom,
   setZoom,
+  onUndo,
+  onRedo,
+  historyDisabled = false,
 }: MapToolbarProps) {
   return (
     <div className="map-editor-toolbar">
@@ -53,6 +59,17 @@ export function MapToolbar({
             ✓ Copied ({tileClipboard.width}×{tileClipboard.height})
           </span>
         )}
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Touch users have no physical Ctrl/Cmd+Z/Y keyboard. Keep map history
+          accessible directly and route it through the same dirty-save path. */}
+      <div className="toolbar-group" aria-label="Map edit history">
+        <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled}
+          title="Undo tile edit" aria-label="Undo tile edit">Undo</button>
+        <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled}
+          title="Redo tile edit" aria-label="Redo tile edit">Redo</button>
       </div>
 
       <div className="toolbar-separator" />
