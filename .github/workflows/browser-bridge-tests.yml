@@ -97,6 +97,18 @@ jobs:
         env:
           BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence
         run: node scripts/browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
+      # Short-lived, commit-pinned diagnostic tools for private local project
+      # acceptance. No game assets, project ZIPs, or public release binaries.
+      - name: Preserve native CLI for offline private project acceptance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: essentials-native-cli-${{ github.sha }}
+          path: |
+            src-tauri/target/debug/browser_archive
+            src-tauri/target/debug/browser_bridge
+          if-no-files-found: error
+          retention-days: 1
       - name: Preserve browser screenshots and runtime receipt
         if: always()
         uses: actions/upload-artifact@v4
