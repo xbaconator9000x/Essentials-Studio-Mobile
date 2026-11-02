@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { confirmEditor } from "../../services/editorDialog";
 import type {
   RpgEvent,
   EventPage,
@@ -224,7 +224,7 @@ export function EventEditor({
       return;
     }
     const cancelRevision = revisionRef.current;
-    if (dirty && !(await confirm("Discard changes to this event?"))) return;
+    if (dirty && !(await confirmEditor("Discard changes to this event?"))) return;
     if (savingRef.current || revisionRef.current !== cancelRevision) return;
     onClose();
   }, [dirty, onClose, renderRevision]);

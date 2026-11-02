@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectInfo, MapRenderData, TilesetRenderInfo, MapProperties, RpgEvent, EventInfo } from "./types";
 import { FIRST_REGULAR_TILE } from "./types";
-import { confirm, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
+import { confirmEditor } from "./services/editorDialog";
 import {
   openProject,
   getBrowserProjectRoot,
@@ -282,7 +283,7 @@ function AppContent() {
   ) => {
     if (source === null) return;
     if (projectRef.current && dirtyCount > 0) {
-      const proceed = await confirm("Unsaved project changes exist. Import a different project anyway?");
+      const proceed = await confirmEditor("Unsaved project changes exist. Import a different project anyway?");
       if (!proceed) return;
     }
     setLoading(true);
@@ -393,7 +394,7 @@ function AppContent() {
       mapId !== currentMapIdRef.current &&
       mapIsDirtyRef.current
     ) {
-      const saveFirst = await confirm("Save tile changes to the current map before switching?");
+      const saveFirst = await confirmEditor("Save tile changes to the current map before switching?");
       if (!isCurrent()) return;
       if (saveFirst) {
         const md = mapDataRef.current;
@@ -511,7 +512,7 @@ function AppContent() {
     async (mapId: number, mapName: string) => {
       const proj = projectRef.current;
       if (!proj) return;
-      if (!(await confirm(`Delete map [${String(mapId).padStart(3, "0")}] "${mapName}"?\n\nThis cannot be undone.`))) {
+      if (!(await confirmEditor(`Delete map [${String(mapId).padStart(3, "0")}] "${mapName}"?\n\nThis cannot be undone.`))) {
         return;
       }
       try {
@@ -612,7 +613,7 @@ function AppContent() {
     const md = mapDataRef.current;
     const mapId = currentMapIdRef.current;
     if (!proj || !mapId || !md) return;
-    if (!(await confirm(`Delete event "${eventName}" (ID: ${eventId})?\n\nThis cannot be undone.`))) return;
+    if (!(await confirmEditor(`Delete event "${eventName}" (ID: ${eventId})?\n\nThis cannot be undone.`))) return;
     try {
       setError(null);
       const updatedEvents = await deleteEvent(proj.path, mapId, eventId);
