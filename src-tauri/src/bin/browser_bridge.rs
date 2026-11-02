@@ -98,29 +98,70 @@ fn image_data(root: &Path, asset_type: &str, name: &str) -> Result<String, Strin
         "character" => "Characters",
         _ => return Err("Unsupported project image type".into()),
     };
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+    if name.is_empty() || name == "." || name.contains('/') || name.contains('\\')
+        || name.contains("..") || name.chars().any(char::is_control)
+    {
         return Err("Invalid project image request".into());
     }
+
+    let relative_dir = Path::new("Graphics").join(asset_dir);
+    // Canonicalize the directory too: an imported-project symlink must not
+    // redirect a case-insensitive search outside the selected project.
+    let directory = inside(root, &relative_dir)?;
+    if !directory.is_dir() {
+        return Err("Project graphics directory is not a directory".into());
+    }
+    let supported = [
+        ("png", "image/png"), ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"), ("gif", "image/gif"), ("bmp", "image/bmp"),
+    ];
     let mut selected = None;
-    for (extension, mime) in [
-        ("png", "image/png"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
-        ("gif", "image/gif"), ("bmp", "image/bmp"),
-    ] {
-        let relative = Path::new("Graphics")
-            .join(asset_dir)
-            .join(format!("{name}.{extension}"));
-        if !root.join(&relative).exists() {
-            continue;
+    // Preserve existing exact-name and extension precedence. A filesystem
+    // error or unsafe symlink must fail closed, not trigger a mock image.
+    for &(extension, mime) in &supported {
+        let relative = relative_dir.join(format!("{name}.{extension}"));
+        match fs::symlink_metadata(root.join(&relative)) {
+            Ok(_) => {
+                let file = inside(root, &relative)?;
+                if !file.is_file() {
+                    return Err("Project image is not a regular file".into());
+                }
+                selected = Some((file, mime));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Project image unavailable: {error}")),
         }
-        let file = inside(root, &relative)?;
-        let size = fs::metadata(&file).map_err(|e| e.to_string())?.len();
-        if size > MAX_IMAGE {
-            return Err("Project image exceeds the 32 MiB limit".into());
+    }
+    // Real XP archives can differ in filename/extension case from the name
+    // recorded in Tilesets.rxdata. Only use a fallback when exact lookup fails,
+    // and reject ambiguous case-folded matches instead of choosing arbitrarily.
+    if selected.is_none() {
+        for entry in fs::read_dir(&directory).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let disk_name = entry.file_name();
+            let Some(filename) = disk_name.to_str() else { continue };
+            let disk_path = Path::new(filename);
+            let Some(stem) = disk_path.file_stem().and_then(|s| s.to_str()) else { continue };
+            if !stem.eq_ignore_ascii_case(name) { continue; }
+            let Some(extension) = disk_path.extension().and_then(|s| s.to_str()) else { continue };
+            let Some(&(_, mime)) = supported.iter()
+                .find(|(ext, _)| ext.eq_ignore_ascii_case(extension)) else { continue };
+            let file = inside(root, &relative_dir.join(filename))?;
+            if !file.is_file() {
+                return Err("Project image is not a regular file".into());
+            }
+            if selected.is_some() {
+                return Err("Ambiguous case-insensitive project image filename".into());
+            }
+            selected = Some((file, mime));
         }
-        selected = Some((file, mime));
-        break;
     }
     let (path, mime) = selected.ok_or("Project image not found")?;
+    let size = fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > MAX_IMAGE {
+        return Err("Project image exceeds the 32 MiB limit".into());
+    }
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
@@ -485,6 +526,39 @@ mod tests {
         fs::remove_file(project.join("PBS/pokemon_forms.txt")).unwrap();
         symlink(base.join("missing.txt"), project.join("PBS/pokemon_forms.txt")).unwrap();
         assert!(pbs_file(&root, "pokemon_forms.txt", false).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn browser_graphics_resolve_case_mismatched_xp_filenames() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base = std::env::temp_dir().join(format!("essentials-browser-image-{}-{nonce}", std::process::id()));
+        let project = base.join("project");
+        fs::create_dir_all(project.join("Graphics/Tilesets")).unwrap();
+        fs::write(project.join("Graphics/Tilesets/Forest.PNG"), b"synthetic-png").unwrap();
+        let root = fs::canonicalize(&project).unwrap();
+        let url = image_data(&root, "tileset", "forest").unwrap();
+        assert_eq!(url, "data:image/png;base64,c3ludGhldGljLXBuZw==");
+        assert!(image_data(&root, "tileset", "../forest").is_err());
+        fs::write(project.join("Graphics/Tilesets/FOREST.png"), b"ambiguous").unwrap();
+        assert!(image_data(&root, "tileset", "forest").unwrap_err().contains("Ambiguous"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn browser_graphics_reject_outside_symlinks_even_on_case_fallback() {
+        use std::os::unix::fs::symlink;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base = std::env::temp_dir().join(format!("essentials-browser-image-link-{}-{nonce}", std::process::id()));
+        let project = base.join("project");
+        fs::create_dir_all(project.join("Graphics/Tilesets")).unwrap();
+        fs::write(base.join("secret.PNG"), b"outside").unwrap();
+        symlink(base.join("secret.PNG"), project.join("Graphics/Tilesets/Forest.PNG")).unwrap();
+        let root = fs::canonicalize(&project).unwrap();
+        assert!(image_data(&root, "tileset", "forest").is_err());
         fs::remove_dir_all(base).unwrap();
     }
 
