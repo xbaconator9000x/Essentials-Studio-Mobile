@@ -65,26 +65,24 @@ export function useEditorRegistration(
   cancel: () => void,
   isDirty: boolean
 ) {
-  const ctx = useProjectSave();
+  const { register, unregister, updateDirty } = useProjectSave();
   const saveRef = useRef(save);
   const cancelRef = useRef(cancel);
   saveRef.current = save;
   cancelRef.current = cancel;
 
   useEffect(() => {
-    ctx.register(id, {
+    register(id, {
       save: () => saveRef.current(),
       cancel: () => cancelRef.current(),
       isDirty,
     });
-    return () => ctx.unregister(id);
-    // Only register/unregister on mount/unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    return () => unregister(id);
+  }, [id, register, unregister]);
 
   useEffect(() => {
-    ctx.updateDirty(id, isDirty);
-  }, [id, isDirty, ctx]);
+    updateDirty(id, isDirty);
+  }, [id, isDirty, updateDirty]);
 }
 
 export function ProjectSaveProvider({ children }: { children: ReactNode }) {
