@@ -24,6 +24,8 @@ interface ProjectSaveContextType {
   saveAll: (prefix?: string) => Promise<void>;
   /** Discard all unsaved changes, optionally filtered by ID prefix */
   discardAll: (prefix?: string) => void;
+  /** Synchronous check against registered editors (not a possibly stale React render). */
+  hasUnsavedEdits: () => boolean;
   /** Check if any editor matching a prefix is dirty */
   isDirtyByPrefix: (prefix: string) => boolean;
   /** Get the set of dirty editor IDs */
@@ -40,6 +42,7 @@ const ProjectSaveContext = createContext<ProjectSaveContextType>({
   dirtyCount: 0,
   saveAll: async () => {},
   discardAll: () => {},
+  hasUnsavedEdits: () => false,
   isDirtyByPrefix: () => false,
   dirtyIds: new Set(),
   register: () => {},
@@ -62,26 +65,24 @@ export function useEditorRegistration(
   cancel: () => void,
   isDirty: boolean
 ) {
-  const ctx = useProjectSave();
+  const { register, unregister, updateDirty } = useProjectSave();
   const saveRef = useRef(save);
   const cancelRef = useRef(cancel);
   saveRef.current = save;
   cancelRef.current = cancel;
 
   useEffect(() => {
-    ctx.register(id, {
+    register(id, {
       save: () => saveRef.current(),
       cancel: () => cancelRef.current(),
       isDirty,
     });
-    return () => ctx.unregister(id);
-    // Only register/unregister on mount/unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    return () => unregister(id);
+  }, [id, register, unregister]);
 
   useEffect(() => {
-    ctx.updateDirty(id, isDirty);
-  }, [id, isDirty, ctx]);
+    updateDirty(id, isDirty);
+  }, [id, isDirty, updateDirty]);
 }
 
 export function ProjectSaveProvider({ children }: { children: ReactNode }) {
@@ -147,6 +148,13 @@ export function ProjectSaveProvider({ children }: { children: ReactNode }) {
     recalcDirty();
   }, [recalcDirty]);
 
+  const hasUnsavedEdits = useCallback(() => {
+    for (const entry of editorsRef.current.values()) {
+      if (entry.isDirty) return true;
+    }
+    return false;
+  }, []);
+
   const isDirtyByPrefix = useCallback((prefix: string) => {
     for (const [id, entry] of editorsRef.current) {
       if (id.startsWith(prefix) && entry.isDirty) return true;
@@ -155,7 +163,7 @@ export function ProjectSaveProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ProjectSaveContext.Provider value={{ dirtyCount, dirtyIds, saveAll, discardAll, isDirtyByPrefix, register, unregister, updateDirty }}>
+    <ProjectSaveContext.Provider value={{ dirtyCount, dirtyIds, saveAll, discardAll, hasUnsavedEdits, isDirtyByPrefix, register, unregister, updateDirty }}>
       {children}
     </ProjectSaveContext.Provider>
   );
