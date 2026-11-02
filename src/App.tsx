@@ -920,6 +920,7 @@ function AppContent() {
           currentMapId={currentMapId ?? undefined}
           startPosition={startPosition ?? undefined}
           hasClipboardEvent={clipboardEvent !== null}
+          shortcutsDisabled={Boolean(editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
           onMapDirty={handleMapDirty}
           onOpenEvent={handleOpenEvent}
           onCreateEvent={handleCreateEvent}

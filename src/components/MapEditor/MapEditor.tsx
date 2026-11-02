@@ -10,8 +10,6 @@ import {
   copyTileRegion,
   pasteTileRegion,
   UndoStack,
-  applyAction,
-  revertAction,
   type MapAction,
   type TileClipboard,
 } from "../../services/mapEditor";
@@ -21,6 +19,8 @@ import {
   type TouchGestureAction,
 } from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
+import { replayMapHistory } from "../../services/mapHistory";
+import { shouldHandleMapShortcut } from "../../services/mapShortcutGuards";
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
@@ -36,6 +36,7 @@ interface Props {
   currentMapId?: number;
   startPosition?: { mapId: number; x: number; y: number };
   hasClipboardEvent?: boolean;
+  shortcutsDisabled?: boolean;
   onMapDirty: () => void;
   onOpenEvent?: (eventId: number, eventName: string) => void;
   onCreateEvent?: (x: number, y: number) => void;
@@ -55,6 +56,7 @@ export function MapEditor({
   currentMapId,
   startPosition,
   hasClipboardEvent,
+  shortcutsDisabled = false,
   onMapDirty,
   onOpenEvent,
   onCreateEvent,
@@ -291,78 +293,58 @@ export function MapEditor({
     return () => observer.disconnect();
   }, []);
 
-  // Keyboard shortcuts (undo/redo + tile copy/paste)
+  const handleHistory = useCallback((direction: "undo" | "redo"): boolean => {
+    if (!mapData || shortcutsDisabled) return false;
+    if (!replayMapHistory(mapData, undoStackRef.current, direction, onMapDirty)) return false;
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick((t) => t + 1);
+    return true;
+  }, [mapData, shortcutsDisabled, onMapDirty]);
+
+  // Keyboard shortcuts only apply when the map is the active editor.
+  // Never intercept Ctrl/Cmd+Z/C/V inside an event dialogue, PBS field,
+  // script textarea or any other text-editing surface.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!mapData) return;
+      if (!mapData || e.defaultPrevented || e.altKey ||
+          !(e.ctrlKey || e.metaKey) ||
+          !shouldHandleMapShortcut(e.target, shortcutsDisabled)) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+      const key = e.key.toLowerCase();
+      if (key === "z" || key === "y") {
+        const direction = key === "y" || e.shiftKey ? "redo" : "undo";
+        if (handleHistory(direction)) e.preventDefault();
+        return;
+      }
+
+      if (key === "c" && selectionStart && selectionEnd) {
         e.preventDefault();
-        const action = undoStackRef.current.undo();
-        if (action) {
-          revertAction(mapData, action);
+        setTileClipboard(copyTileRegion(
+          mapData,
+          { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
+          selectedLayer,
+        ));
+        return;
+      }
+
+      if (key === "v" && tileClipboard) {
+        const origin = cursorTile ?? selectionStart;
+        if (!origin) return;
+        e.preventDefault();
+        const changes = pasteTileRegion(mapData, tileClipboard, origin, selectedLayer);
+        if (changes.length > 0) {
+          undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
           rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
           setRenderTick((t) => t + 1);
+          onMapDirty();
         }
-      }
-
-      if ((e.ctrlKey || e.metaKey) && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
-        e.preventDefault();
-        const action = undoStackRef.current.redo();
-        if (action) {
-          applyAction(mapData, action);
-          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
-          setRenderTick((t) => t + 1);
-        }
-      }
-
-      // Ctrl+C — copy tile selection
-      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        setSelectionStart((start) => {
-          setSelectionEnd((end) => {
-            if (start && end) {
-              const clipboard = copyTileRegion(
-                mapData,
-                { x1: start.x, y1: start.y, x2: end.x, y2: end.y },
-                selectedLayer
-              );
-              setTileClipboard(clipboard);
-            }
-            return end;
-          });
-          return start;
-        });
-      }
-
-      // Ctrl+V — paste tile clipboard
-      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        setTileClipboard((clipboard) => {
-          if (!clipboard) return clipboard;
-          setCursorTile((cursor) => {
-            setSelectionStart((selStart) => {
-              const origin = cursor ?? selStart;
-              if (origin) {
-                const changes = pasteTileRegion(mapData, clipboard, origin, selectedLayer);
-                if (changes.length > 0) {
-                  undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
-                  rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
-                  setRenderTick((t) => t + 1);
-                  onMapDirty();
-                }
-              }
-              return selStart;
-            });
-            return cursor;
-          });
-          return clipboard;
-        });
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapData, selectedLayer, onMapDirty]);
+  }, [mapData, selectedLayer, onMapDirty, shortcutsDisabled,
+      selectionStart, selectionEnd, cursorTile, tileClipboard, handleHistory]);
 
   // Convert screen position to tile coordinates
   const screenToTile = useCallback(
@@ -865,6 +847,9 @@ export function MapEditor({
           setShowGrid={setShowGrid}
           zoom={zoom}
           setZoom={setZoom}
+          onUndo={() => { handleHistory("undo"); }}
+          onRedo={() => { handleHistory("redo"); }}
+          historyDisabled={shortcutsDisabled}
         />
       )}
 
