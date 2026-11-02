@@ -75,10 +75,13 @@ fn pbs_file(root: &Path, filename: &str) -> Result<(), String> {
 }
 
 fn image_data(root: &Path, asset_type: &str, name: &str) -> Result<String, String> {
-    if !matches!(asset_type, "Tilesets" | "Autotiles" | "Characters")
-        || name.is_empty()
-        || name.contains('/') || name.contains('\\') || name.contains("..")
-    {
+    let asset_dir = match asset_type {
+        "tileset" => "Tilesets",
+        "autotile" => "Autotiles",
+        "character" => "Characters",
+        _ => return Err("Unsupported project image type".into()),
+    };
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("Invalid project image request".into());
     }
     let mut selected = None;
@@ -87,7 +90,7 @@ fn image_data(root: &Path, asset_type: &str, name: &str) -> Result<String, Strin
         ("gif", "image/gif"), ("bmp", "image/bmp"),
     ] {
         let relative = Path::new("Graphics")
-            .join(asset_type)
+            .join(asset_dir)
             .join(format!("{name}.{extension}"));
         if !root.join(&relative).exists() {
             continue;
@@ -199,10 +202,13 @@ async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, Str
         }
         "list_asset_files" => {
             let asset_type: String = required(args, "assetType")?;
-            if !matches!(asset_type.as_str(), "Tilesets" | "Autotiles" | "Characters") {
+            if !matches!(asset_type.as_str(), "tileset" | "autotile" | "character") {
                 return Err("Unsupported asset directory".into());
             }
-            inside(root, Path::new("Graphics").join(&asset_type).as_path())?;
+            let dir = match asset_type.as_str() { "tileset" => "Tilesets", "autotile" => "Autotiles", _ => "Characters" };
+            if root.join("Graphics").join(dir).exists() {
+                inside(root, Path::new("Graphics").join(dir).as_path())?;
+            }
             serial(project::list_asset_files(path, asset_type).await)
         }
         "read_private_project_image" => {
@@ -281,8 +287,8 @@ fn handle(mut stream: TcpStream, token: &str, root: &Path, rt: &tokio::runtime::
         if data.len() > header_end + size { return Err("Unexpected trailing HTTP bytes".into()); }
         while data.len() - header_end < size {
             let remaining = size - (data.len() - header_end);
-            let n = stream.read(&mut chunk[..remaining.min(chunk.len())])
-                .map_err(|e| e.to_string())?;
+            let take = remaining.min(chunk.len());
+            let n = stream.read(&mut chunk[..take]).map_err(|e| e.to_string())?;
             if n == 0 { return Err("Truncated request body".into()); }
             data.extend_from_slice(&chunk[..n]);
         }
@@ -327,7 +333,7 @@ mod tests {
     #[test]
     fn rejects_unsupported_commands() {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let root = std::env::temp_dir();
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         let args = json!({"projectPath":root.to_string_lossy()});
         let result = rt.block_on(dispatch("begin_project_archive_export", &args, &root));
         assert!(result.unwrap_err().contains("does not support"));
