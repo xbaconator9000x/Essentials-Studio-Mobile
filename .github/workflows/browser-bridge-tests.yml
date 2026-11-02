@@ -6,12 +6,15 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/src/bin/browser_bridge.rs'
+      - 'src-tauri/src/bin/browser_archive.rs'
+      - 'src-tauri/src/commands/project_archive.rs'
       - 'src/services/browserTransport.ts'
       - 'src/services/tauriApi.ts'
       - 'src/services/archiveApi.ts'
       - 'src/services/imageLoader.ts'
       - 'scripts/dev-web.mjs'
       - 'scripts/browser-bridge-smoke.mjs'
+      - 'docs/BROWSER_FIRST_DEVELOPMENT.md'
       - 'tests/browserTransport.test.mjs'
       - 'vite.config.ts'
       - 'package.json'
@@ -20,6 +23,8 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/src/bin/browser_bridge.rs'
+      - 'src-tauri/src/bin/browser_archive.rs'
+      - 'src-tauri/src/commands/project_archive.rs'
       - 'src/services/browserTransport.ts'
       - 'src/services/tauriApi.ts'
       - 'src/services/archiveApi.ts'
@@ -63,11 +68,11 @@ jobs:
           workspaces: src-tauri
       - name: Compile and test local Rust bridge
         run: cargo test --manifest-path src-tauri/Cargo.toml --bin browser_bridge
-      - name: Build executable browser bridge
-        run: cargo build --manifest-path src-tauri/Cargo.toml --bin browser_bridge
+      - name: Build executable browser bridge and native archive CLI
+        run: cargo build --manifest-path src-tauri/Cargo.toml --bin browser_bridge --bin browser_archive
       - name: Generate and independently verify rights-cleared RMXP ZIP fixture
         env:
           PROJECT_ROUNDTRIP_EVIDENCE_DIR: ${{ runner.temp }}/browser-fixture
         run: python3 scripts/run_project_roundtrip.py
-      - name: Execute real HTTP map/event/PBS edit-save-reopen smoke test
+      - name: Native ZIP import → HTTP map/event/PBS edit → native ZIP export → independent preservation test
         run: node scripts/browser-bridge-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
