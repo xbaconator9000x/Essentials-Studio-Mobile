@@ -61,6 +61,28 @@ export async function findProjectShowText(project, loadMap, loadEvent, maxMaps =
   return null;
 }
 
+/** Return the ordered, validated ancestor path needed to expand the React map tree. */
+export function mapTreeAncestors(mapInfos, mapId) {
+  if (!mapInfos || typeof mapInfos !== 'object' ||
+      !Number.isInteger(mapId) || !Object.hasOwn(mapInfos, mapId)) {
+    throw new TypeError('Invalid MapInfos dialogue map');
+  }
+  const ancestors = [];
+  const seen = new Set([mapId]);
+  let current = mapId;
+  while (true) {
+    const parent = Number(mapInfos[current]?.parent_id ?? 0);
+    if (parent === 0) return ancestors;
+    if (!Number.isInteger(parent) || parent < 1 || parent > 999 ||
+        seen.has(parent) || !Object.hasOwn(mapInfos, parent)) {
+      throw new TypeError('Invalid MapInfos parent hierarchy for dialogue map');
+    }
+    seen.add(parent);
+    ancestors.unshift(parent);
+    current = parent;
+  }
+}
+
 export function expectedDialogueEdit(event, pageIndex, commandIndex, replacement) {
   if (typeof replacement !== 'string' || !replacement || replacement.includes('\n')) {
     throw new TypeError('Replacement must be one nonempty dialogue line');
