@@ -608,6 +608,72 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
     Ok(size)
 }
 
+/// Import a browser-development ZIP into an exclusively new working directory.
+/// Reuses the exact native Android ZIP preflight, limits, and root discovery.
+/// Never edits or removes the source archive. The caller retains the working
+/// directory for subsequent editing; no temporary copy is silently discarded.
+pub fn import_archive_into_new_directory(
+    archive_path: &Path,
+    destination: &Path,
+) -> Result<PathBuf, String> {
+    let source = fs::canonicalize(archive_path).map_err(|e| e.to_string())?;
+    let metadata = fs::metadata(&source).map_err(|e| e.to_string())?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ARCHIVE_BYTES {
+        return Err("Browser project ZIP must be a nonempty file of at most 512 MiB".into());
+    }
+    // Atomic create: never extract over an existing project or follow a
+    // destination symlink. On failure remove only the directory we created.
+    fs::create_dir(destination).map_err(|e| format!("New import directory required: {e}"))?;
+    let result = extract_archive(&source, destination);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(destination);
+    }
+    result
+}
+
+/// Write a complete browser-development ZIP without replacing an existing
+/// destination. A private sibling temp ZIP is linked into place only after
+/// successful native export; hard_link fails atomically if the name exists.
+/// The output must live outside the project so it cannot archive itself.
+pub fn export_archive_to_new_file(
+    project_dir: &Path,
+    destination: &Path,
+) -> Result<u64, String> {
+    let project = fs::canonicalize(project_dir).map_err(|e| e.to_string())?;
+    if !project.is_dir() || !project.join("Game.rxproj").is_file() {
+        return Err("Not an RPG Maker XP project directory".into());
+    }
+    let parent = destination.parent().ok_or("ZIP output needs a parent directory")?;
+    let parent = fs::canonicalize(parent).map_err(|e| e.to_string())?;
+    if parent.starts_with(&project) {
+        return Err("ZIP export destination must be outside the project".into());
+    }
+    let filename = destination.file_name().ok_or("Invalid ZIP output name")?;
+    let output = parent.join(filename);
+    if output.extension().and_then(|ext| ext.to_str()) != Some("zip") {
+        return Err("Browser export destination must end in .zip".into());
+    }
+    // An existing file or symlink must never be removed, even on failure.
+    if fs::symlink_metadata(&output).is_ok() {
+        return Err("ZIP export destination already exists".into());
+    }
+    let temporary = parent.join(format!(".essentials-{}.partial", unique_id()?));
+    let result = export_zip(&project, &temporary);
+    let size = match result {
+        Ok(size) => size,
+        Err(error) => {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+    };
+    if let Err(error) = fs::hard_link(&temporary, &output) {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!("Could not publish ZIP without overwriting existing files: {error}"));
+    }
+    fs::remove_file(&temporary).map_err(|e| e.to_string())?;
+    Ok(size)
+}
+
 #[tauri::command]
 pub async fn begin_project_archive_export(
     app: AppHandle,
