@@ -2,7 +2,7 @@
  * Image loading service for tileset and autotile assets.
  *
  * When running in Tauri, loads images via the asset protocol.
- * When running in browser (dev mode), generates placeholder images.
+ * Only standalone browser mock mode may generate placeholder images.
  */
 
 import { getAssetPath, invoke as invokeEditor } from "./tauriApi";
@@ -57,12 +57,17 @@ function isAndroidTauri(): boolean {
   return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent) && isTauri();
 }
 
+/** A real imported project must never silently render fabricated tiles. */
+function usesPrivateProjectImageTransport(): boolean {
+  return isAndroidTauri() || (!isTauri() && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL));
+}
+
 async function loadProjectImage(
   projectPath: string,
   assetType: string,
   assetName: string,
 ): Promise<HTMLImageElement> {
-  if (isAndroidTauri() || (!isTauri() && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL))) {
+  if (usesPrivateProjectImageTransport()) {
     const request = privateImageReadRequest(projectPath, assetType, assetName);
     const cacheKey = privateImageCacheKey(
       privateImageLoads.generation,
@@ -213,8 +218,9 @@ export async function loadTilesetImage(
     return await loadProjectImage(projectPath, "tileset", tilesetName);
   } catch (err) {
     console.warn(`[imageLoader] Failed to load tileset image: ${tilesetName}`, err);
-    // Do not silently replace real project art with mock tiles on Android.
-    if (isAndroidTauri()) throw err;
+    // Native Android and the Rust-backed browser editor both edit real data.
+    // A placeholder would make a broken project look successfully imported.
+    if (usesPrivateProjectImageTransport()) throw err;
     return createPlaceholderTileset();
   }
 }
