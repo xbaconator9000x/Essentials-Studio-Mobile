@@ -119,8 +119,9 @@ try {
   });
   const eventEditor = page.locator(".event-editor");
   await eventEditor.waitFor({ timeout: 15_000 });
-  await eventEditor.locator(".event-command-block").first().dblclick();
-  const dialogueEditor = eventEditor.locator(".event-command-edit-textarea");
+  // Single-line Show Text renders CommandRow; multi-line text uses MultiLineBlock.
+  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
+  const dialogueEditor = eventEditor.locator(".event-command-edit-input, .event-command-edit-textarea");
   await dialogueEditor.waitFor({ timeout: 10_000 });
   const updatedDialogue = "Chromium event dialogue roundtrip";
   await dialogueEditor.fill(updatedDialogue);
