@@ -106,6 +106,38 @@ try {
   assert.equal(Math.floor((savedTile - 48) / 48), Math.floor((targetTile - 48) / 48),
     "The selected UI autotile family must be saved");
   await page.screenshot({ path: join(evidence, "browser-map-saved.png"), fullPage: true });
+  // Exercise the actual React event editor, not a direct HTTP save_event call.
+  // Its native save writes to the same Map001.rxdata as the painted tile.
+  const eventInfo = before.events.find(evt => evt.id === 7);
+  assert.ok(eventInfo && Number.isInteger(eventInfo.x) && Number.isInteger(eventInfo.y),
+    "Synthetic map must expose event 7 with integer coordinates");
+  const dialogueBefore = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(dialogueBefore.pages[0].list[0].parameters[0], "Synthetic dialogue");
+  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  await page.locator(".map-editor-canvas").dblclick({
+    position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
+  });
+  const eventEditor = page.locator(".event-editor");
+  await eventEditor.waitFor({ timeout: 15_000 });
+  // Single-line Show Text renders CommandRow; multi-line text uses MultiLineBlock.
+  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
+  const dialogueEditor = eventEditor.locator(".event-command-edit-input, .event-command-edit-textarea");
+  await dialogueEditor.waitFor({ timeout: 10_000 });
+  const updatedDialogue = "Chromium event dialogue roundtrip";
+  await dialogueEditor.fill(updatedDialogue);
+  await eventEditor.locator(".event-editor-header").click(); // Commit on blur.
+  // Wait for React to render the new revision before requesting a native save.
+  await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], updatedDialogue,
+    "Dialogue edited through React must persist in native RMXP event commands");
+  // Saving the event must not undo the tile edit saved earlier.
+  const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
+  assert.equal(afterEvent.tiles[differences[0].index], differences[0].tile);
+  await page.screenshot({ path: join(evidence, "browser-event-saved.png"), fullPage: true });
+
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
   await status.waitFor({ timeout: 90_000 });
@@ -129,10 +161,11 @@ try {
   assert.deepEqual(pageErrors, [], "No uncaught browser JavaScript errors");
   await page.screenshot({ path: join(evidence, "browser-export-complete.png"), fullPage: true });
   const receipt = {
-    status: "real Chromium React UI → Rust save → native ZIP export → reimport passed",
+    status: "real Chromium map/event UI → Rust saves → native ZIP export → reimport passed",
     originalZipSha256: originalHash,
     exportedZipSha256: sha(exported),
     changedTile: differences[0],
+    changedDialogue: updatedDialogue,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
