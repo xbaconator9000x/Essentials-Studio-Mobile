@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import type {
   RpgEvent,
@@ -10,6 +10,7 @@ import {
 } from "../../services/eventCommands";
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
+import { saveEventSnapshot } from "../../services/eventSaveGuards";
 import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
 import { PageProperties } from "./parts/PageProperties";
@@ -46,6 +47,12 @@ export function EventEditor({
   const [editingCommand, setEditingCommand] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const revisionRef = useRef(0);
+  // A render can lag behind a just-queued React edit. Never save an older
+  // event object under the revision of that not-yet-rendered edit.
+  const renderRevision = revisionRef.current;
   const [clipboard, setClipboard] = useState<EventCommand[] | null>(null);
   const [switchNames, setSwitchNames] = useState<string[]>([]);
   const [variableNames, setVariableNames] = useState<string[]>([]);
@@ -75,7 +82,9 @@ export function EventEditor({
           resetHistory();
           setActivePage(0);
           setSelectedCommand(-1);
+          revisionRef.current = 0;
           setDirty(false);
+          setSaveError(null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -97,6 +106,8 @@ export function EventEditor({
   const updatePage = useCallback(
     (updater: (page: EventPage) => EventPage) => {
       if (!event) return;
+      revisionRef.current += 1;
+      setSaveError(null);
       setEvent((prev) => {
         if (!prev) return prev;
         const pages = [...prev.pages];
@@ -164,46 +175,61 @@ export function EventEditor({
     [updatePage]
   );
 
-  // OK: save (if dirty) then close
-  const handleOk = useCallback(async () => {
-    if (event && dirty) {
-      setSaving(true);
-      try {
-        await saveEvent(projectPath, mapId, event);
+  // A native save is an acknowledgement of one immutable event revision,
+  // not of later page/command edits made while the write is pending.
+  const persist = useCallback(async (closeOnSuccess: boolean) => {
+    if (savingRef.current || !event) return;
+    if (revisionRef.current !== renderRevision) {
+      setDirty(true);
+      setSaveError("An event edit is still updating. Save again once it appears.");
+      return;
+    }
+    if (!dirty) {
+      if (closeOnSuccess) onClose();
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const current = await saveEventSnapshot(
+        event, renderRevision, () => revisionRef.current,
+        (snapshot) => saveEvent(projectPath, mapId, snapshot),
+      );
+      if (current) {
         setDirty(false);
-      } catch (err) {
-        setError(`Save failed: ${String(err)}`);
-        setSaving(false);
-        return; // stay open if save failed
+        if (closeOnSuccess) onClose();
+      } else {
+        setDirty(true);
+        setSaveError("Newer event edits remain unsaved. Save again before closing.");
       }
+    } catch (err) {
+      setDirty(true);
+      setSaveError(`Save failed: ${String(err)}`);
+    } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-    onClose();
-  }, [event, dirty, projectPath, mapId, onClose]);
+  }, [event, dirty, renderRevision, projectPath, mapId, onClose]);
 
-  // Cancel: prompt if dirty, then close without saving
+  const handleOk = useCallback(() => { void persist(true); }, [persist]);
+  const handleSave = useCallback(() => { void persist(false); }, [persist]);
+
+  // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
+    if (savingRef.current) return;
     if (dirty && !(await confirm("Discard changes to this event?"))) return;
+    if (savingRef.current) return; // A save may have started during the dialog.
     onClose();
   }, [dirty, onClose]);
-
-  // Ctrl+S: save only (no close) — useful mid-editing
-  const handleSave = useCallback(async () => {
-    if (!event || !dirty) return;
-    try {
-      setSaving(true);
-      await saveEvent(projectPath, mapId, event);
-      setDirty(false);
-    } catch (err) {
-      setError(`Save failed: ${String(err)}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [event, dirty, projectPath, mapId]);
 
   // Close on Escape, Delete key
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && savingRef.current) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === "Escape") {
         if (showPicker) {
           setShowPicker(false);
@@ -257,12 +283,16 @@ export function EventEditor({
       // Undo (Ctrl+Z)
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && editingCommand === null) {
         e.preventDefault();
+        revisionRef.current += 1;
+        setSaveError(null);
         undo();
         setDirty(true);
       }
       // Redo (Ctrl+Y or Ctrl+Shift+Z)
       if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey)) && editingCommand === null) {
         e.preventDefault();
+        revisionRef.current += 1;
+        setSaveError(null);
         redo();
         setDirty(true);
       }
@@ -296,10 +326,12 @@ export function EventEditor({
               {event?.y ?? "?"})
             </span>
           </div>
-          <button className="event-editor-close" onClick={handleCancel}>
+          <button className="event-editor-close" onClick={handleCancel} disabled={saving}>
             ×
           </button>
         </div>
+
+        {saveError && <div role="alert" style={{ color: "#d20f39", padding: "6px 12px" }}>{saveError}</div>}
 
         {/* Page tabs */}
         {event && (
@@ -333,6 +365,8 @@ export function EventEditor({
                 setEvent({ ...event, pages: [...event.pages, newPage] });
                 setActivePage(event.pages.length);
                 setSelectedCommand(-1);
+                revisionRef.current += 1;
+                setSaveError(null);
                 setDirty(true);
               }}
               title="Add a new page"
@@ -348,6 +382,8 @@ export function EventEditor({
                   setEvent({ ...event, pages });
                   setActivePage(Math.min(activePage, pages.length - 1));
                   setSelectedCommand(-1);
+                  revisionRef.current += 1;
+                  setSaveError(null);
                   setDirty(true);
                 }}
                 title="Remove current page"
@@ -469,7 +505,7 @@ export function EventEditor({
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="event-editor-btn"
-              onClick={() => { undo(); setDirty(true); }}
+              onClick={() => { revisionRef.current += 1; setSaveError(null); undo(); setDirty(true); }}
               disabled={!canUndo}
               title="Undo (Ctrl+Z)"
               style={{ padding: "6px 10px" }}
@@ -478,7 +514,7 @@ export function EventEditor({
             </button>
             <button
               className="event-editor-btn"
-              onClick={() => { redo(); setDirty(true); }}
+              onClick={() => { revisionRef.current += 1; setSaveError(null); redo(); setDirty(true); }}
               disabled={!canRedo}
               title="Redo (Ctrl+Y)"
               style={{ padding: "6px 10px" }}
@@ -492,7 +528,7 @@ export function EventEditor({
             >
               {saving ? "Saving..." : "OK"}
             </button>
-            <button className="event-editor-btn" onClick={handleCancel}>
+            <button className="event-editor-btn" onClick={handleCancel} disabled={saving}>
               Cancel
             </button>
           </div>
