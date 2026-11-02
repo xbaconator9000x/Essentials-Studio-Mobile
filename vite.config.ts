@@ -16,7 +16,7 @@ export default defineConfig({
           target: "http://127.0.0.1:5174",
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/api\/browser/, ""),
-          configure: (proxy: { on: (event: string, callback: (req: { setHeader: (name: string, value: string) => void }) => void) => void }) => {
+          configure: (proxy) => {
             proxy.on("proxyReq", (request) => {
               request.setHeader("Authorization", "Bearer " + token);
             });
