@@ -31,6 +31,7 @@ on:
       - 'src/services/archiveApi.ts'
       - 'src/services/imageLoader.ts'
       - 'scripts/dev-web.mjs'
+      - 'scripts/browser-ui-smoke.mjs'
       - 'tests/browserTransport.test.mjs'
       - 'vite.config.ts'
       - 'package.json'
@@ -86,7 +87,7 @@ jobs:
           npm ci
           npm install --no-save --package-lock=false playwright-core@1.56.1
           command -v google-chrome || command -v google-chrome-stable || command -v chromium
-      - name: Real Chromium React UI paint → save → native ZIP export → reimport
+      - name: Real Chromium React map/event/PBS edit → save → ZIP export → reimport
         env:
           BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence
         run: node scripts/browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
