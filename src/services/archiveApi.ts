@@ -69,6 +69,19 @@ export async function discardFailedProjectImport(projectPath: string): Promise<v
   await invoke("discard_failed_project_import", { projectPath });
 }
 
+/**
+ * Browser development writes a complete ZIP beside the selected disposable
+ * project via the existing Rust archive writer. This is a local file export,
+ * NOT a browser download, Android SAF write or desktop compatibility proof.
+ */
+export async function exportBrowserProjectZip(projectPath: string): Promise<{ path: string; size: number }> {
+  const result = await invoke<{ path: string; size: number }>("export_browser_project_archive", { projectPath });
+  if (!result.path || !result.path.toLowerCase().endsWith(".zip") || !Number.isSafeInteger(result.size) || result.size <= 0) {
+    throw new Error("Browser ZIP export did not return a valid saved archive receipt");
+  }
+  return result;
+}
+
 type ProjectArchiveExport = { export_id: string; size: number };
 
 /** Export all project files without altering the app-private project.
