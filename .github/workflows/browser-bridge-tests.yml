@@ -16,6 +16,7 @@ on:
       - 'scripts/browser-bridge-smoke.mjs'
       - 'scripts/browser-ui-smoke.mjs'
       - 'scripts/private-project-sweep.mjs'
+      - 'scripts/private-browser-ui-smoke.mjs'
       - 'tests/privateProjectSweep.test.mjs'
       - 'docs/BROWSER_FIRST_DEVELOPMENT.md'
       - 'tests/browserTransport.test.mjs'
@@ -35,6 +36,7 @@ on:
       - 'scripts/dev-web.mjs'
       - 'scripts/browser-ui-smoke.mjs'
       - 'scripts/private-project-sweep.mjs'
+      - 'scripts/private-browser-ui-smoke.mjs'
       - 'tests/privateProjectSweep.test.mjs'
       - 'tests/browserTransport.test.mjs'
       - 'vite.config.ts'
@@ -97,6 +99,10 @@ jobs:
         env:
           BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence
         run: node scripts/browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
+      - name: Private-project-compatible React map/PBS edit and ZIP reimport (synthetic fixture only)
+        env:
+          PRIVATE_BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence/private-compatible
+        run: node scripts/private-browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
       # Short-lived, commit-pinned diagnostic tools for private local project
       # acceptance. No game assets, project ZIPs, or public release binaries.
       - name: Preserve native CLI for offline private project acceptance
