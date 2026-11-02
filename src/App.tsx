@@ -488,9 +488,12 @@ function AppContent() {
       setTilesetInfo(prepared.tileset);
       setTilesetImage(prepared.images.tileset);
       setAutotileImages(prepared.images.autotiles);
+      const changedMap = mapId !== currentMapIdRef.current;
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
-      setEditingEvent(null);
+      // Re-selecting/reloading the same map must not silently unmount an open
+      // event editor with unsaved dialogue or command edits.
+      if (changedMap) setEditingEvent(null);
       mapIsDirtyRef.current = preserveDirty;
       setMapIsDirty(preserveDirty);
     } catch (err) {
