@@ -216,6 +216,13 @@ async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, Str
             let name: String = required(args, "assetName")?;
             Ok(json!(image_data(root, &kind, &name)?))
         }
+        "get_asset_path" => {
+            // The browser cannot use native filesystem paths. Return a scoped
+            // data URL that existing image controls can render directly.
+            let kind: String = required(args, "assetType")?;
+            let name: String = required(args, "assetName")?;
+            Ok(json!(image_data(root, &kind, &name)?))
+        }
         _ => Err(format!(
             "Browser bridge does not support {command}. Use native Tauri for ZIP import/export or other operations."
         )),
