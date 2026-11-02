@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findEditableShowText, findProjectShowText, expectedDialogueEdit } from '../scripts/private-browser-event-probe.mjs';
+import { findEditableShowText, findProjectShowText, mapTreeAncestors, expectedDialogueEdit } from '../scripts/private-browser-event-probe.mjs';
 
 const fixture = {
   id: 7, name: 'Synthetic', pages: [
@@ -90,4 +90,13 @@ test('returns null within map budget and fails closed on malformed native maps',
   assert.deepEqual(visited, [1]);
   await assert.rejects(() => findProjectShowText(project, async () => ({ events: [] }), async () => {}), TypeError);
   await assert.rejects(() => findProjectShowText(project, async () => ({}), async () => {}, 0), TypeError);
+});
+
+test('map-tree navigation expands root-to-parent and rejects missing/cyclic MapInfos', () => {
+  const infos = { 1: { parent_id: 0 }, 2: { parent_id: 1 }, 3: { parent_id: 2 } };
+  assert.deepEqual(mapTreeAncestors(infos, 3), [1, 2]);
+  assert.deepEqual(mapTreeAncestors(infos, 1), []);
+  assert.throws(() => mapTreeAncestors({ 1: { parent_id: 2 } }, 1), TypeError);
+  assert.throws(() => mapTreeAncestors({ 1: { parent_id: 2 }, 2: { parent_id: 1 } }, 1), TypeError);
+  assert.throws(() => mapTreeAncestors(infos, 99), TypeError);
 });
