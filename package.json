@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
-    "dev:web": "node scripts/dev-web.mjs"
+    "dev:web": "node scripts/dev-web.mjs",
+    "archive:web": "cargo run --manifest-path src-tauri/Cargo.toml --bin browser_archive --"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
