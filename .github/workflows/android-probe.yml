@@ -40,6 +40,8 @@ jobs:
         run: node --experimental-strip-types --test tests/eventPasteTransaction.test.mjs
       - name: Verify dirty event saves before map navigation
         run: node --experimental-strip-types --test tests/mapNavigationSave.test.mjs
+      - name: Verify map keyboard history and editor shortcut isolation
+        run: node --experimental-strip-types --test tests/mapKeyboardHistory.test.mjs
       - run: node scripts/check-development-queue.mjs
       - name: Verify queue watchdog handoff behavior
         run: node --test scripts/queue-watchdog.test.mjs
