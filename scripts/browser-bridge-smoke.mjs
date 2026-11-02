@@ -147,6 +147,25 @@ try {
   assert.notEqual(hash(join(root, "PBS/pokemon.txt")), pbsBefore);
   assert.equal(hash(originalZip), originalHash, "Original ZIP was modified");
 
+  // The actual browser UI export command must produce a completed, local ZIP
+  // receipt (not merely a requested download or a mocked native invocation).
+  const browserReceipt = await call("export_browser_project_archive", { projectPath: root });
+  assert.ok(browserReceipt.path.endsWith(".zip"));
+  assert.ok(!resolve(browserReceipt.path).startsWith(root + "/"), "Export cannot live inside the project");
+  assert.equal(browserReceipt.size, statSync(browserReceipt.path).size);
+  assert.ok(browserReceipt.size > 0);
+  await assert.rejects(call("export_browser_project_archive", {
+    projectPath: temp, destination: join(temp, "forbidden.zip"),
+  }), /selected project root/);
+  assert.ok(!existsSync(join(temp, "forbidden.zip")), "Client-supplied export destination must be ignored");
+  const browserVerification = JSON.parse(execFileSync("python3", [
+    "scripts/verify_project_roundtrip.py", originalZip, browserReceipt.path,
+    "--allow-changed", "Data/Map001.rxdata",
+    "--allow-changed", "PBS/pokemon.txt",
+  ], { encoding: "utf8" }));
+  assert.equal(browserVerification.status, "verified");
+  assert.deepEqual(browserVerification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
+
   // Export the edited project using the same bounded Rust writer as the APK,
   // then independently verify every archive member's bytes and CRC.
   const exportedZip = join(temp, "edited.zip");
@@ -190,6 +209,9 @@ try {
     editedPbsSha256: hash(join(root, "PBS/pokemon.txt")),
     unchangedMembers: protectedPaths.length,
     exportedZipSha256: hash(exportedZip),
+    browserExportZipSha256: hash(browserReceipt.path),
+    browserExportBytes: browserReceipt.size,
+    browserExportVerification: browserVerification,
     independentZipVerification: verification,
     runtimeNotVerified: ["React browser UI", "Android SAF provider", "desktop RMXP", "JoiPlay/NaviaXP"],
   }, null, 2));

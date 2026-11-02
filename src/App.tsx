@@ -26,6 +26,7 @@ import {
   importProjectZip,
   importProjectZipFromAndroidDocument,
   exportProjectZip,
+  exportBrowserProjectZip,
   discardFailedProjectImport,
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
@@ -73,6 +74,7 @@ async function showFolderPicker(): Promise<string | null> {
 function AppContent() {
   const { saveAll, dirtyCount } = useProjectSave();
   const isAndroid = /Android/i.test(navigator.userAgent);
+  const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   // A new Map on every App render invalidates project-scoped PBS loaders and
@@ -351,6 +353,12 @@ function AppContent() {
     setArchiveProgress(0);
     setError(null);
     try {
+      if (isBrowserDev) {
+        const receipt = await exportBrowserProjectZip(active.path);
+        setArchiveProgress(100);
+        setArchiveOutcome(`ZIP saved to local file: ${receipt.path} (${receipt.size} bytes). This is not an Android SAF write.`);
+        return;
+      }
       const outcome = await exportProjectZip(active.path, active.name, (percent) => {
         setArchiveProgress(percent);
         if (percent === 20) {
@@ -371,7 +379,7 @@ function AppContent() {
       setLoading(false);
       setArchiveProgress(null);
     }
-  }, [dirtyCount]);
+  }, [dirtyCount, isBrowserDev]);
 
   // ── Map selection with unsaved-changes guard ───────────────────────────────
 
@@ -735,6 +743,9 @@ function AppContent() {
             {/* The native Android dialog can return without resolving its
                 callback (emulator 41304956412). Use the bounded File.slice
                 importer first; retain the scoped native picker as fallback. */}
+            {isBrowserDev ? (
+              <p role="status">Browser ZIP import runs when launching the editor. Restart with <code>npm run dev:web -- /absolute/path/project.zip</code> to create a new safe working copy.</p>
+            ) : (
             <label className="app-welcome-btn app-archive-picker">
               Import Essentials Project ZIP
               <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
@@ -745,6 +756,7 @@ function AppContent() {
                   if (file) void handleImportProjectZip(file);
                 }} />
             </label>
+            )}
             {isAndroid && (
               <button className="app-welcome-btn" aria-label="Use native Android document picker"
                 onClick={() => void handlePickAndroidProjectZip()} disabled={loading}>
@@ -808,6 +820,11 @@ function AppContent() {
           <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading || saving}>
             Export ZIP...
           </button>
+          {isBrowserDev ? (
+            <button className="app-titlebar-btn" onClick={() => setArchiveOutcome("To import another ZIP in browser mode, restart with: npm run dev:web -- /absolute/path/project.zip. The current working copy remains on disk.")}>
+              Import ZIP (restart)...
+            </button>
+          ) : (
           <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
             <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
@@ -818,6 +835,7 @@ function AppContent() {
                 if (file) void handleImportProjectZip(file);
               }} />
           </label>
+          )}
           {isAndroid && (
             <button className="app-titlebar-btn" aria-label="Use native Android document picker"
               onClick={() => void handlePickAndroidProjectZip()} disabled={loading}>
