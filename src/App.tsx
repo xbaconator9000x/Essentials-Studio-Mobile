@@ -4,6 +4,7 @@ import { FIRST_REGULAR_TILE } from "./types";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import {
   openProject,
+  getBrowserProjectRoot,
   loadMap,
   loadTileset,
   saveMap,
@@ -48,6 +49,8 @@ import "./App.css";
 
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
+  const browserRoot = await getBrowserProjectRoot();
+  if (browserRoot) return browserRoot;
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({

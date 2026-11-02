@@ -2,7 +2,7 @@
  * Uses bounded chunks and the native ZIP path/size validation; no Android
  * broad-storage permission or content-URI filesystem assumptions required.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./tauriApi";
 import { save } from "@tauri-apps/plugin-dialog";
 import { exportAndroidDocument } from "./androidDocumentExport";
 import {
