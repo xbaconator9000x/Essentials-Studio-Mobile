@@ -23,6 +23,7 @@ import type { PbsSection } from "../types/pbsTypes";
 
 
 import { callBrowserBridge } from "./browserTransport";
+import { serializeProjectOperation, shouldSerializeProjectCommand } from "./projectMutationQueue";
 
 const DEMO_READ_COMMANDS = new Set([
   "open_project", "load_map", "load_tileset", "load_event",
@@ -70,6 +71,12 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       })();
     }
     _invoke = await _resolving;
+  }
+  // Coordinate direct map/event/PBS/script writes as well as Save All. Archive
+  // creation joins the same queue so it cannot snapshot a half-written project.
+  // This protects all callers, including modal saves and map navigation.
+  if (shouldSerializeProjectCommand(cmd, args)) {
+    return serializeProjectOperation(args.projectPath, () => _invoke!(cmd, args) as Promise<T>);
   }
   return _invoke(cmd, args) as Promise<T>;
 }
