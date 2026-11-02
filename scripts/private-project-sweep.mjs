@@ -50,6 +50,16 @@ export function validateEvent(event, mapId, info) {
   }
   return { pages: event.pages.length, commands };
 }
+// A nil-only Scripts.rxdata is not a useful executable-project acceptance
+// fixture: require real, uniquely-addressable script entries, without logging
+// titles or source code from a private project.
+export function scriptIds(scripts) {
+  assert.ok(Array.isArray(scripts) && scripts.length > 0, "Project has no executable script entries");
+  const ids = scripts.map(script => script?.id);
+  assert.ok(ids.every(id => Number.isSafeInteger(id)), "Invalid Ruby script ID");
+  assert.equal(new Set(ids).size, ids.length, "Duplicate Ruby script IDs");
+  return ids;
+}
 async function sha256(file) {
   const h = createHash("sha256");
   for await (const chunk of createReadStream(file)) h.update(chunk);
@@ -125,11 +135,16 @@ async function run() {
     result.tilesetCount = tilesets.size;
     const scripts = await invoke("load_script_list", { projectPath: root });
     assert.ok(Array.isArray(scripts), "Native script list unavailable");
-    result.scriptCount = scripts.length;
-    for (const script of scripts) {
-      const source = await invoke("load_script_source", { projectPath: root, scriptId: script.id });
+    const idsOfScripts = scriptIds(scripts);
+    result.scriptCount = idsOfScripts.length;
+    let nonemptySources = 0;
+    for (const scriptId of idsOfScripts) {
+      const source = await invoke("load_script_source", { projectPath: root, scriptId });
       assert.equal(typeof source, "string", "Native script UTF-8 read failed");
+      if (source.length > 0) nonemptySources++;
     }
+    assert.ok(nonemptySources > 0, "All Ruby script sources are empty; native decompression was not exercised");
+    result.decodedNonemptyScripts = nonemptySources;
     const pbsFiles = await invoke("list_pbs_files", { projectPath: root });
     assert.ok(Array.isArray(pbsFiles), "Native PBS file list unavailable");
     result.pbsFileCount = pbsFiles.length;
