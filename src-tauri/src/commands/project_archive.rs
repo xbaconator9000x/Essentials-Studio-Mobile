@@ -534,6 +534,21 @@ impl<W: Seek> Seek for BoundedArchiveWriter<W> {
     }
 }
 
+/// Recompressing media that already uses entropy coding wastes CPU and battery
+/// on full Essentials projects (especially OGG music and PNG graphics). Keep
+/// ordinary Marshal, PBS and script/text members deflated to avoid ZIP bloat.
+/// This changes ZIP transport compression only; member bytes remain identical.
+fn archive_member_compression(path: &Path) -> zip::CompressionMethod {
+    let extension = path.extension().and_then(|value| value.to_str())
+        .unwrap_or("").to_ascii_lowercase();
+    match extension.as_str() {
+        "ogg" | "mp3" | "flac" | "png" | "jpg" | "jpeg" | "gif" |
+        "webp" | "mp4" | "zip" | "gz" | "bz2" | "xz" | "7z" =>
+            zip::CompressionMethod::Stored,
+        _ => zip::CompressionMethod::Deflated,
+    }
+}
+
 fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
     let file = OpenOptions::new()
         .write(true)
@@ -595,7 +610,8 @@ fn export_zip(project_dir: &Path, target: &Path) -> Result<u64, String> {
                 .ok_or("Cannot export non-Unicode project filename")?
                 .replace('\\', "/");
             clean_zip_path(&zip_name)?;
-            writer.start_file(zip_name, options).map_err(|e| e.to_string())?;
+            let member_options = options.compression_method(archive_member_compression(&path));
+            writer.start_file(zip_name, member_options).map_err(|e| e.to_string())?;
             let mut source = File::open(path).map_err(|e| e.to_string())?;
             io::copy(&mut source, &mut writer).map_err(|e| e.to_string())?;
         }
@@ -1159,6 +1175,36 @@ mod archive_roundtrip_tests {
             hashes.insert(name, format!("{:x}", Sha256::digest(&bytes)));
         }
         hashes
+    }
+
+    #[test]
+    fn export_stores_precompressed_assets_without_changing_member_bytes() {
+        let sandbox = Sandbox::new();
+        let project = sandbox.path("project");
+        fs::create_dir_all(project.join("Audio/BGM")).unwrap();
+        fs::create_dir_all(project.join("Graphics/Tilesets")).unwrap();
+        fs::create_dir_all(project.join("PBS")).unwrap();
+        let members: [(&str, &[u8], zip::CompressionMethod); 3] = [
+            ("Audio/BGM/ambient.ogg", b"OggS synthetic rights-cleared audio payload",
+                zip::CompressionMethod::Stored),
+            ("Graphics/Tilesets/scene.PNG", b"synthetic PNG-like bytes",
+                zip::CompressionMethod::Stored),
+            ("PBS/pokemon.txt", b"# synthetic PBS\\r\\nName = Example\\r\\n",
+                zip::CompressionMethod::Deflated),
+        ];
+        for (name, bytes, _) in members {
+            fs::write(project.join(name), bytes).unwrap();
+        }
+        let exported = sandbox.path("mixed-compression.zip");
+        export_zip(&project, &exported).unwrap();
+        let mut zip = ZipArchive::new(File::open(&exported).unwrap()).unwrap();
+        for (name, bytes, compression) in members {
+            let mut member = zip.by_name(name).unwrap();
+            assert_eq!(member.compression(), compression, "wrong ZIP method for {name}");
+            let mut actual = Vec::new();
+            member.read_to_end(&mut actual).unwrap();
+            assert_eq!(actual, bytes, "ZIP transport changed file bytes for {name}");
+        }
     }
 
     #[test]
