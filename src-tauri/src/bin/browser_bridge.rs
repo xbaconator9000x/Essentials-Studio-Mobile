@@ -539,7 +539,7 @@ mod tests {
         fs::write(project.join("Graphics/Tilesets/Forest.PNG"), b"synthetic-png").unwrap();
         let root = fs::canonicalize(&project).unwrap();
         let url = image_data(&root, "tileset", "forest").unwrap();
-        assert_eq!(url, format!("data:image/png;base64,{}", STANDARD.encode(b"synthetic-png")));
+        assert_eq!(url, "data:image/png;base64,c3ludGhldGljLXBuZw==");
         assert!(image_data(&root, "tileset", "../forest").is_err());
         fs::write(project.join("Graphics/Tilesets/FOREST.png"), b"ambiguous").unwrap();
         assert!(image_data(&root, "tileset", "forest").unwrap_err().contains("Ambiguous"));
