@@ -1,0 +1,64 @@
+name: Browser-first native project bridge
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/src/bin/browser_bridge.rs'
+      - 'src/services/browserTransport.ts'
+      - 'src/services/tauriApi.ts'
+      - 'src/services/archiveApi.ts'
+      - 'src/services/imageLoader.ts'
+      - 'scripts/dev-web.mjs'
+      - 'tests/browserTransport.test.mjs'
+      - 'vite.config.ts'
+      - 'package.json'
+      - '.github/workflows/browser-bridge-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/src/bin/browser_bridge.rs'
+      - 'src/services/browserTransport.ts'
+      - 'src/services/tauriApi.ts'
+      - 'src/services/archiveApi.ts'
+      - 'src/services/imageLoader.ts'
+      - 'scripts/dev-web.mjs'
+      - 'tests/browserTransport.test.mjs'
+      - 'vite.config.ts'
+      - 'package.json'
+      - '.github/workflows/browser-bridge-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  browser-transport:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Browser proxy authentication and error propagation
+        run: node --experimental-strip-types --test tests/browserTransport.test.mjs
+      - name: Frontend TypeScript and Vite build
+        run: npm run build
+
+  native-browser-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libasound2-dev libudev-dev libxdo-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Compile and test local Rust bridge
+        run: cargo test --manifest-path src-tauri/Cargo.toml --bin browser_bridge

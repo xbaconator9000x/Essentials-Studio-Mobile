@@ -5,8 +5,8 @@
  * When running in browser (dev mode), generates placeholder images.
  */
 
-import { getAssetPath } from "./tauriApi";
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getAssetPath, invoke as invokeEditor } from "./tauriApi";
+import { isTauri } from "@tauri-apps/api/core";
 import { DecodedImageCache } from "./imageCacheBudget";
 import { boundedAsyncMap } from "./boundedAsyncMap";
 import {
@@ -62,7 +62,7 @@ async function loadProjectImage(
   assetType: string,
   assetName: string,
 ): Promise<HTMLImageElement> {
-  if (isAndroidTauri()) {
+  if (isAndroidTauri() || (!isTauri() && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL))) {
     const request = privateImageReadRequest(projectPath, assetType, assetName);
     const cacheKey = privateImageCacheKey(
       privateImageLoads.generation,
@@ -76,7 +76,7 @@ async function loadProjectImage(
       request.args.projectPath,
       request.args.assetType,
       request.args.assetName,
-      ({ command, args }) => invoke<string>(command, args),
+      ({ command, args }) => invokeEditor<string>(command, args),
       async (dataUrl) => {
         const response = await fetch(dataUrl);
         if (!response.ok) throw new Error("Could not prepare private project image data");
