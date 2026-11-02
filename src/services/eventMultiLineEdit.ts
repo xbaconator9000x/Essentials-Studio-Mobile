@@ -21,7 +21,7 @@ export function replaceMultiLineBlock(
     throw new TypeError('Missing multi-line parent command');
   }
   let end = rawIndex + 1;
-  while (end < list.length && list[end].code === continuationCode) end++;
+  // Do not absorb a nested or unrelated same-code command. RMXP command\n  // indentation is part of the original event structure.\n  while (end < list.length && list[end].code === continuationCode &&\n         list[end].indent === parent.indent) end++;
   const previous = list.slice(rawIndex, end);
   const updated: EventCommand[] = lines.map((line, index) => {
     const old = previous[index];
