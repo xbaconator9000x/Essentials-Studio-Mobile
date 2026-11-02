@@ -38,7 +38,13 @@ async function saveModeledPbsFile(
   const keys = MODELED_KEYS[filename];
   if (!keys) throw new Error(`Unregistered structured PBS file: ${filename}`);
   const original = await loadPbsFile(projectPath, filename);
-  const preserved = preserveOpaquePbsFields(original, sections, new Set(keys.split(" ")));
+  // Zero-valued status moves legitimately omit these keys in the typed
+  // serializer. Preserve explicit source fields and apply a zero edit without
+  // accidentally retaining an old nonzero value.
+  const defaults = filename === "moves.txt"
+    ? new Map([["Power", "0"], ["Priority", "0"], ["EffectChance", "0"]])
+    : undefined;
+  const preserved = preserveOpaquePbsFields(original, sections, new Set(keys.split(" ")), defaults);
   await savePbsFile(projectPath, filename, preserved);
 }
 
