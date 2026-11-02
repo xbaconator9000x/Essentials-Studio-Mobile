@@ -7,6 +7,7 @@
  */
 import { createContext, useContext, useCallback, useRef, useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import { saveSequentially } from "../services/saveBatch";
 
 interface EditorCallbacks {
   save: () => Promise<void>;
@@ -87,6 +88,8 @@ export function useEditorRegistration(
 
 export function ProjectSaveProvider({ children }: { children: ReactNode }) {
   const editorsRef = useRef(new Map<string, EditorEntry>());
+  // Queue whole Save All operations: two rapid export/save taps must not interleave writes.
+  const saveTailRef = useRef<Promise<void>>(Promise.resolve());
   const [dirtyCount, setDirtyCount] = useState(0);
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
 
@@ -118,25 +121,27 @@ export function ProjectSaveProvider({ children }: { children: ReactNode }) {
     }
   }, [recalcDirty]);
 
-  const saveAll = useCallback(async (prefix?: string) => {
-    const jobs: { id: string; promise: Promise<void> }[] = [];
-    editorsRef.current.forEach((entry, id) => {
-      if (entry.isDirty && (!prefix || id.startsWith(prefix))) {
-        jobs.push({ id, promise: entry.save() });
+  const saveAll = useCallback((prefix?: string): Promise<void> => {
+    // Snapshot at execution time, not at the time a second Save All is queued.
+    // Maps and events can write the same MapNNN.rxdata: parallel writes lose edits.
+    const operation = saveTailRef.current.then(async () => {
+      const jobs: { id: string; save: () => Promise<void> }[] = [];
+      editorsRef.current.forEach((entry, id) => {
+        if (entry.isDirty && (!prefix || id.startsWith(prefix))) {
+          jobs.push({ id, save: entry.save });
+        }
+      });
+      try {
+        await saveSequentially(jobs);
+      } finally {
+        // Preserve dirty flags after failed writes or edits made during a save.
+        recalcDirty();
       }
     });
-    // allSettled so one failing editor doesn't abort the others, and we always
-    // refresh dirty state afterwards. Failures are aggregated and re-thrown so
-    // callers can keep their dialog open instead of silently "succeeding".
-    const results = await Promise.allSettled(jobs.map((j) => j.promise));
-    recalcDirty();
-    const failures = results
-      .map((r, i) => ({ r, id: jobs[i].id }))
-      .filter((x): x is { r: PromiseRejectedResult; id: string } => x.r.status === "rejected");
-    if (failures.length > 0) {
-      const detail = failures.map((f) => `${f.id}: ${f.r.reason}`).join("; ");
-      throw new Error(`Failed to save ${failures.length} editor(s): ${detail}`);
-    }
+    // Keep the queue usable after a rejected operation; the caller still
+    // receives the original rejection and must not proceed to ZIP export.
+    saveTailRef.current = operation.catch(() => {});
+    return operation;
   }, [recalcDirty]);
 
   const discardAll = useCallback((prefix?: string) => {
