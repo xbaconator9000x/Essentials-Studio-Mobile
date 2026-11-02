@@ -57,16 +57,12 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
   if (!_invoke) {
     if (!_resolving) {
       _resolving = (async () => {
-        try {
-          // Importing @tauri-apps/api/core succeeds in an ordinary browser too.
-          // Its invoke() cannot work without the injected native IPC bridge.
-          if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-            throw new Error("Native Tauri IPC unavailable");
-          }
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          // Never mask a broken native IPC module with mock data.
           const mod = await import("@tauri-apps/api/core");
           _invoke = mod.invoke;
           console.log("[tauriApi] Using real Tauri invoke");
-        } catch {
+        } else {
           _invoke = browserInvoke;
           console.log("[tauriApi] Browser mode: local backend or read-only demo");
         }
