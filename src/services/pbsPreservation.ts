@@ -10,6 +10,7 @@ export function preserveOpaquePbsFields(
   original: readonly PbsSection[],
   edited: readonly PbsSection[],
   managedKeys: ReadonlySet<string>,
+  missingDefaults: ReadonlyMap<string, string> = new Map(),
 ): PbsSection[] {
   if (edited.length < original.length) {
     throw new Error("PBS section deletion is unsupported by the structured editor; use raw PBS editing");
@@ -34,7 +35,11 @@ export function preserveOpaquePbsFields(
       const offset = consumed.get(field.key) ?? 0;
       const replacement = newByKey.get(field.key)?.[offset];
       if (!replacement) {
-        throw new Error(`PBS ${old.header}.${field.key} would be removed; use raw PBS editing`);
+        const defaultValue = missingDefaults.get(field.key);
+        if (defaultValue === undefined) {
+          throw new Error(`PBS ${old.header}.${field.key} would be removed; use raw PBS editing`);
+        }
+        return { key: field.key, value: defaultValue };
       }
       consumed.set(field.key, offset + 1);
       return { key: field.key, value: replacement.value };
