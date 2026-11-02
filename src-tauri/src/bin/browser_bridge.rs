@@ -2,7 +2,7 @@
 //! Reuses the editor's native Rust project/PBS/Marshal commands; no alternate serializer.
 //! A selected, extracted project root is the ONLY accessible project directory.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use essentials_studio_lib::commands::{database, pbs, project, scripts};
+use essentials_studio_lib::commands::{database, pbs, project, project_archive, scripts};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -108,12 +108,41 @@ fn image_data(root: &Path, asset_type: &str, name: &str) -> Result<String, Strin
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
 
+/// A deterministic-location, non-overwriting ZIP outside the editable project.
+/// The user cannot supply an arbitrary output path through the HTTP bridge.
+fn browser_export_destination(root: &Path) -> Result<PathBuf, String> {
+    let parent = root.parent().ok_or("Project root has no export parent directory")?;
+    let stem = root.file_name().and_then(|name| name.to_str()).unwrap_or("Essentials");
+    let safe: String = stem.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .take(48)
+        .collect();
+    let name = if safe.is_empty() { "Essentials" } else { &safe };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("System clock unavailable: {e}"))?
+        .as_nanos();
+    Ok(parent.join(format!("{name}-edited-{}-{stamp}.zip", std::process::id())))
+}
+
 async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, String> {
     if command == "project_root" {
         return Ok(json!(root.to_string_lossy().to_string()));
     }
     let path = scoped_project(args, root)?;
     match command {
+        "export_browser_project_archive" => {
+            // The selected project root has already been validated by scoped_project.
+            // Never accept a browser-supplied destination, overwrite an existing
+            // archive or include the exported ZIP inside its own project.
+            let destination = browser_export_destination(root)?;
+            let output = destination.clone();
+            let selected_project = PathBuf::from(path);
+            let size = tokio::task::spawn_blocking(move || {
+                project_archive::export_archive_to_new_file(&selected_project, &output)
+            }).await.map_err(|e| format!("ZIP export worker failed: {e}"))??;
+            Ok(json!({"path": destination.to_string_lossy(), "size": size}))
+        }
         "open_project" => {
             for f in ["Game.rxproj", "Data/MapInfos.rxdata", "Data/System.rxdata", "Data/Tilesets.rxdata"] {
                 inside(root, Path::new(f))?;
@@ -337,6 +366,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn browser_export_path_is_a_sibling_not_inside_project() {
+        let root = std::env::temp_dir().join("synthetic-project");
+        let output = browser_export_destination(&root).unwrap();
+        assert_eq!(output.parent(), root.parent());
+        assert_eq!(output.extension().and_then(|e| e.to_str()), Some("zip"));
+        assert!(!output.starts_with(&root));
+        assert!(output.file_name().unwrap().to_string_lossy().starts_with("synthetic-project-edited-"));
+    }
+
+    #[test]
+    fn browser_export_rejects_a_different_project_path() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let root = fs::canonicalize(std::env::temp_dir()).unwrap();
+        let outside = root.parent().unwrap().to_string_lossy().to_string();
+        let args = json!({"projectPath": outside, "destination": "/tmp/overwrite.zip"});
+        assert!(rt.block_on(dispatch("export_browser_project_archive", &args, &root)).is_err());
+    }
+
     #[test]
     fn rejects_unsupported_commands() {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
