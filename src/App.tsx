@@ -31,6 +31,7 @@ import {
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
+import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
@@ -431,41 +432,19 @@ function AppContent() {
 
     // Do not mutate the previous map or clear its dirty state until the
     // replacement map, tileset and Android graphics have all loaded.
-    if (
-      !skipGuard &&
-      currentMapIdRef.current !== null &&
-      mapId !== currentMapIdRef.current &&
-      mapIsDirtyRef.current
-    ) {
-      const saveFirst = await confirmEditor("Save tile changes to the current map before switching?");
-      // Cancel must keep the dirty source map active. Previously declining this
-      // prompt continued navigation and silently discarded unsaved tile edits.
-      if (!isCurrent() || !saveFirst) return;
-      if (saveFirst) {
-        const md = mapDataRef.current;
-        if (md) {
-          try {
-            // MapEditor mutates tiles in place. Never pass a live array to an
-            // asynchronous write or switch away after a newer paint operation.
-            const savedRevision = mapEditRevisionRef.current;
-            const tilesSnapshot = md.tiles.slice();
-            await saveMap(path, md.id, tilesSnapshot, md.width, md.height);
-            if (!isCurrent()) return;
-            if (!mapStillUnchanged(
-              { projectPath: path, map: md, revision: savedRevision },
-              { projectPath: projectRef.current?.path, map: mapDataRef.current, revision: mapEditRevisionRef.current },
-            )) {
-              setError("Map changed while saving for navigation. Newer edits remain unsaved; save again.");
-              return;
-            }
-          } catch (err) {
-            if (isCurrent()) setError(`Save failed: ${err}`);
-            return;
-          }
-        }
+    if (!skipGuard && currentMapIdRef.current !== null && mapId !== currentMapIdRef.current) {
+      try {
+        const proceed = await saveBeforeMapNavigation(
+          hasUnsavedEdits,
+          () => confirmEditor("Save unsaved map, event, script and PBS changes before switching maps? Cancel keeps the current map open."),
+          saveAll,
+          isCurrent,
+        );
+        if (!proceed) return;
+      } catch (err) {
+        if (isCurrent()) setError(`Save before navigation failed: ${String(err)}`);
+        return;
       }
-      // A failed destination load must still leave the previous dirty tiles
-      // available for saving; only clear the flag after successful commit.
     }
 
     // A destination map may take time to load its graphics. Do not discard
@@ -489,6 +468,13 @@ function AppContent() {
         return;
       }
 
+      // Event/PBS edits can arrive while the destination graphics are loading.
+      // Never unmount a newly dirty editor just because the map tiles stayed clean.
+      if (mapId !== currentMapIdRef.current && hasUnsavedEdits()) {
+        setError("Unsaved edits appeared while loading the destination map. Navigation cancelled.");
+        return;
+      }
+
       // Reloading the same map after event editing must preserve unsaved tile
       // painting, while using the newly loaded event list and graphics.
       const preserveDirty = mapId === currentMapIdRef.current && mapIsDirtyRef.current;
@@ -502,9 +488,12 @@ function AppContent() {
       setTilesetInfo(prepared.tileset);
       setTilesetImage(prepared.images.tileset);
       setAutotileImages(prepared.images.autotiles);
+      const changedMap = mapId !== currentMapIdRef.current;
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
-      setEditingEvent(null);
+      // Re-selecting/reloading the same map must not silently unmount an open
+      // event editor with unsaved dialogue or command edits.
+      if (changedMap) setEditingEvent(null);
       mapIsDirtyRef.current = preserveDirty;
       setMapIsDirty(preserveDirty);
     } catch (err) {
@@ -512,7 +501,7 @@ function AppContent() {
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, []);
+  }, [saveAll, hasUnsavedEdits]);
 
   const handleMapDirty = useCallback(() => {
     updateMapDirty(true);
