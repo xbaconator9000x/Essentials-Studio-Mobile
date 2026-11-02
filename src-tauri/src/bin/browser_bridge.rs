@@ -61,7 +61,10 @@ fn map_file(root: &Path, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-fn pbs_file(root: &Path, filename: &str) -> Result<(), String> {
+/// Optional Essentials PBS files (e.g. pokemon_forms.txt) legitimately do
+/// not exist. Read commands return empty data for those files, matching native
+/// Tauri, but writes remain limited to existing, scoped project files.
+fn pbs_file(root: &Path, filename: &str, require_existing: bool) -> Result<(), String> {
     if filename.is_empty()
         || !filename.ends_with(".txt")
         || !filename[..filename.len() - 4]
@@ -70,7 +73,21 @@ fn pbs_file(root: &Path, filename: &str) -> Result<(), String> {
     {
         return Err("Invalid PBS filename".into());
     }
-    inside(root, Path::new("PBS").join(filename).as_path())?;
+    let directory = inside(root, Path::new("PBS"))?;
+    let candidate = directory.join(filename);
+    match fs::symlink_metadata(&candidate) {
+        Ok(_) => {
+            // Resolve symlinks, including a symlink to an outside file.
+            // Broken links fail closed rather than masquerading as absent files.
+            let resolved = fs::canonicalize(&candidate)
+                .map_err(|e| format!("PBS file unavailable: {e}"))?;
+            if !resolved.starts_with(root) || !resolved.is_file() {
+                return Err("PBS file escapes the selected project root or is not a file".into());
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !require_existing => {}
+        Err(error) => return Err(format!("PBS file unavailable: {error}")),
+    }
     Ok(())
 }
 
@@ -211,22 +228,22 @@ async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, Str
         }
         "load_pbs_file" => {
             let name: String = required(args, "filename")?;
-            pbs_file(root, &name)?;
+            pbs_file(root, &name, false)?;
             serial(pbs::load_pbs_file(path, name).await)
         }
         "save_pbs_file" => {
             let name: String = required(args, "filename")?;
-            pbs_file(root, &name)?;
+            pbs_file(root, &name, true)?;
             serial(pbs::save_pbs_file(path, name, required(args, "sections")?).await)
         }
         "read_raw_pbs_file" => {
             let name: String = required(args, "filename")?;
-            pbs_file(root, &name)?;
+            pbs_file(root, &name, false)?;
             serial(pbs::read_raw_pbs_file(path, name).await)
         }
         "write_raw_pbs_file" => {
             let name: String = required(args, "filename")?;
-            pbs_file(root, &name)?;
+            pbs_file(root, &name, true)?;
             serial(pbs::write_raw_pbs_file(path, name, required(args, "content")?).await)
         }
         "list_asset_files" => {
@@ -429,6 +446,46 @@ mod tests {
         assert!(request(&"a".repeat(64), "http://127.0.0.1:5173").contains("\"ok\":true"));
         assert!(request("wrong", "http://127.0.0.1:5173").contains("\"ok\":false"));
         assert!(request(&"a".repeat(64), "http://evil.example").contains("\"ok\":false"));
+    }
+
+    #[test]
+    fn optional_pbs_reads_match_native_without_permitting_new_writes() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base = std::env::temp_dir().join(format!("essentials-pbs-{}-{nonce}", std::process::id()));
+        let project = base.join("project");
+        fs::create_dir_all(project.join("PBS")).unwrap();
+        let root = fs::canonicalize(&project).unwrap();
+        assert!(pbs_file(&root, "pokemon_forms.txt", false).is_ok());
+        assert!(pbs_file(&root, "pokemon_forms.txt", true).is_err());
+        assert!(pbs_file(&root, "../outside.txt", false).is_err());
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let args = json!({"projectPath": root.to_string_lossy(), "filename": "pokemon_forms.txt"});
+        assert_eq!(rt.block_on(dispatch("load_pbs_file", &args, &root)).unwrap(), json!([]));
+        assert!(rt.block_on(dispatch("save_pbs_file", &json!({
+            "projectPath": root.to_string_lossy(), "filename": "pokemon_forms.txt", "sections": []
+        }), &root)).is_err());
+        assert!(!root.join("PBS/pokemon_forms.txt").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn optional_pbs_reads_reject_outside_and_dangling_symlinks() {
+        use std::os::unix::fs::symlink;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base = std::env::temp_dir().join(format!("essentials-pbs-link-{}-{nonce}", std::process::id()));
+        let project = base.join("project");
+        fs::create_dir_all(project.join("PBS")).unwrap();
+        fs::write(base.join("outside.txt"), "secret").unwrap();
+        symlink(base.join("outside.txt"), project.join("PBS/pokemon_forms.txt")).unwrap();
+        let root = fs::canonicalize(&project).unwrap();
+        assert!(pbs_file(&root, "pokemon_forms.txt", false).is_err());
+        fs::remove_file(project.join("PBS/pokemon_forms.txt")).unwrap();
+        symlink(base.join("missing.txt"), project.join("PBS/pokemon_forms.txt")).unwrap();
+        assert!(pbs_file(&root, "pokemon_forms.txt", false).is_err());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

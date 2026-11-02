@@ -138,6 +138,43 @@ try {
   assert.equal(afterEvent.tiles[differences[0].index], differences[0].tile);
   await page.screenshot({ path: join(evidence, "browser-event-saved.png"), fullPage: true });
 
+  // Test the real React entity-based PBS editor, not a direct HTTP write.
+  // The synthetic ZIP omits optional forms/metrics files on purpose.
+  const originalPbsText = readFileSync(join(root, "PBS/pokemon.txt"), "utf8");
+  const pbsBefore = await invokeRead("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
+  assert.ok(pbsBefore.length > 0, "Synthetic PBS must contain a Pokémon section");
+  const originalName = pbsBefore[0].fields.find(field => field.key === "Name")?.value;
+  assert.ok(originalName, "Synthetic Pokémon must have a Name field");
+  await page.getByRole("button", { name: "PBS Data", exact: true }).click();
+  const pbsEditor = page.locator(".pbs-entity-editor");
+  await pbsEditor.waitFor({ timeout: 15_000 });
+  const pokemonInputs = pbsEditor.locator(".pbs-entity-panels > div:first-child input");
+  await page.waitForFunction(name => [...document.querySelectorAll(".pbs-entity-panels > div:first-child input")]
+    .some(input => input.value === name), originalName, { timeout: 20_000 });
+  const nameIndex = await pokemonInputs.evaluateAll((inputs, name) =>
+    inputs.findIndex(input => input.value === name), originalName);
+  assert.ok(nameIndex >= 0, "Pokémon Name field must be editable in React");
+  const updatedPokemonName = "Chromium PBS Roundtrip";
+  await pokemonInputs.nth(nameIndex).fill(updatedPokemonName);
+  await pbsEditor.getByText("Unsaved changes").waitFor({ timeout: 10_000 });
+  await pbsEditor.getByRole("button", { name: "Apply", exact: true }).click();
+  await pbsEditor.getByText("Unsaved changes").waitFor({ state: "hidden", timeout: 30_000 });
+  const pbsAfter = await invokeRead("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
+  assert.equal(pbsAfter[0].fields.find(field => field.key === "Name")?.value, updatedPokemonName,
+    "PBS name edited through React must persist in native PBS text");
+  const savedPbsText = readFileSync(join(root, "PBS/pokemon.txt"), "utf8");
+  assert.ok(savedPbsText.includes("# synthetic PBS"), "PBS source comment must survive structured editing");
+  assert.notEqual(savedPbsText, originalPbsText, "PBS edit must actually change source bytes");
+  assert.equal(existsSync(join(root, "PBS/pokemon_forms.txt")), false,
+    "Optional missing PBS files must not be created by an unrelated edit");
+  await pbsEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await pbsEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  const mapAfterPbs = await invokeRead("load_map", { projectPath: root, mapId: 1 });
+  assert.equal(mapAfterPbs.tiles[differences[0].index], differences[0].tile);
+  const eventAfterPbs = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], updatedDialogue);
+  await page.screenshot({ path: join(evidence, "browser-pbs-saved.png"), fullPage: true });
+
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
   await status.waitFor({ timeout: 90_000 });
@@ -150,22 +187,26 @@ try {
   const verification = JSON.parse(execFileSync("python3", [
     "scripts/verify_project_roundtrip.py", original, exported,
     "--allow-changed", "Data/Map001.rxdata",
+    "--allow-changed", "PBS/pokemon.txt",
   ], { encoding: "utf8" }));
   assert.equal(verification.status, "verified");
-  assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata"]);
+  assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
   const reopened = execFileSync("src-tauri/target/debug/browser_archive", [
     "import", exported, join(temp, "reopened"),
   ], { encoding: "utf8" }).trim();
   assert.equal(sha(join(root, "Data/Map001.rxdata")), sha(join(reopened, "Data/Map001.rxdata")));
+  assert.equal(sha(join(root, "PBS/pokemon.txt")), sha(join(reopened, "PBS/pokemon.txt")),
+    "Exported/reimported PBS must preserve the actual UI edit");
   assert.equal(sha(original), originalHash, "Original ZIP must not change");
   assert.deepEqual(pageErrors, [], "No uncaught browser JavaScript errors");
   await page.screenshot({ path: join(evidence, "browser-export-complete.png"), fullPage: true });
   const receipt = {
-    status: "real Chromium map/event UI → Rust saves → native ZIP export → reimport passed",
+    status: "real Chromium map/event/PBS UI → Rust saves → native ZIP export → reimport passed",
     originalZipSha256: originalHash,
     exportedZipSha256: sha(exported),
     changedTile: differences[0],
     changedDialogue: updatedDialogue,
+    changedPokemonName: updatedPokemonName,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
