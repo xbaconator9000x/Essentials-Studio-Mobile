@@ -29,7 +29,7 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function invokeRead(command, args = {}) {
   const response = await fetch("http://127.0.0.1:5173/api/browser/invoke", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Essentials-Client": "browser-dev" },
+    headers: { "Content-Type": "application/json", "X-Essentials-Client": "browser-dev", "Origin": "http://127.0.0.1:5173" },
     body: JSON.stringify({ command, args }),
     signal: AbortSignal.timeout(4000),
   });
