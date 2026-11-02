@@ -16,7 +16,7 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
-import { findEditableShowText, expectedDialogueEdit } from "./private-browser-event-probe.mjs";
+import { findProjectShowText, mapTreeAncestors, expectedDialogueEdit } from "./private-browser-event-probe.mjs";
 
 const input = resolve(process.argv[2] || "");
 assert.ok(existsSync(input) && statSync(input).isFile() && input.toLowerCase().endsWith(".zip"),
@@ -81,14 +81,45 @@ try {
   await page.getByRole("button", { name: "Open Project Folder" }).click({ timeout: 60_000 });
   await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 120_000 });
   const project = await invoke("open_project", { path: root });
-  const mapId = Number(project.edit_map_id);
-  assert.ok(Number.isInteger(mapId) && mapId > 0 && mapId <= 999, "Invalid initial map ID");
+  const initialMapId = Number(project.edit_map_id);
+  assert.ok(Number.isInteger(initialMapId) && initialMapId > 0 && initialMapId <= 999,
+    "Invalid initial map ID");
+  // A real Shattered project may start on a gate/intro map without a Show
+  // Text command. Select a genuine existing dialogue event from MapInfos
+  // instead of fabricating one or incorrectly failing the full-project gate.
+  stage = "Find existing real-project dialogue and navigate map tree";
+  const probe = await findProjectShowText(project,
+    id => invoke("load_map", { projectPath: root, mapId: id }),
+    (id, eventId) => invoke("load_event", { projectPath: root, mapId: id, eventId }));
+  assert.ok(probe, "No existing editable Show Text found in the bounded project map scan");
+  const mapId = probe.mapId;
+  if (mapId !== initialMapId) {
+    const ancestors = mapTreeAncestors(project.map_infos, mapId);
+    for (const id of ancestors) {
+      const name = page.locator(".map-tree-name")
+        .filter({ hasText: new RegExp("^\\[" + String(id).padStart(3, "0") + "\\] ") });
+      await name.waitFor({ timeout: 60_000 });
+      const item = name.locator("..");
+      if (await item.getAttribute("aria-expanded") === "false") {
+        await item.locator(".map-tree-toggle").click();
+      }
+    }
+    const name = page.locator(".map-tree-name")
+      .filter({ hasText: new RegExp("^\\[" + String(mapId).padStart(3, "0") + "\\] ") });
+    await name.click({ timeout: 60_000 });
+    await page.waitForFunction(id => {
+      const selected = document.querySelector(".map-tree-item.selected .map-tree-name");
+      return selected?.textContent?.trim().startsWith(
+        "[" + String(id).padStart(3, "0") + "] ");
+    }, mapId, { timeout: 120_000 });
+  }
   const before = await invoke("load_map", { projectPath: root, mapId });
   assert.ok(before.width > 0 && before.height > 0 && before.tiles.length === before.width * before.height * 3,
     "Invalid initial three-layer map");
   await page.locator(".map-editor-canvas").waitFor({ timeout: 120_000 });
   await page.screenshot({ path: join(evidence, "private-react-map-open.png"), fullPage: true });
   result.stages.reactProjectOpen = "passed";
+  result.dialogueMapId = mapId;
 
   stage = "React map paint and save";
   // Choose an XP autotile family different from the first cell's family.
@@ -121,9 +152,6 @@ try {
   stage = "React existing dialogue event editing and save";
   // The project is a disposable native-imported copy. Do not create events or
   // change scripts just to make a test pass: require a genuine Show Text command.
-  const probe = await findEditableShowText(before.events, eventId =>
-    invoke("load_event", { projectPath: root, mapId, eventId }));
-  assert.ok(probe, "Initial map has no existing Show Text command; real-project event UI gate blocked");
   const canvas = page.locator(".map-editor-canvas");
   const bounds = await canvas.boundingBox();
   assert.ok(bounds && bounds.width >= 64 && bounds.height >= 64, "Map canvas is too small for event editing");
