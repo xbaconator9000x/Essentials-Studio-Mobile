@@ -16,7 +16,7 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
-import { findProjectShowText, expectedDialogueEdit } from "./private-browser-event-probe.mjs";
+import { findProjectShowText, mapTreeAncestors, expectedDialogueEdit } from "./private-browser-event-probe.mjs";
 
 const input = resolve(process.argv[2] || "");
 assert.ok(existsSync(input) && statSync(input).isFile() && input.toLowerCase().endsWith(".zip"),
@@ -94,18 +94,7 @@ try {
   assert.ok(probe, "No existing editable Show Text found in the bounded project map scan");
   const mapId = probe.mapId;
   if (mapId !== initialMapId) {
-    const ancestors = [];
-    const seen = new Set([mapId]);
-    let current = mapId;
-    while (true) {
-      const parent = Number(project.map_infos[current]?.parent_id ?? 0);
-      if (!parent) break;
-      assert.ok(Number.isInteger(parent) && !seen.has(parent) && project.map_infos[parent],
-        "Invalid MapInfos parent hierarchy for dialogue map");
-      seen.add(parent);
-      ancestors.unshift(parent);
-      current = parent;
-    }
+    const ancestors = mapTreeAncestors(project.map_infos, mapId);
     for (const id of ancestors) {
       const name = page.locator(".map-tree-name")
         .filter({ hasText: new RegExp("^\\[" + String(id).padStart(3, "0") + "\\] ") });
