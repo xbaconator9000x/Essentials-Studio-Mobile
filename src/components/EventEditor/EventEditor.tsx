@@ -11,6 +11,7 @@ import {
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
+import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
 import { PageProperties } from "./parts/PageProperties";
@@ -459,13 +460,7 @@ export function EventEditor({
                           onUpdateLines={(lines) => {
                             const contCode = PARENT_CONT[block.cmd.code]!;
                             updatePage((p) => {
-                              const list = [...p.list];
-                              const newCmds: EventCommand[] = lines.map((text, idx) => ({
-                                code: idx === 0 ? block.cmd.code : contCode,
-                                indent: block.cmd.indent,
-                                parameters: [text],
-                              }));
-                              list.splice(block.rawIndex, 1 + block.contIndices.length, ...newCmds);
+                              const list = replaceMultiLineBlock(p.list, block.rawIndex, lines, contCode);
                               return { ...p, list };
                             });
                             setDirty(true);

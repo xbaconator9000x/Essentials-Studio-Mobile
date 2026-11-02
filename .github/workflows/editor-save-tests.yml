@@ -10,6 +10,8 @@ on:
       - 'src/services/saveGuards.ts'
       - 'tests/eventSaveGuards.test.mjs'
       - 'src/services/eventSaveGuards.ts'
+      - 'src/services/eventMultiLineEdit.ts'
+      - 'tests/eventMultiLineEdit.test.mjs'
       - 'src/components/EventEditor/EventEditor.tsx'
       - 'src/services/pbsSaveGuards.ts'
       - 'src/services/pbsPreservation.ts'
@@ -67,4 +69,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify save errors propagate and dirty state remains set
-        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs tests/pbsSaveGuards.test.mjs tests/pbsPreservation.test.mjs tests/eventSaveGuards.test.mjs tests/editorDialog.test.mjs
+        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs tests/pbsSaveGuards.test.mjs tests/pbsPreservation.test.mjs tests/eventSaveGuards.test.mjs tests/eventMultiLineEdit.test.mjs tests/editorDialog.test.mjs

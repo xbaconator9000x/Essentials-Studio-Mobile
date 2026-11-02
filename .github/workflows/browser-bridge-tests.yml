@@ -17,6 +17,8 @@ on:
       - 'scripts/browser-ui-smoke.mjs'
       - 'scripts/private-project-sweep.mjs'
       - 'scripts/private-browser-ui-smoke.mjs'
+      - 'scripts/private-browser-event-probe.mjs'
+      - 'tests/privateBrowserEventProbe.test.mjs'
       - 'tests/privateProjectSweep.test.mjs'
       - 'docs/BROWSER_FIRST_DEVELOPMENT.md'
       - 'tests/browserTransport.test.mjs'
@@ -57,7 +59,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Browser proxy authentication and error propagation
-        run: node --experimental-strip-types --test tests/browserTransport.test.mjs tests/privateProjectSweep.test.mjs
+        run: node --experimental-strip-types --test tests/browserTransport.test.mjs tests/privateProjectSweep.test.mjs tests/privateBrowserEventProbe.test.mjs
       - name: Syntax-check private full-project React acceptance runner
         run: node --check scripts/private-browser-ui-smoke.mjs
       - name: Frontend TypeScript and Vite build
@@ -101,7 +103,7 @@ jobs:
         env:
           BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence
         run: node scripts/browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
-      - name: Private-project-compatible React map/PBS edit and ZIP reimport (synthetic fixture only)
+      - name: Private-project-compatible React map/event/PBS edit and ZIP reimport (synthetic fixture only)
         env:
           PRIVATE_BROWSER_UI_EVIDENCE_DIR: ${{ runner.temp }}/browser-ui-evidence/private-compatible
         run: node scripts/private-browser-ui-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"

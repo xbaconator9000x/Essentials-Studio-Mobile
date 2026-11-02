@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Actual React/Chromium -> Rust map and PBS edit/export/reimport acceptance.
+ * Actual React/Chromium -> Rust map, event and PBS edit/export/reimport acceptance.
  * Accepts an authorised full Essentials ZIP locally; CI supplies only a
  * rights-cleared synthetic ZIP. Never upload private screenshots or archives.
  *
@@ -16,6 +16,7 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
+import { findEditableShowText, expectedDialogueEdit } from "./private-browser-event-probe.mjs";
 
 const input = resolve(process.argv[2] || "");
 assert.ok(existsSync(input) && statSync(input).isFile() && input.toLowerCase().endsWith(".zip"),
@@ -117,6 +118,67 @@ try {
   result.stages.reactMapSave = "passed";
   await page.screenshot({ path: join(evidence, "private-react-map-saved.png"), fullPage: true });
 
+  stage = "React existing dialogue event editing and save";
+  // The project is a disposable native-imported copy. Do not create events or
+  // change scripts just to make a test pass: require a genuine Show Text command.
+  const probe = await findEditableShowText(before.events, eventId =>
+    invoke("load_event", { projectPath: root, mapId, eventId }));
+  assert.ok(probe, "Initial map has no existing Show Text command; real-project event UI gate blocked");
+  const canvas = page.locator(".map-editor-canvas");
+  const bounds = await canvas.boundingBox();
+  assert.ok(bounds && bounds.width >= 64 && bounds.height >= 64, "Map canvas is too small for event editing");
+  const desiredX = Math.min(probe.x, Math.max(1, Math.floor(bounds.width / 96)));
+  const desiredY = Math.min(probe.y, Math.max(1, Math.floor(bounds.height / 96)));
+  const panX = probe.x - desiredX;
+  const panY = probe.y - desiredY;
+  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  if (panX || panY) {
+    await page.mouse.move(bounds.x + 32, bounds.y + 32);
+    await page.mouse.wheel(panX * 32, panY * 32);
+    await page.waitForTimeout(350);
+  }
+  await canvas.dblclick({ position: { x: desiredX * 32 + 16, y: desiredY * 32 + 16 } });
+  const eventEditor = page.locator(".event-editor");
+  await eventEditor.waitFor({ timeout: 45_000 });
+  if (probe.pageIndex > 0) {
+    await eventEditor.getByRole("button", { name: "Page " + (probe.pageIndex + 1), exact: true }).click();
+  }
+  const updatedDialogue = "PrivateUiRoundtripProbeDialogue";
+  assert.notEqual(probe.event.pages[probe.pageIndex].list[probe.commandIndex].parameters[0],
+    updatedDialogue, "Dialogue probe must make a real change");
+  if (probe.hasContinuation) {
+    const originalList = probe.event.pages[probe.pageIndex].list;
+    const lines = [updatedDialogue];
+    for (let i = probe.commandIndex + 1; originalList[i]?.code === 401; i++) {
+      lines.push(String(originalList[i].parameters[0] ?? ""));
+    }
+    await eventEditor.locator(".event-command-block").filter({ hasText: "Show Text" }).first().dblclick();
+    const textarea = eventEditor.locator(".event-command-edit-textarea");
+    await textarea.waitFor({ timeout: 15_000 });
+    await textarea.fill(lines.join("\n"));
+  } else {
+    await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
+    const field = eventEditor.locator(".event-command-edit-input");
+    await field.waitFor({ timeout: 15_000 });
+    await field.fill(updatedDialogue);
+  }
+  await eventEditor.locator(".event-editor-header").click();
+  await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue })
+    .first().waitFor({ timeout: 15_000 });
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.waitFor({ state: "hidden", timeout: 90_000 });
+  const eventAfter = await invoke("load_event", { projectPath: root, mapId, eventId: probe.eventId });
+  assert.deepEqual(eventAfter,
+    expectedDialogueEdit(probe.event, probe.pageIndex, probe.commandIndex, updatedDialogue),
+    "React dialogue edit must preserve all other event pages, commands and opaque metadata");
+  const mapAfterEvent = await invoke("load_map", { projectPath: root, mapId });
+  assert.equal(mapAfterEvent.tiles[changes[0].index], changes[0].tile,
+    "Event save must not undo the previously painted map tile");
+  result.stages.reactEventSave = "passed";
+  result.eventProbe = { mapId, eventId: probe.eventId, pageIndex: probe.pageIndex,
+    hasContinuation: probe.hasContinuation };
+  await page.screenshot({ path: join(evidence, "private-react-event-saved.png"), fullPage: true });
+
   stage = "React PBS editing and save";
   const pbsBefore = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   const firstName = pbsBefore[0]?.fields?.find(field => field.key === "Name")?.value;
@@ -178,7 +240,7 @@ try {
   result.stages.nativeReimport = "passed";
   result.exportedZipSha256 = await sha(exported);
   result.changedPaths = [mapPath, "PBS/pokemon.txt"];
-  result.status = "React map/PBS UI → Rust save → ZIP export → independent verification → reimport passed";
+  result.status = "React map/event/PBS UI → Rust save → ZIP export → independent verification → reimport passed";
   await page.screenshot({ path: join(evidence, "private-react-export-complete.png"), fullPage: true });
 } catch (error) {
   result.failedStage = stage;
