@@ -965,6 +965,29 @@ mod archive_roundtrip_tests {
         }
     }
 
+    // Use real zlib-compressed Ruby script tuples in the canonical ZIP fixture.
+    // A nil-only Scripts.rxdata exercised byte preservation but never proved
+    // that the browser/native reader can decode executable script sources.
+    fn synthetic_scripts() -> RubyValue {
+        use flate2::{write::ZlibEncoder, Compression};
+        let entry = |id: i64, title: &str, source: &str| {
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(source.as_bytes()).expect("compress synthetic Ruby");
+            RubyValue::Array(vec![
+                RubyValue::Integer(id),
+                ruby_string(title),
+                RubyValue::String(RubyString::new(encoder.finish().unwrap())),
+                // XP script tuples may contain opaque trailing metadata.
+                RubyValue::Symbol("preserve-extra-field".into()),
+            ])
+        };
+        RubyValue::Array(vec![
+            RubyValue::Nil,
+            entry(1, "Synthetic bootstrap", "def pbSynthetic; :ok; end\n"),
+            entry(2, "Synthetic UTF-8", "# café\ndef pbSecond; :ok; end\n"),
+        ])
+    }
+
     fn synthetic_rxdata_members() -> Vec<(String, Vec<u8>)> {
         let mut map = RpgMap::new_blank(2, 2, 1);
         map.data.set(1, 0, 1, 48);
@@ -1074,7 +1097,7 @@ mod archive_roundtrip_tests {
             ),
             (
                 "Data/Scripts.rxdata".into(),
-                crate::marshal::dump(&RubyValue::Array(vec![RubyValue::Nil])).unwrap(),
+                crate::marshal::dump(&synthetic_scripts()).unwrap(),
             ),
         ]
         .into_iter()
@@ -1287,6 +1310,22 @@ mod archive_roundtrip_tests {
                 serde_json::Value::String("Synthetic dialogue".into())
             );
 
+            // Decode both nonempty zlib-compressed Ruby scripts through the
+            // production reader, including a UTF-8 source and opaque tuple tail.
+            let scripts = crate::commands::scripts::load_script_list(project.path.clone())
+                .await.expect("list populated synthetic Ruby scripts");
+            assert_eq!(scripts.iter().map(|script| script.id).collect::<Vec<_>>(), vec![1, 2]);
+            assert_eq!(
+                crate::commands::scripts::load_script_source(project.path.clone(), 1)
+                    .await.expect("decode first synthetic Ruby script"),
+                "def pbSynthetic; :ok; end\n"
+            );
+            assert_eq!(
+                crate::commands::scripts::load_script_source(project.path.clone(), 2)
+                    .await.expect("decode UTF-8 synthetic Ruby script"),
+                "# café\ndef pbSecond; :ok; end\n"
+            );
+
             // Exercise the actual event-save path, not just read-only parsing.
             let mut edited_event = event;
             edited_event.pages[0].list[0].parameters[0] =
@@ -1396,6 +1435,16 @@ mod archive_roundtrip_tests {
             )
             .await
             .expect("open project reimported from exported ZIP");
+            let reopened_scripts = crate::commands::scripts::load_script_list(
+                reopened_project.path.clone(),
+            ).await.expect("list scripts after native ZIP reimport");
+            assert_eq!(reopened_scripts.len(), 2);
+            assert_eq!(
+                crate::commands::scripts::load_script_source(
+                    reopened_project.path.clone(), 2,
+                ).await.expect("decode UTF-8 Ruby script after reimport"),
+                "# café\ndef pbSecond; :ok; end\n"
+            );
             let reopened_map = crate::commands::project::load_map(
                 reopened_project.path.clone(), 1,
             )

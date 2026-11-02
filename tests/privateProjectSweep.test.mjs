@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapIds, validateMap, validateEvent } from "../scripts/private-project-sweep.mjs";
+import { mapIds, validateMap, validateEvent, scriptIds } from "../scripts/private-project-sweep.mjs";
 
 const fixtureMap = () => ({
   id: 1, width: 2, height: 2, tileset_id: 1,
@@ -29,4 +29,12 @@ test("full-project sweep checks native event pages and command structures", () =
   assert.throws(() => validateEvent({ id: 7, pages: [
     { list: [{ code: 101, indent: 0 }] },
   ] }, 1, info), /Malformed event command/);
+});
+
+test("full-project sweep requires populated, uniquely-addressable Ruby scripts", () => {
+  assert.deepEqual(scriptIds([{ id: 1, title: "First" }, { id: 2, title: "Second" }]), [1, 2]);
+  assert.throws(() => scriptIds([]), /no executable script entries/);
+  assert.throws(() => scriptIds([{ id: 1 }, { id: 1 }]), /Duplicate Ruby script IDs/);
+  assert.throws(() => scriptIds([{ id: "1" }]), /Invalid Ruby script ID/);
+  assert.throws(() => scriptIds([{ id: Number.MAX_SAFE_INTEGER + 1 }]), /Invalid Ruby script ID/);
 });
