@@ -360,7 +360,7 @@ mod tests {
             });
             let body = r#"{"command":"project_root","args":{}}"#;
             let wire = format!(
-                "POST /invoke HTTP/1.1\\r\\nHost: 127.0.0.1:5174\\r\\nOrigin: {origin}\\r\\nAuthorization: Bearer {token}\\r\\nContent-Type: application/json\\r\\nX-Essentials-Client: browser-dev\\r\\nContent-Length: {}\\r\\n\\r\\n{body}",
+                "POST /invoke HTTP/1.1\r\nHost: 127.0.0.1:5174\r\nOrigin: {origin}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nX-Essentials-Client: browser-dev\r\nContent-Length: {}\r\n\r\n{body}",
                 body.len()
             );
             let mut client = TcpStream::connect(address).unwrap();
@@ -371,9 +371,9 @@ mod tests {
             worker.join().unwrap();
             response
         }
-        assert!(request(&"a".repeat(64), "http://127.0.0.1:5173").contains("\\"ok\\":true"));
-        assert!(request("wrong", "http://127.0.0.1:5173").contains("\\"ok\\":false"));
-        assert!(request(&"a".repeat(64), "http://evil.example").contains("\\"ok\\":false"));
+        assert!(request(&"a".repeat(64), "http://127.0.0.1:5173").contains("\"ok\":true"));
+        assert!(request("wrong", "http://127.0.0.1:5173").contains("\"ok\":false"));
+        assert!(request(&"a".repeat(64), "http://evil.example").contains("\"ok\":false"));
     }
 
     #[test]
