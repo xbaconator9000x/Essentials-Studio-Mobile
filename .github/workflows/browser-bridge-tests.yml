@@ -58,6 +58,8 @@ jobs:
       - run: npm ci
       - name: Browser proxy authentication and error propagation
         run: node --experimental-strip-types --test tests/browserTransport.test.mjs tests/privateProjectSweep.test.mjs
+      - name: Syntax-check private full-project React acceptance runner
+        run: node --check scripts/private-browser-ui-smoke.mjs
       - name: Frontend TypeScript and Vite build
         run: npm run build
 
