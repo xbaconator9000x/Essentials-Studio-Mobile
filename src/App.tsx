@@ -242,7 +242,11 @@ function AppContent() {
       lease.assertCurrent();
 
       // Commit the project and its first render as one logical operation.
-      // No awaited operation before this point can replace the active project.
+      // Edits can arrive while a large ZIP/project loads. Never unmount an
+      // active dirty editor even if it was clean when the picker opened.
+      if (projectRef.current && hasUnsavedEdits()) {
+        throw new Error("The current project was edited while another project loaded. Switch cancelled; save those edits first.");
+      }
       projectRef.current = proj;
       setProject(proj);
       setMapData(initialMap);
@@ -288,7 +292,7 @@ function AppContent() {
       // An older project open must not clear the loading indicator of a newer one.
       if (lease.isCurrent()) setLoading(false);
     }
-  }, [updateMapDirty, confirmProjectSwitch]);
+  }, [updateMapDirty, confirmProjectSwitch, hasUnsavedEdits]);
 
   const handleBrowseProject = useCallback(async () => {
     try {
