@@ -18,7 +18,7 @@ import {
   loadSystemData,
   saveSystemData,
   loadEvent,
-  saveEvent,
+  pasteClipboardEvent,
   launchGame,
 } from "./services/tauriApi";
 import { loadAllTilesetImages, clearImageCache } from "./services/imageLoader";
@@ -645,8 +645,13 @@ function AppContent() {
     try {
       setError(null);
       const [newEvent, updatedEvents] = await createEvent(proj.path, mapId, x, y);
-      setMapData({ ...md, events: updatedEvents });
-      mapDataRef.current = { ...md, events: updatedEvents };
+      // An Android map switch can complete while the native write is pending.
+      // Persist to the original map, but never publish its events on another map.
+      const liveMap = mapDataRef.current;
+      if (projectRef.current?.path !== proj.path || currentMapIdRef.current !== mapId ||
+          !liveMap || liveMap.id !== mapId) return;
+      setMapData({ ...liveMap, events: updatedEvents });
+      mapDataRef.current = { ...liveMap, events: updatedEvents };
       setEditingEvent({ eventId: newEvent.id, eventName: newEvent.name });
     } catch (err) {
       setError(`Create event failed: ${err}`);
@@ -659,11 +664,15 @@ function AppContent() {
     const mapId = currentMapIdRef.current;
     if (!proj || !mapId || !md) return;
     if (!(await confirmEditor(`Delete event "${eventName}" (ID: ${eventId})?\n\nThis cannot be undone.`))) return;
+    if (projectRef.current?.path !== proj.path || currentMapIdRef.current !== mapId) return;
     try {
       setError(null);
       const updatedEvents = await deleteEvent(proj.path, mapId, eventId);
-      setMapData({ ...md, events: updatedEvents });
-      mapDataRef.current = { ...md, events: updatedEvents };
+      const liveMap = mapDataRef.current;
+      if (projectRef.current?.path !== proj.path || currentMapIdRef.current !== mapId ||
+          !liveMap || liveMap.id !== mapId) return;
+      setMapData({ ...liveMap, events: updatedEvents });
+      mapDataRef.current = { ...liveMap, events: updatedEvents };
     } catch (err) {
       setError(`Delete event failed: ${err}`);
     }
@@ -704,13 +713,13 @@ function AppContent() {
     if (!proj || !md || mapId === null || !clipboardEvent) return;
     try {
       setError(null);
-      const [newEvent, updatedEvents] = await createEvent(proj.path, mapId, tileX, tileY);
-      const pasted: RpgEvent = { ...clipboardEvent, id: newEvent.id, x: tileX, y: tileY };
-      await saveEvent(proj.path, mapId, pasted);
+      const [pasted, updatedEvents] = await pasteClipboardEvent(
+        proj.path, mapId, tileX, tileY, clipboardEvent,
+      );
       // Build updated EventInfo from clipboard data
       const firstPage = clipboardEvent.pages[0];
       const pastedInfo: EventInfo = {
-        id: newEvent.id,
+        id: pasted.id,
         name: clipboardEvent.name,
         x: tileX,
         y: tileY,
@@ -719,9 +728,12 @@ function AppContent() {
         graphic_direction: firstPage?.graphic.direction ?? 2,
         graphic_pattern: firstPage?.graphic.pattern ?? 0,
       };
-      const finalEvents = updatedEvents.map(e => e.id === newEvent.id ? pastedInfo : e);
-      setMapData({ ...md, events: finalEvents });
-      mapDataRef.current = { ...md, events: finalEvents };
+      const liveMap = mapDataRef.current;
+      if (projectRef.current?.path !== proj.path || currentMapIdRef.current !== mapId ||
+          !liveMap || liveMap.id !== mapId) return;
+      const finalEvents = updatedEvents.map(e => e.id === pasted.id ? pastedInfo : e);
+      setMapData({ ...liveMap, events: finalEvents });
+      mapDataRef.current = { ...liveMap, events: finalEvents };
     } catch (err) {
       setError(`Paste event failed: ${err}`);
     }

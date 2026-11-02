@@ -24,6 +24,7 @@ import type { PbsSection } from "../types/pbsTypes";
 
 import { callBrowserBridge } from "./browserTransport";
 import { serializeProjectOperation, shouldSerializeProjectCommand } from "./projectMutationQueue";
+import { pasteEventInProjectQueue } from "./eventPasteTransaction";
 
 const DEMO_READ_COMMANDS = new Set([
   "open_project", "load_map", "load_tileset", "load_event",
@@ -54,7 +55,7 @@ type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown
 let _invoke: InvokeFn | null = null;
 let _resolving: Promise<InvokeFn> | null = null;
 
-export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function resolveInvoke(): Promise<InvokeFn> {
   if (!_invoke) {
     if (!_resolving) {
       _resolving = (async () => {
@@ -72,13 +73,16 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
     }
     _invoke = await _resolving;
   }
-  // Coordinate direct map/event/PBS/script writes as well as Save All. Archive
-  // creation joins the same queue so it cannot snapshot a half-written project.
-  // This protects all callers, including modal saves and map navigation.
+  return _invoke;
+}
+
+export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const direct = await resolveInvoke();
+  // Every independent mutation and ZIP snapshot uses the project queue.
   if (shouldSerializeProjectCommand(cmd, args)) {
-    return serializeProjectOperation(args.projectPath, () => _invoke!(cmd, args) as Promise<T>);
+    return serializeProjectOperation(args.projectPath, () => direct(cmd, args) as Promise<T>);
   }
-  return _invoke(cmd, args) as Promise<T>;
+  return direct(cmd, args) as Promise<T>;
 }
 
 /**
@@ -160,6 +164,27 @@ export async function saveEvent(
     projectPath,
     mapId,
     event,
+  });
+}
+
+/**
+ * Paste an event without allowing map saves or ZIP snapshots to interleave
+ * between placeholder creation and writing the copied event's full pages.
+ * The native operations bypass the per-command queue only while holding the
+ * encompassing project transaction; never call normal invoke inside it.
+ */
+export async function pasteClipboardEvent(
+  projectPath: string,
+  mapId: number,
+  x: number,
+  y: number,
+  source: RpgEvent,
+): Promise<[RpgEvent, EventInfo[]]> {
+  const direct = await resolveInvoke();
+  return pasteEventInProjectQueue(projectPath, source, x, y, {
+    create: () => direct("create_event", { projectPath, mapId, x, y }) as Promise<[RpgEvent, EventInfo[]]>,
+    save: async event => { await direct("save_event", { projectPath, mapId, event }); },
+    rollback: async eventId => { await direct("delete_event", { projectPath, mapId, eventId }); },
   });
 }
 
