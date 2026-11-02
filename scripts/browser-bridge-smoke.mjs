@@ -142,6 +142,10 @@ try {
     projectPath: root, assetType: "tileset", assetName: "Synthetic",
   });
   assert.ok(image.startsWith("data:image/png;base64,"));
+  const eventGraphic = await call("get_asset_path", {
+    projectPath: root, assetType: "character", assetName: "SyntheticGuide",
+  });
+  assert.ok(eventGraphic.startsWith("data:image/png;base64,"));
 
   await assert.rejects(call("load_map", { projectPath: temp, mapId: 1 }), /selected project root/);
   await assert.rejects(call("begin_project_archive_export", { projectPath: root }), /does not support/);
