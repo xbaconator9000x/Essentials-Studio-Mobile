@@ -22,32 +22,30 @@ import type {
 import type { PbsSection } from "../types/pbsTypes";
 
 
-/**
- * Browser testing uses an explicitly configured same-origin development bridge.
- * No backend means read-only demo data: never report a fake successful save.
- * Native Android/desktop continues using the existing Tauri IPC unchanged.
- */
+import { callBrowserBridge } from "./browserTransport";
+
+const DEMO_READ_COMMANDS = new Set([
+  "open_project", "load_map", "load_tileset", "load_event",
+  "get_map_properties", "list_asset_files", "get_asset_path",
+  "list_tileset_names", "load_script_list", "load_script_source",
+  "load_database", "load_system", "list_pbs_files", "load_pbs_file",
+  "read_raw_pbs_file", "is_audio_playing",
+]);
+
+/** Browser development uses the local token-protected Vite proxy. Demo is read-only. */
 async function browserInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
   const endpoint = import.meta.env.VITE_BROWSER_BACKEND_URL as string | undefined;
-  if (endpoint) {
-    const base = new URL(endpoint, window.location.origin);
-    if (base.origin !== window.location.origin && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) {
-      throw new Error("Browser backend must be same-origin or loopback");
-    }
-    const response = await fetch(new URL("invoke", base.href), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: cmd, args: args ?? {} }),
-    });
-    if (!response.ok) throw new Error(`Browser backend ${cmd} failed (HTTP ${response.status})`);
-    const result = await response.json() as { ok: boolean; result?: unknown; error?: string };
-    if (!result.ok) throw new Error(result.error || `Browser backend ${cmd} failed`);
-    return result.result;
-  }
-  if (/^(save_|write_|create_|delete_|rename_|import_|export_|append_|finalize_|cleanup_)/.test(cmd)) {
-    throw new Error("Browser demo is read-only. Connect a local project backend before saving.");
+  if (endpoint) return callBrowserBridge(cmd, args, endpoint, window.location.origin);
+  if (!DEMO_READ_COMMANDS.has(cmd)) {
+    throw new Error("Browser demo cannot save or mutate project data. Start npm run dev:web with a disposable project.");
   }
   return mockInvoke(cmd, args);
+}
+
+/** Resolve the explicitly selected local project root in browser development. */
+export async function getBrowserProjectRoot(): Promise<string | null> {
+  if (typeof window === "undefined" || "__TAURI_INTERNALS__" in window || !import.meta.env.VITE_BROWSER_BACKEND_URL) return null;
+  return invoke<string>("project_root");
 }
 
 // Lazy-loaded Tauri invoke — resolved on first call
@@ -55,7 +53,7 @@ type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown
 let _invoke: InvokeFn | null = null;
 let _resolving: Promise<InvokeFn> | null = null;
 
-async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!_invoke) {
     if (!_resolving) {
       _resolving = (async () => {
