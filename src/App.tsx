@@ -72,7 +72,7 @@ async function showFolderPicker(): Promise<string | null> {
  * useProjectSave() and useEditorRegistration().
  */
 function AppContent() {
-  const { saveAll, dirtyCount } = useProjectSave();
+  const { saveAll, dirtyCount, hasUnsavedEdits } = useProjectSave();
   const isAndroid = /Android/i.test(navigator.userAgent);
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
 
@@ -193,7 +193,23 @@ function AppContent() {
 
   // ── Project loading ────────────────────────────────────────────────────────
 
-  const handleOpenProject = useCallback(async (path: string) => {
+  // A project switch must never silently unmount dirty event, map or PBS editors.
+  // Cancel keeps the current project active; save failures also abort the switch.
+  const confirmProjectSwitch = useCallback(async (): Promise<boolean> => {
+    if (!projectRef.current || !hasUnsavedEdits()) return true;
+    const saveFirst = await confirmEditor("Save all unsaved changes before switching projects? Cancel keeps the current project open.");
+    if (!saveFirst) return false;
+    await saveAll();
+    // Allow React's editor registration effects to publish their clean state.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    if (hasUnsavedEdits()) {
+      throw new Error("New or unsaved edits remain after saving. Project switch cancelled.");
+    }
+    return true;
+  }, [saveAll, hasUnsavedEdits]);
+
+  const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
+    if (!skipSwitchGuard && !(await confirmProjectSwitch())) return;
     // Cancel in-flight map loads before preparing another project.
     mapSelectionCoordinator.current.begin();
     const lease = projectOpenCoordinator.current.begin();
@@ -267,7 +283,7 @@ function AppContent() {
       // An older project open must not clear the loading indicator of a newer one.
       if (lease.isCurrent()) setLoading(false);
     }
-  }, [updateMapDirty]);
+  }, [updateMapDirty, confirmProjectSwitch]);
 
   const handleBrowseProject = useCallback(async () => {
     try {
@@ -284,10 +300,9 @@ function AppContent() {
     importArchive: (source: T, onProgress?: (percent: number) => void) => Promise<string>,
   ) => {
     if (source === null) return;
-    if (projectRef.current && dirtyCount > 0) {
-      const proceed = await confirmEditor("Unsaved project changes exist. Import a different project anyway?");
-      if (!proceed) return;
-    }
+    // Confirm before extracting a potentially large ZIP; importing never
+    // discards unsaved edits or leaves a cancelled import's working directory.
+    if (!(await confirmProjectSwitch())) return;
     setLoading(true);
     setArchiveProgress(0);
     setArchiveOutcome(null);
@@ -295,7 +310,7 @@ function AppContent() {
     try {
       await importAndOpenProject(source, {
         importArchive,
-        openProject: handleOpenProject,
+        openProject: (path) => handleOpenProject(path, true),
         discardFailedImport: discardFailedProjectImport,
         isActiveProject: (path) => projectRef.current?.path === path,
       }, setArchiveProgress);
@@ -305,7 +320,7 @@ function AppContent() {
       setLoading(false);
       setArchiveProgress(null);
     }
-  }, [dirtyCount, handleOpenProject]);
+  }, [confirmProjectSwitch, handleOpenProject]);
 
   const handleImportProjectZip = useCallback(
     (file: File) => handleImportSource(file, importProjectZip),
@@ -345,14 +360,24 @@ function AppContent() {
     const active = projectRef.current;
     if (!active) return;
     setArchiveOutcome(null);
-    if (dirtyCount > 0) {
-      setError("Save all outstanding edits before exporting a project ZIP.");
-      return;
-    }
     setLoading(true);
+    setSaving(true);
     setArchiveProgress(0);
     setError(null);
     try {
+      if (hasUnsavedEdits()) {
+        setArchiveOutcome("Saving pending map, event, script and PBS edits before export...");
+        await saveAll();
+        // Dirty editor registration is effect-driven. Do not export until it
+        // has settled, and fail closed if any edit arrived during the save.
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (hasUnsavedEdits()) {
+          throw new Error("Unsaved edits remain after Save All. Export cancelled to avoid losing changes.");
+        }
+      }
+      if (projectRef.current?.path !== active.path) {
+        throw new Error("Active project changed during export preparation.");
+      }
       if (isBrowserDev) {
         const receipt = await exportBrowserProjectZip(active.path);
         setArchiveProgress(100);
@@ -377,9 +402,10 @@ function AppContent() {
       setError(`Project ZIP export failed: ${String(err)}`);
     } finally {
       setLoading(false);
+      setSaving(false);
       setArchiveProgress(null);
     }
-  }, [dirtyCount, isBrowserDev]);
+  }, [saveAll, hasUnsavedEdits, isBrowserDev]);
 
   // ── Map selection with unsaved-changes guard ───────────────────────────────
 
@@ -818,7 +844,7 @@ function AppContent() {
             ▶ Play
           </button>
           <button className="app-titlebar-btn" onClick={() => void handleExportProjectZip()} disabled={loading || saving}>
-            Export ZIP...
+            {dirtyCount > 0 ? "Save & Export ZIP..." : "Export ZIP..."}
           </button>
           {isBrowserDev ? (
             <button className="app-titlebar-btn" onClick={() => setArchiveOutcome("To import another ZIP in browser mode, restart with: npm run dev:web -- /absolute/path/project.zip. The current working copy remains on disk.")}>
