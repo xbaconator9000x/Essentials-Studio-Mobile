@@ -167,5 +167,5 @@ async function run() {
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  run().catch(error => { console.error("Private full-project sweep failed:", error.message); process.exitCode = 1; });
+  run().catch(() => { console.error("Private full-project sweep failed; inspect the local, redacted receipt if configured."); process.exitCode = 1; });
 }
