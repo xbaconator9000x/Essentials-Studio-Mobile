@@ -11,6 +11,7 @@ on:
       - 'src/services/archiveApi.ts'
       - 'src/services/imageLoader.ts'
       - 'scripts/dev-web.mjs'
+      - 'scripts/browser-bridge-smoke.mjs'
       - 'tests/browserTransport.test.mjs'
       - 'vite.config.ts'
       - 'package.json'
@@ -49,7 +50,7 @@ jobs:
 
   native-browser-bridge:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux Tauri dependencies
@@ -62,3 +63,11 @@ jobs:
           workspaces: src-tauri
       - name: Compile and test local Rust bridge
         run: cargo test --manifest-path src-tauri/Cargo.toml --bin browser_bridge
+      - name: Build executable browser bridge
+        run: cargo build --manifest-path src-tauri/Cargo.toml --bin browser_bridge
+      - name: Generate and independently verify rights-cleared RMXP ZIP fixture
+        env:
+          PROJECT_ROUNDTRIP_EVIDENCE_DIR: ${{ runner.temp }}/browser-fixture
+        run: python3 scripts/run_project_roundtrip.py
+      - name: Execute real HTTP map/event/PBS edit-save-reopen smoke test
+        run: node scripts/browser-bridge-smoke.mjs "${{ runner.temp }}/browser-fixture/original.zip"
