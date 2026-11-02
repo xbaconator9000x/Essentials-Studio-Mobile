@@ -74,3 +74,17 @@ test("new section appends without changing existing opaque fields", () => {
     sec("TWO", [["Name", "new"]]),
   ]);
 });
+
+test("omitted numeric-zero move fields retain explicit defaults and clear old values", () => {
+  const defaults = new Map([["Power", "0"], ["Priority", "0"], ["EffectChance", "0"]]);
+  const before = [sec("STATUSMOVE", [
+    ["Name", "Status"], ["Power", "30"], ["Priority", "0"], ["Custom", "preserve"],
+  ])];
+  const after = [sec("STATUSMOVE", [["Name", "Status"]])];
+  assert.deepEqual(
+    preserveOpaquePbsFields(before, after, new Set([...managed, "Priority", "EffectChance"]), defaults),
+    [sec("STATUSMOVE", [
+      ["Name", "Status"], ["Power", "0"], ["Priority", "0"], ["Custom", "preserve"],
+    ])],
+  );
+});
