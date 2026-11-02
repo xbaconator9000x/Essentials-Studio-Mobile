@@ -21,6 +21,35 @@ import type {
 } from "../types";
 import type { PbsSection } from "../types/pbsTypes";
 
+
+/**
+ * Browser testing uses an explicitly configured same-origin development bridge.
+ * No backend means read-only demo data: never report a fake successful save.
+ * Native Android/desktop continues using the existing Tauri IPC unchanged.
+ */
+async function browserInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  const endpoint = import.meta.env.VITE_BROWSER_BACKEND_URL as string | undefined;
+  if (endpoint) {
+    const base = new URL(endpoint, window.location.origin);
+    if (base.origin !== window.location.origin && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) {
+      throw new Error("Browser backend must be same-origin or loopback");
+    }
+    const response = await fetch(new URL("invoke", base.href), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: cmd, args: args ?? {} }),
+    });
+    if (!response.ok) throw new Error(`Browser backend ${cmd} failed (HTTP ${response.status})`);
+    const result = await response.json() as { ok: boolean; result?: unknown; error?: string };
+    if (!result.ok) throw new Error(result.error || `Browser backend ${cmd} failed`);
+    return result.result;
+  }
+  if (/^(save_|write_|create_|delete_|rename_|import_|export_|append_|finalize_|cleanup_)/.test(cmd)) {
+    throw new Error("Browser demo is read-only. Connect a local project backend before saving.");
+  }
+  return mockInvoke(cmd, args);
+}
+
 // Lazy-loaded Tauri invoke — resolved on first call
 type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 let _invoke: InvokeFn | null = null;
@@ -31,12 +60,17 @@ async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>):
     if (!_resolving) {
       _resolving = (async () => {
         try {
+          // Importing @tauri-apps/api/core succeeds in an ordinary browser too.
+          // Its invoke() cannot work without the injected native IPC bridge.
+          if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+            throw new Error("Native Tauri IPC unavailable");
+          }
           const mod = await import("@tauri-apps/api/core");
           _invoke = mod.invoke;
           console.log("[tauriApi] Using real Tauri invoke");
         } catch {
-          _invoke = mockInvoke;
-          console.log("[tauriApi] Tauri not available, using mock data");
+          _invoke = browserInvoke;
+          console.log("[tauriApi] Browser mode: local backend or read-only demo");
         }
         return _invoke!;
       })();
