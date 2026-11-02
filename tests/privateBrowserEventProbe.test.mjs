@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findEditableShowText, expectedDialogueEdit } from '../scripts/private-browser-event-probe.mjs';
+import { findEditableShowText, findProjectShowText, expectedDialogueEdit } from '../scripts/private-browser-event-probe.mjs';
 
 const fixture = {
   id: 7, name: 'Synthetic', pages: [
@@ -48,4 +48,46 @@ test('rejects unsafe selection and invalid replacement without mutation', async 
   assert.throws(() => expectedDialogueEdit(fixture, 0, 0, 'bad\nline'), TypeError);
   assert.throws(() => expectedDialogueEdit(fixture, 0, 2, 'valid'), TypeError);
   assert.equal(fixture.pages[0].list[0].parameters[0], 'Original');
+});
+
+test('searches other real maps when initial map has no dialogue, without modifying any map', async () => {
+  const project = { edit_map_id: 1, map_infos: { 1: {}, 2: {}, 3: {} } };
+  const loaded = [];
+  const maps = {
+    1: { width: 5, height: 5, events: [{ id: 4, x: 0, y: 0 }] },
+    2: { width: 6, height: 6, events: [{ id: 7, x: 3, y: 2 }] },
+    3: { width: 5, height: 5, events: [{ id: 8, x: 0, y: 0 }] },
+  };
+  const before = structuredClone(maps);
+  const probe = await findProjectShowText(project,
+    async id => { loaded.push(id); return maps[id]; },
+    async (mapId, id) => mapId === 2 && id === 7 ? fixture : { pages: [] });
+  assert.equal(probe.mapId, 2);
+  assert.equal(probe.eventId, 7);
+  assert.deepEqual(loaded, [1, 2]);
+  assert.deepEqual(maps, before);
+});
+
+test('prioritises project start map and ignores out-of-bounds events', async () => {
+  const project = { edit_map_id: 3, map_infos: { 1: {}, 2: {}, 3: {} } };
+  const calls = [];
+  const probe = await findProjectShowText(project,
+    async id => { calls.push(id); return { width: 4, height: 4, events: [
+      { id: 8, x: 500, y: 1 }, { id: 7, x: 1, y: 2 },
+    ] }; },
+    async (_, id) => { assert.equal(id, 7); return fixture; });
+  assert.equal(probe.mapId, 3);
+  assert.deepEqual(calls, [3]);
+});
+
+test('returns null within map budget and fails closed on malformed native maps', async () => {
+  const project = { edit_map_id: 1, map_infos: { 1: {}, 2: {} } };
+  const visited = [];
+  const none = await findProjectShowText(project, async id => {
+    visited.push(id); return { width: 5, height: 5, events: [] };
+  }, async () => { throw Error('must not read events'); }, 1);
+  assert.equal(none, null);
+  assert.deepEqual(visited, [1]);
+  await assert.rejects(() => findProjectShowText(project, async () => ({ events: [] }), async () => {}), TypeError);
+  await assert.rejects(() => findProjectShowText(project, async () => ({}), async () => {}, 0), TypeError);
 });
