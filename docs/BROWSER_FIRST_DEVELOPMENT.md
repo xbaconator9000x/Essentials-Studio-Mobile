@@ -19,3 +19,7 @@ Supported vertical slice: read map/tileset/system/event/PBS data, edit and save 
 Run `node --experimental-strip-types --test tests/browserTransport.test.mjs` for transport regressions. Native Rust tests and frontend build must pass before merging the browser bridge. Use `scripts/verify_project_roundtrip.py` on separately exported ZIPs; this browser-only slice does not assert that full Shattered v21.1 desktop/game runtime compatibility is complete.
 
 Security: development-only local service. Never bind it to 0.0.0.0, reverse-proxy it publicly, or use a commercial project as a public fixture. No public APK release until upstream licensing is resolved.
+
+## Verification state
+
+Local Node 22 browser transport tests passed (3/3) on 2026-11-02. The Rust bridge, frontend build and browser project runtime must still pass exact-head CI and an actual disposable-project edit/save/reopen session. Do not equate a successful TypeScript or Android compilation with that runtime acceptance.
