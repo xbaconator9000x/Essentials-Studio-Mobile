@@ -6,7 +6,7 @@
  */
 
 import { getAssetPath, invoke as invokeEditor } from "./tauriApi";
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
 import { DecodedImageCache } from "./imageCacheBudget";
 import { boundedAsyncMap } from "./boundedAsyncMap";
 import {
