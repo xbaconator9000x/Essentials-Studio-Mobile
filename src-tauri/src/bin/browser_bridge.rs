@@ -339,6 +339,44 @@ mod tests {
         assert!(result.unwrap_err().contains("does not support"));
     }
     #[test]
+    fn only_selected_project_root_is_accepted() {
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        let outside = root.parent().unwrap();
+        assert!(scoped_project(&json!({ "projectPath": outside.to_string_lossy() }), &root).is_err());
+        assert!(scoped_project(&json!({ "projectPath": root.to_string_lossy() }), &root).is_ok());
+    }
+
+    #[test]
+    fn loopback_http_requires_token_and_exact_origin() {
+        use std::net::Shutdown;
+        fn request(token: &str, origin: &str) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+            let worker = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                handle(stream, &"a".repeat(64), &root, &rt);
+            });
+            let body = r#"{"command":"project_root","args":{}}"#;
+            let wire = format!(
+                "POST /invoke HTTP/1.1\\r\\nHost: 127.0.0.1:5174\\r\\nOrigin: {origin}\\r\\nAuthorization: Bearer {token}\\r\\nContent-Type: application/json\\r\\nX-Essentials-Client: browser-dev\\r\\nContent-Length: {}\\r\\n\\r\\n{body}",
+                body.len()
+            );
+            let mut client = TcpStream::connect(address).unwrap();
+            client.write_all(wire.as_bytes()).unwrap();
+            client.shutdown(Shutdown::Write).unwrap();
+            let mut response = String::new();
+            client.read_to_string(&mut response).unwrap();
+            worker.join().unwrap();
+            response
+        }
+        assert!(request(&"a".repeat(64), "http://127.0.0.1:5173").contains("\\"ok\\":true"));
+        assert!(request("wrong", "http://127.0.0.1:5173").contains("\\"ok\\":false"));
+        assert!(request(&"a".repeat(64), "http://evil.example").contains("\\"ok\\":false"));
+    }
+
+    #[test]
     fn rejects_invalid_asset_names() {
         let root = std::env::temp_dir();
         assert!(image_data(&root, "Tilesets", "../../secrets").is_err());
