@@ -72,7 +72,7 @@ async function showFolderPicker(): Promise<string | null> {
  * useProjectSave() and useEditorRegistration().
  */
 function AppContent() {
-  const { saveAll, dirtyCount, hasUnsavedEdits } = useProjectSave();
+  const { saveAll, dirtyCount, hasUnsavedEdits, updateDirty } = useProjectSave();
   const isAndroid = /Android/i.test(navigator.userAgent);
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
 
@@ -146,7 +146,12 @@ function AppContent() {
     if (val) mapEditRevisionRef.current += 1;
     mapIsDirtyRef.current = val;
     setMapIsDirty(val);
-  }, []);
+    // Publish synchronously: a fast tap on Export immediately after painting
+    // must not race the registration effect and export stale map data.
+    if (currentMapIdRef.current !== null) {
+      updateDirty(`map-${currentMapIdRef.current}`, val);
+    }
+  }, [updateDirty]);
 
   // ── Map save/cancel for ProjectSaveContext registration ────────────────────
 
