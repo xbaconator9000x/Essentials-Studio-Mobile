@@ -36,6 +36,8 @@ jobs:
         run: node --experimental-strip-types --test tests/saveBatch.test.mjs
       - name: Verify cross-editor project writes and ZIP snapshots
         run: node --experimental-strip-types --test tests/projectMutationQueue.test.mjs
+      - name: Verify coordinated event clipboard paste and rollback
+        run: node --experimental-strip-types --test tests/eventPasteTransaction.test.mjs
       - run: node scripts/check-development-queue.mjs
       - name: Verify queue watchdog handoff behavior
         run: node --test scripts/queue-watchdog.test.mjs
