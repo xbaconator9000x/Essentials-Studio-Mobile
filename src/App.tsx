@@ -438,7 +438,9 @@ function AppContent() {
       mapIsDirtyRef.current
     ) {
       const saveFirst = await confirmEditor("Save tile changes to the current map before switching?");
-      if (!isCurrent()) return;
+      // Cancel must keep the dirty source map active. Previously declining this
+      // prompt continued navigation and silently discarded unsaved tile edits.
+      if (!isCurrent() || !saveFirst) return;
       if (saveFirst) {
         const md = mapDataRef.current;
         if (md) {
