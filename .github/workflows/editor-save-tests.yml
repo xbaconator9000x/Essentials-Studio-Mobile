@@ -7,12 +7,15 @@ on:
       - 'src/App.tsx'
       - 'src/services/saveGuards.ts'
       - 'src/services/pbsSaveGuards.ts'
+      - 'src/services/pbsPreservation.ts'
+      - 'src/services/pbsDistributor.ts'
       - 'src/components/PbsEditor/usePbsFile.ts'
       - 'src/components/PbsEditor/PbsEditor.tsx'
       - 'src/hooks/useEntityEditor.ts'
       - 'src/components/PbsEntityEditor/PbsEntityEditor.tsx'
       - 'src/components/PbsEntityEditor/panels/SettingsPanel.tsx'
       - 'tests/pbsSaveGuards.test.mjs'
+      - 'tests/pbsPreservation.test.mjs'
       - 'src/services/projectOpenGuards.ts'
       - 'src/services/importOpenGuards.ts'
       - 'tests/importOpenGuards.test.mjs'
@@ -25,12 +28,15 @@ on:
       - 'src/App.tsx'
       - 'src/services/saveGuards.ts'
       - 'src/services/pbsSaveGuards.ts'
+      - 'src/services/pbsPreservation.ts'
+      - 'src/services/pbsDistributor.ts'
       - 'src/components/PbsEditor/usePbsFile.ts'
       - 'src/components/PbsEditor/PbsEditor.tsx'
       - 'src/hooks/useEntityEditor.ts'
       - 'src/components/PbsEntityEditor/PbsEntityEditor.tsx'
       - 'src/components/PbsEntityEditor/panels/SettingsPanel.tsx'
       - 'tests/pbsSaveGuards.test.mjs'
+      - 'tests/pbsPreservation.test.mjs'
       - 'src/services/projectOpenGuards.ts'
       - 'src/services/importOpenGuards.ts'
       - 'tests/importOpenGuards.test.mjs'
@@ -51,4 +57,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify save errors propagate and dirty state remains set
-        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs tests/pbsSaveGuards.test.mjs
+        run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs tests/pbsSaveGuards.test.mjs tests/pbsPreservation.test.mjs
