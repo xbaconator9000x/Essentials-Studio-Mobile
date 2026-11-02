@@ -218,10 +218,16 @@ export function EventEditor({
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
     if (savingRef.current) return;
+    if (revisionRef.current !== renderRevision) {
+      setDirty(true);
+      setSaveError("An event edit is still updating. Try closing again.");
+      return;
+    }
+    const cancelRevision = revisionRef.current;
     if (dirty && !(await confirm("Discard changes to this event?"))) return;
-    if (savingRef.current) return; // A save may have started during the dialog.
+    if (savingRef.current || revisionRef.current !== cancelRevision) return;
     onClose();
-  }, [dirty, onClose]);
+  }, [dirty, onClose, renderRevision]);
 
   // Close on Escape, Delete key
   useEffect(() => {
