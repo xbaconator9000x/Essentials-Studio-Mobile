@@ -53,6 +53,9 @@ try {
   server = spawn("node", ["scripts/dev-web.mjs", original], {
     env: { ...process.env, ESSENTIALS_BROWSER_WORKSPACE: join(temp, "browser-working-copy") },
     stdio: ["ignore", "pipe", "pipe"],
+    // Isolate npm/Vite/Rust descendants so a failed assertion cannot leave
+    // pipe handles open and strand the Actions job until cancellation.
+    detached: process.platform !== "win32",
   });
   for (const stream of [server.stdout, server.stderr]) {
     stream.on("data", chunk => {
@@ -94,7 +97,14 @@ try {
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
   assert.equal(differences.length, 1, "One UI-painted tile must persist to native RXDATA");
-  assert.equal(differences[0].tile, targetTile, "The selected UI autotile must be saved");
+  // XP autotiles have 48 shape variants per selected palette entry.
+  // Painting recalculates the shape from neighbouring tiles (48 -> 95 in
+  // the synthetic fixture), so compare the autotile family, not shape ID.
+  const savedTile = differences[0].tile;
+  assert.ok(Number.isInteger(savedTile) && savedTile >= 48 && savedTile < 48 + 7 * 48,
+    "Painted tile must remain a valid XP autotile ID");
+  assert.equal(Math.floor((savedTile - 48) / 48), Math.floor((targetTile - 48) / 48),
+    "The selected UI autotile family must be saved");
   await page.screenshot({ path: join(evidence, "browser-map-saved.png"), fullPage: true });
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
@@ -135,7 +145,17 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  if (server && server.exitCode === null) server.kill("SIGTERM");
+  if (server && server.exitCode === null && server.pid) {
+    try {
+      if (process.platform !== "win32") process.kill(-server.pid, "SIGTERM");
+      else server.kill("SIGTERM");
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error;
+    }
+  }
+  // Destroy inherited pipes even if a nested cargo/Vite child ignores TERM.
+  server?.stdout?.destroy();
+  server?.stderr?.destroy();
   await delay(600);
   rmSync(temp, { recursive: true, force: true });
 }
