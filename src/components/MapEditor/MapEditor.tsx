@@ -293,6 +293,14 @@ export function MapEditor({
     return () => observer.disconnect();
   }, []);
 
+  const handleHistory = useCallback((direction: "undo" | "redo"): boolean => {
+    if (!mapData || shortcutsDisabled) return false;
+    if (!replayMapHistory(mapData, undoStackRef.current, direction, onMapDirty)) return false;
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick((t) => t + 1);
+    return true;
+  }, [mapData, shortcutsDisabled, onMapDirty]);
+
   // Keyboard shortcuts only apply when the map is the active editor.
   // Never intercept Ctrl/Cmd+Z/C/V inside an event dialogue, PBS field,
   // script textarea or any other text-editing surface.
@@ -305,11 +313,7 @@ export function MapEditor({
       const key = e.key.toLowerCase();
       if (key === "z" || key === "y") {
         const direction = key === "y" || e.shiftKey ? "redo" : "undo";
-        if (replayMapHistory(mapData, undoStackRef.current, direction, onMapDirty)) {
-          e.preventDefault();
-          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
-          setRenderTick((t) => t + 1);
-        }
+        if (handleHistory(direction)) e.preventDefault();
         return;
       }
 
@@ -340,7 +344,7 @@ export function MapEditor({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mapData, selectedLayer, onMapDirty, shortcutsDisabled,
-      selectionStart, selectionEnd, cursorTile, tileClipboard]);
+      selectionStart, selectionEnd, cursorTile, tileClipboard, handleHistory]);
 
   // Convert screen position to tile coordinates
   const screenToTile = useCallback(
@@ -843,6 +847,9 @@ export function MapEditor({
           setShowGrid={setShowGrid}
           zoom={zoom}
           setZoom={setZoom}
+          onUndo={() => { handleHistory("undo"); }}
+          onRedo={() => { handleHistory("redo"); }}
+          historyDisabled={shortcutsDisabled}
         />
       )}
 
