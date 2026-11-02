@@ -3,7 +3,8 @@
  * Converts typed entity arrays back into raw PbsSection[] and saves to the
  * correct PBS files. Inverse of pbsUnified.ts loaders.
  */
-import { savePbsFile, writeRawPbsFile } from "./tauriApi";
+import { loadPbsFile, savePbsFile, writeRawPbsFile } from "./tauriApi";
+import { preserveOpaquePbsFields } from "./pbsPreservation";
 import type { PbsSection, PbsField } from "../types/pbsTypes";
 import type {
   PokemonEntry, MoveEntry, AbilityEntry, ItemEntry, TypeEntry,
@@ -11,6 +12,35 @@ import type {
   TrainerPokemon,
 } from "../types/pbsEntityTypes";
 import { serializeBaseStats, serializeMoves, serializeEvolutions } from "./pbsUnified";
+
+/**
+ * The typed PBS entity panels do not model every Essentials/custom field.
+ * Retain unmodeled fields in source order, and fail closed if a modeled
+ * field/section would disappear instead of silently discarding it.
+ */
+const MODELED_KEYS: Record<string, string> = {
+  "pokemon.txt": "Name Types BaseStats EVs GenderRate GrowthRate BaseEXP Abilities HiddenAbilities CatchRate Happiness Moves TutorMoves EggMoves EggGroups StepsToHatch Height Weight Color Shape Habitat Category Pokedex Generation Evolutions Flags WildItemCommon WildItemUncommon WildItemRare Incense Offspring",
+  "pokemon_forms.txt": "FormName Types MegaStone BaseStats Abilities HiddenAbilities Height Weight Color Pokedex Generation Moves Evolutions",
+  "pokemon_metrics.txt": "FrontSprite BackSprite ShadowX ShadowSize",
+  "moves.txt": "Name Type Category Power Accuracy TotalPP Target Priority FunctionCode EffectChance Flags Description",
+  "abilities.txt": "Name Description Flags",
+  "items.txt": "Name NamePlural Pocket Price SellPrice BPPrice FieldUse BattleUse Consumable Move Description Flags",
+  "types.txt": "Name IconPosition IsSpecialType IsPseudoType Weaknesses Resistances Immunities Flags",
+  "trainers.txt": "LoseText Items Pokemon Name Moves Item Ability AbilityIndex Gender Nature Form Happiness Shiny SuperShiny Shadow Ball IV EV",
+  "trainer_types.txt": "Name Gender BaseMoney SkillLevel BattleBGM VictoryBGM IntroBGM MaxSize Flags",
+  "map_metadata.txt": "Name Outdoor ShowArea Bicycle BicycleAlways BicycleBridge Fly Diving HealingSpot MapPosition MapSize Weather Environment BattleBack DefaultFlyTo Parent SafariBattle DarkMap Flags",
+  "metadata.txt": "Home StartMoney StartItemStorage StorageCreator RegionMap TownMapBitmap WildBattleBGM TrainerBattleBGM WildVictoryBGM TrainerVictoryBGM WildCaptureME SurfBGM BicycleBGM TrainerType WalkCharset RunCharset CycleCharset SurfCharset DiveCharset FishCharset SurfFishCharset",
+};
+
+async function saveModeledPbsFile(
+  projectPath: string, filename: string, sections: PbsSection[],
+): Promise<void> {
+  const keys = MODELED_KEYS[filename];
+  if (!keys) throw new Error(`Unregistered structured PBS file: ${filename}`);
+  const original = await loadPbsFile(projectPath, filename);
+  const preserved = preserveOpaquePbsFields(original, sections, new Set(keys.split(" ")));
+  await savePbsFile(projectPath, filename, preserved);
+}
 
 // ── Field builder ─────────────────────────────────────────────────────────────
 
@@ -119,9 +149,9 @@ export function serializePokemon(entries: PokemonEntry[]): {
 export async function savePokemon(projectPath: string, entries: PokemonEntry[]): Promise<void> {
   const { pokemon, pokemon_forms, pokemon_metrics } = serializePokemon(entries);
   await Promise.all([
-    savePbsFile(projectPath, "pokemon.txt", pokemon),
-    pokemon_forms.length ? savePbsFile(projectPath, "pokemon_forms.txt", pokemon_forms) : Promise.resolve(),
-    pokemon_metrics.length ? savePbsFile(projectPath, "pokemon_metrics.txt", pokemon_metrics) : Promise.resolve(),
+    saveModeledPbsFile(projectPath, "pokemon.txt", pokemon),
+    pokemon_forms.length ? saveModeledPbsFile(projectPath, "pokemon_forms.txt", pokemon_forms) : Promise.resolve(),
+    pokemon_metrics.length ? saveModeledPbsFile(projectPath, "pokemon_metrics.txt", pokemon_metrics) : Promise.resolve(),
   ]);
 }
 
@@ -145,7 +175,7 @@ export async function saveMoves(projectPath: string, entries: MoveEntry[]): Prom
       f("Description", e.description),
     ),
   }));
-  await savePbsFile(projectPath, "moves.txt", sections);
+  await saveModeledPbsFile(projectPath, "moves.txt", sections);
 }
 
 // ── Abilities serialization ────────────────────────────────────────────────────
@@ -159,7 +189,7 @@ export async function saveAbilities(projectPath: string, entries: AbilityEntry[]
       e.flags.length ? f("Flags", e.flags.join(",")) : null,
     ),
   }));
-  await savePbsFile(projectPath, "abilities.txt", sections);
+  await saveModeledPbsFile(projectPath, "abilities.txt", sections);
 }
 
 // ── Items serialization ────────────────────────────────────────────────────────
@@ -182,7 +212,7 @@ export async function saveItems(projectPath: string, entries: ItemEntry[]): Prom
       e.flags.length ? f("Flags", e.flags.join(",")) : null,
     ),
   }));
-  await savePbsFile(projectPath, "items.txt", sections);
+  await saveModeledPbsFile(projectPath, "items.txt", sections);
 }
 
 // ── Types serialization ────────────────────────────────────────────────────────
@@ -201,7 +231,7 @@ export async function saveTypes(projectPath: string, entries: TypeEntry[]): Prom
       e.flags?.length ? f("Flags", e.flags.join(",")) : null,
     ),
   }));
-  await savePbsFile(projectPath, "types.txt", sections);
+  await saveModeledPbsFile(projectPath, "types.txt", sections);
 }
 
 // ── Trainers serialization ─────────────────────────────────────────────────────
@@ -259,8 +289,8 @@ export async function saveTrainers(
   }));
 
   await Promise.all([
-    savePbsFile(projectPath, "trainers.txt", trainerSections),
-    savePbsFile(projectPath, "trainer_types.txt", typeSections),
+    saveModeledPbsFile(projectPath, "trainers.txt", trainerSections),
+    saveModeledPbsFile(projectPath, "trainer_types.txt", typeSections),
   ]);
 }
 
@@ -320,7 +350,7 @@ export async function saveMapMeta(projectPath: string, entries: MapMetaEntry[]):
       e.mapFlags?.length ? f("Flags", e.mapFlags.join(",")) : null,
     ),
   }));
-  await savePbsFile(projectPath, "map_metadata.txt", sections);
+  await saveModeledPbsFile(projectPath, "map_metadata.txt", sections);
 }
 
 // ── Global Metadata serialization ─────────────────────────────────────────────
@@ -371,5 +401,5 @@ export async function saveMetadata(projectPath: string, meta: MetadataEntry): Pr
     });
   });
 
-  await savePbsFile(projectPath, "metadata.txt", sections);
+  await saveModeledPbsFile(projectPath, "metadata.txt", sections);
 }
