@@ -11,6 +11,7 @@ import {
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
+import { useEditorRegistration } from "../../context/ProjectSaveContext";
 import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
@@ -178,11 +179,19 @@ export function EventEditor({
 
   // A native save is an acknowledgement of one immutable event revision,
   // not of later page/command edits made while the write is pending.
-  const persist = useCallback(async (closeOnSuccess: boolean) => {
-    if (savingRef.current || !event) return;
+  const persist = useCallback(async (closeOnSuccess: boolean, propagateErrors = false) => {
+    if (savingRef.current) {
+      if (propagateErrors) throw new Error("Event save already in progress");
+      return;
+    }
+    if (!event) {
+      if (propagateErrors && dirty) throw new Error("Event data is not loaded");
+      return;
+    }
     if (revisionRef.current !== renderRevision) {
       setDirty(true);
       setSaveError("An event edit is still updating. Save again once it appears.");
+      if (propagateErrors) throw new Error("Event edit is still updating; save cancelled");
       return;
     }
     if (!dirty) {
@@ -203,15 +212,25 @@ export function EventEditor({
       } else {
         setDirty(true);
         setSaveError("Newer event edits remain unsaved. Save again before closing.");
+        if (propagateErrors) throw new Error("Newer event edits remain unsaved");
       }
     } catch (err) {
       setDirty(true);
       setSaveError(`Save failed: ${String(err)}`);
+      if (propagateErrors) throw err;
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
   }, [event, dirty, renderRevision, projectPath, mapId, onClose]);
+
+  // Include open event dialogs in Save All, project switching and ZIP export.
+  // Unlike a button save, a global save must propagate failures to its caller.
+  const saveForProject = useCallback(() => persist(false, true), [persist]);
+  const discardForProject = useCallback(() => {
+    if (!savingRef.current) onClose();
+  }, [onClose]);
+  useEditorRegistration(`event-${projectPath}-${mapId}-${eventId}`, saveForProject, discardForProject, dirty);
 
   const handleOk = useCallback(() => { void persist(true); }, [persist]);
   const handleSave = useCallback(() => { void persist(false); }, [persist]);
