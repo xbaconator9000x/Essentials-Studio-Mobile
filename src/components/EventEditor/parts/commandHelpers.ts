@@ -18,7 +18,9 @@ export function toVisualBlocks(list: EventCommand[]): VisualBlock[] {
       const contIndices: number[] = [];
       const contCmds: EventCommand[] = [];
       let j = i + 1;
-      // RMXP continuations belong only to the parent command's indentation.\n      // A same-code command at a different depth must remain an independent entry.\n      while (j < list.length && list[j].code === contCode && list[j].indent === cmd.indent) {
+      // RMXP continuations belong only to the parent command's indentation.
+      // A same-code command at a different depth must remain an independent entry.
+      while (j < list.length && list[j].code === contCode && list[j].indent === cmd.indent) {
         contIndices.push(j);
         contCmds.push(list[j]);
         j++;
