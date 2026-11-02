@@ -10,8 +10,6 @@ import {
   copyTileRegion,
   pasteTileRegion,
   UndoStack,
-  applyAction,
-  revertAction,
   type MapAction,
   type TileClipboard,
 } from "../../services/mapEditor";
@@ -38,6 +36,7 @@ interface Props {
   currentMapId?: number;
   startPosition?: { mapId: number; x: number; y: number };
   hasClipboardEvent?: boolean;
+  shortcutsDisabled?: boolean;
   onMapDirty: () => void;
   onOpenEvent?: (eventId: number, eventName: string) => void;
   onCreateEvent?: (x: number, y: number) => void;
@@ -57,6 +56,7 @@ export function MapEditor({
   currentMapId,
   startPosition,
   hasClipboardEvent,
+  shortcutsDisabled = false,
   onMapDirty,
   onOpenEvent,
   onCreateEvent,
