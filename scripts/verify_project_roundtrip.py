@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import stat
 import sys
 import zipfile
 from pathlib import Path
@@ -49,6 +50,9 @@ def _members(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], set[
     }
     for info in infos:
         name = info.filename
+        mode = (info.external_attr >> 16) & 0xFFFF
+        if stat.S_IFMT(mode) == stat.S_IFLNK:
+            raise ValueError(f"ZIP contains a symlink: {name}")
         if not name.startswith(prefix):
             if info.is_dir() and name in wrapper_dirs:
                 continue
@@ -97,7 +101,9 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         # project member. Otherwise an exported ZIP missing its only edited map
         # could be reported as verified despite losing gameplay data.
         missing_files = sorted(set(src_files) - set(dst_files))
-        added_files = sorted(set(dst_files) - set(src_files) - allowed)
+        # An edit allowance never authorizes adding a new file. Require an
+        # explicit manifest change review instead of silently blessing it.
+        added_files = sorted(set(dst_files) - set(src_files))
         if missing_dirs or missing_files or added_files:
             raise ValueError(
                 f"Project manifest changed: missing directories={missing_dirs}, "
@@ -117,6 +123,8 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
             raise ValueError(f"Unapproved source-file byte changes: {unapproved}")
         return {
             "status": "verified",
+            "input_sha256": hashlib.sha256(original.read_bytes()).hexdigest(),
+            "output_sha256": hashlib.sha256(exported.read_bytes()).hexdigest(),
             "unchanged_files": len(src_files.keys() & dst_files.keys()) - len(changed),
             "approved_changed_files": changed,
             "input_files": len(src_files),
