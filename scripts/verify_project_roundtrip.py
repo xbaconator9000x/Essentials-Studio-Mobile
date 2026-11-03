@@ -98,6 +98,15 @@ def _digest(archive: zipfile.ZipFile, member: zipfile.ZipInfo) -> str:
     return digest.hexdigest()
 
 
+def _file_digest(path: Path) -> str:
+    """Hash the entire archive without loading a potentially huge ZIP into RAM."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] | None = None) -> dict:
     allowed = set(allowed_changes or ())
     for name in allowed:
@@ -110,6 +119,7 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         src_files, src_dirs = _members(source)
         dst_files, dst_dirs = _members(target)
         missing_dirs = sorted(src_dirs - dst_dirs)
+        added_dirs = sorted(dst_dirs - src_dirs)
         # An edit allowance permits changed bytes, not deletion of an original
         # project member. Otherwise an exported ZIP missing its only edited map
         # could be reported as verified despite losing gameplay data.
@@ -117,9 +127,10 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         # An edit allowance never authorizes adding a new file. Require an
         # explicit manifest change review instead of silently blessing it.
         added_files = sorted(set(dst_files) - set(src_files))
-        if missing_dirs or missing_files or added_files:
+        if missing_dirs or added_dirs or missing_files or added_files:
             raise ValueError(
                 f"Project manifest changed: missing directories={missing_dirs}, "
+                f"added directories={added_dirs}, "
                 f"missing files={missing_files}, added files={added_files}"
             )
 
@@ -136,8 +147,8 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
             raise ValueError(f"Unapproved source-file byte changes: {unapproved}")
         return {
             "status": "verified",
-            "input_sha256": hashlib.sha256(original.read_bytes()).hexdigest(),
-            "output_sha256": hashlib.sha256(exported.read_bytes()).hexdigest(),
+            "input_sha256": _file_digest(original),
+            "output_sha256": _file_digest(exported),
             "unchanged_files": len(src_files.keys() & dst_files.keys()) - len(changed),
             "approved_changed_files": changed,
             "input_files": len(src_files),
