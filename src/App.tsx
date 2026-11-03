@@ -199,6 +199,22 @@ function AppContent() {
     mapIsDirty
   );
 
+  // Shared guard for toolbar saves, project switching and map navigation.
+  // Every Save All entry point must freeze in-memory edits, not just ZIP export.
+  const saveAllWithLock = useCallback(async (): Promise<void> => {
+    if (editorOperationRef.current) {
+      throw new Error("Another project save or export is already running");
+    }
+    editorOperationRef.current = true;
+    setSaving(true);
+    try {
+      await saveAll();
+    } finally {
+      editorOperationRef.current = false;
+      setSaving(false);
+    }
+  }, [saveAll]);
+
   // ── Project loading ────────────────────────────────────────────────────────
 
   // A project switch must never silently unmount dirty event, map or PBS editors.
@@ -207,14 +223,14 @@ function AppContent() {
     if (!projectRef.current || !hasUnsavedEdits()) return true;
     const saveFirst = await confirmEditor("Save all unsaved changes before switching projects? Cancel keeps the current project open.");
     if (!saveFirst) return false;
-    await saveAll();
+    await saveAllWithLock();
     // Allow React's editor registration effects to publish their clean state.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     if (hasUnsavedEdits()) {
       throw new Error("New or unsaved edits remain after saving. Project switch cancelled.");
     }
     return true;
-  }, [saveAll, hasUnsavedEdits]);
+  }, [saveAllWithLock, hasUnsavedEdits]);
 
   const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
     if (!skipSwitchGuard && !(await confirmProjectSwitch())) return;
@@ -370,18 +386,13 @@ function AppContent() {
 
   const handleSaveAll = useCallback(async () => {
     if (editorOperationRef.current) return;
-    editorOperationRef.current = true;
-    setSaving(true);
     setError(null);
     try {
-      await saveAll();
+      await saveAllWithLock();
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
-    } finally {
-      editorOperationRef.current = false;
-      setSaving(false);
     }
-  }, [saveAll]);
+  }, [saveAllWithLock]);
 
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
@@ -456,7 +467,7 @@ function AppContent() {
         const proceed = await saveBeforeMapNavigation(
           hasUnsavedEdits,
           () => confirmEditor("Save unsaved map, event, script and PBS changes before switching maps? Cancel keeps the current map open."),
-          saveAll,
+          saveAllWithLock,
           isCurrent,
         );
         if (!proceed) return;
@@ -520,7 +531,7 @@ function AppContent() {
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [saveAll, hasUnsavedEdits]);
+  }, [saveAllWithLock, hasUnsavedEdits]);
 
   const handleMapDirty = useCallback(() => {
     updateMapDirty(true);
