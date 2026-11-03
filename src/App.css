@@ -247,3 +247,24 @@ body,
 .app-titlebar-right > button { flex-shrink: 0; min-height: 36px; }
 .app-operation-status { flex-shrink: 0; padding: 8px 12px; background: var(--color-mantle); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; }
 .app-operation-error { color: var(--color-danger); border-bottom: 1px solid var(--color-danger); }
+
+/* A native project write is serialized on disk, but pointer painting and
+   modal editing must also stop while Save All or ZIP export takes its snapshot.
+   Cover the editor, open dialogs and titlebar; Android DocumentsUI is a
+   separate native surface and remains usable. */
+.app-operation-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  touch-action: none;
+  cursor: progress;
+}
