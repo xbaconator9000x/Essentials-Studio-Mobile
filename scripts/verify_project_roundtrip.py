@@ -120,12 +120,13 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         dst_files, dst_dirs = _members(target)
         missing_dirs = sorted(src_dirs - dst_dirs)
         # Extraction/export materialises parent directories that were implicit
-        # in the input ZIP. Those are not new project content. A genuinely new
+        # in the input ZIP, including parents of explicit nested directories.
+        # Those are not new project content. A genuinely new
         # empty directory must still fail closed.
         implied_dirs = {
             "/".join(parts[:depth])
-            for filename in src_files
-            for parts in [filename.split("/")]
+            for member in (*src_files, *src_dirs)
+            for parts in [member.split("/")]
             for depth in range(1, len(parts))
         }
         added_dirs = sorted((dst_dirs - src_dirs) - implied_dirs)
