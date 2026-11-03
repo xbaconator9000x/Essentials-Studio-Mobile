@@ -43,6 +43,15 @@ class ManifestAndReceiptTests(unittest.TestCase):
             with path.open("rb") as stream:
                 self.assertEqual(receipt[key], hashlib.file_digest(stream, "sha256").hexdigest())
 
+    def test_export_may_materialize_implicit_parent_directories(self):
+        members = {"Game.rxproj": b"synthetic", "Data/Map001.rxdata": b"old",
+                   "PBS/pokemon.txt": b"original"}
+        self.make_zip(self.original, members)
+        self.make_zip(self.exported, {**members, "Data/": b"", "PBS/": b""})
+        receipt = verifier.verify_roundtrip(self.original, self.exported)
+        self.assertEqual(receipt["status"], "verified")
+        self.assertEqual(receipt["approved_changed_files"], [])
+
     def test_allowed_map_edit_does_not_allow_extra_directory(self):
         members = {"Game.rxproj": b"synthetic", "Data/Map001.rxdata": b"old"}
         self.make_zip(self.original, members)
