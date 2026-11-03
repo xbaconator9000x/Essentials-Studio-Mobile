@@ -327,15 +327,29 @@ function AppContent() {
     source: T | null,
     importArchive: (source: T, onProgress?: (percent: number) => void) => Promise<string>,
   ) => {
-    if (source === null) return;
-    // Confirm before extracting a potentially large ZIP; importing never
-    // discards unsaved edits or leaves a cancelled import's working directory.
-    if (!(await confirmProjectSwitch())) return;
+    if (source === null || editorOperationRef.current) return;
+    // A project import must own the same exclusive lease as Save All/export.
+    // Otherwise two picker callbacks can extract concurrently, or a ZIP export
+    // can snapshot the previous project while the imported project is opening.
+    // Claim the lease before awaiting the unsaved-edits confirmation so another
+    // toolbar action cannot start while the confirmation is visible.
+    editorOperationRef.current = true;
     setLoading(true);
     setArchiveProgress(0);
     setArchiveOutcome(null);
     setError(null);
     try {
+      // The project-switch confirmation may save dirty editors. Release only
+      // the synchronous lease for that save, then reclaim it immediately.
+      // No other UI operation can run during the awaited confirmation because
+      // the loading shield remains active.
+      editorOperationRef.current = false;
+      const confirmed = await confirmProjectSwitch();
+      if (!confirmed) return;
+      if (editorOperationRef.current) {
+        throw new Error("Another save or export started while confirming the import");
+      }
+      editorOperationRef.current = true;
       await importAndOpenProject(source, {
         importArchive,
         openProject: (path) => handleOpenProject(path, true),
@@ -345,6 +359,7 @@ function AppContent() {
     } catch (err) {
       setError(`Project ZIP import failed: ${String(err)}`);
     } finally {
+      editorOperationRef.current = false;
       setLoading(false);
       setArchiveProgress(null);
     }
