@@ -92,8 +92,9 @@ class ProjectRoundtripTests(unittest.TestCase):
         exported = self.make_zip("export.zip", self.sample() + [("PBS/new.txt", b"new")])
         with self.assertRaisesRegex(ValueError, "added files"):
             verify_roundtrip(original, exported)
-        report = verify_roundtrip(original, exported, {"PBS/new.txt"})
-        self.assertEqual(report["output_files"], 6)
+        # An edit allowance cannot authorize a newly inserted archive member.
+        with self.assertRaisesRegex(ValueError, "added files"):
+            verify_roundtrip(original, exported, {"PBS/new.txt"})
 
     def test_duplicate_zip_names_and_outside_root_are_rejected(self):
         original = self.make_zip("original.zip", self.sample())
