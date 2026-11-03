@@ -785,18 +785,23 @@ function AppContent() {
   // Ctrl+S saves ALL dirty editors (map tiles + database + scripts).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // Modal editors own Ctrl/Cmd+S and text shortcuts. Dispatching global
+      // Save All as well can race the event's direct save of MapNNN.rxdata.
+      if (e.defaultPrevented || e.altKey || editingEvent || showDatabase ||
+          showScripts || showPbs || propsMapId !== null || createMapParentId !== null) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         void handleSaveAll();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "o") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        handleBrowseProject();
+        void handleBrowseProject();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSaveAll, handleBrowseProject]);
+  }, [handleSaveAll, handleBrowseProject, editingEvent, showDatabase, showScripts,
+      showPbs, propsMapId, createMapParentId]);
 
   // ── Welcome screen ─────────────────────────────────────────────────────────
 
