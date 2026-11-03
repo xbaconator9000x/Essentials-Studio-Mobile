@@ -98,6 +98,8 @@ function AppContent() {
   const [mapIsDirty, setMapIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Synchronous lease: fast repeated taps cannot start competing saves or exports.
+  const editorOperationRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // Event editor state
@@ -366,9 +368,25 @@ function AppContent() {
     }
   }, [handleImportSource]);
 
+  const handleSaveAll = useCallback(async () => {
+    if (editorOperationRef.current) return;
+    editorOperationRef.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveAll();
+    } catch (err) {
+      setError(`Save all failed: ${String(err)}`);
+    } finally {
+      editorOperationRef.current = false;
+      setSaving(false);
+    }
+  }, [saveAll]);
+
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
-    if (!active) return;
+    if (!active || editorOperationRef.current) return;
+    editorOperationRef.current = true;
     setArchiveOutcome(null);
     setLoading(true);
     setSaving(true);
@@ -413,6 +431,7 @@ function AppContent() {
     } finally {
       setLoading(false);
       setSaving(false);
+      editorOperationRef.current = false;
       setArchiveProgress(null);
     }
   }, [saveAll, hasUnsavedEdits, isBrowserDev]);
@@ -738,6 +757,18 @@ function AppContent() {
     }
   }, []);
 
+  // Native write serialization cannot prevent in-memory edits while a ZIP
+  // snapshot is assembled. Pause keyboard mutations during project operations.
+  useEffect(() => {
+    if (!loading && !saving) return;
+    const blockEditorKeys = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", blockEditorKeys, true);
+    return () => window.removeEventListener("keydown", blockEditorKeys, true);
+  }, [loading, saving]);
+
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
   // Ctrl+S saves ALL dirty editors (map tiles + database + scripts).
@@ -745,7 +776,7 @@ function AppContent() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        void saveAll().catch((err) => setError(`Save all failed: ${err}`));
+        void handleSaveAll();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "o") {
         e.preventDefault();
@@ -754,7 +785,7 @@ function AppContent() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [saveAll, handleBrowseProject]);
+  }, [handleSaveAll, handleBrowseProject]);
 
   // ── Welcome screen ─────────────────────────────────────────────────────────
 
@@ -823,7 +854,7 @@ function AppContent() {
   // ── Main UI ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="app">
+    <div className="app" aria-busy={loading || saving}>
       {/* Title bar — * reflects all dirty editors via dirtyCount */}
       <div className="app-titlebar">
         <span className="app-title">
@@ -831,27 +862,21 @@ function AppContent() {
         </span>
         <div className="app-titlebar-right">
           <button className="app-titlebar-btn" disabled={loading || saving || dirtyCount === 0}
-            onClick={async () => {
-              setSaving(true);
-              setError(null);
-              try { await saveAll(); }
-              catch (err) { setError(`Save all failed: ${String(err)}`); }
-              finally { setSaving(false); }
-            }}>
+            onClick={() => void handleSaveAll()}>
             {saving ? "Saving..." : "Save All"}
           </button>
-          <button className="app-titlebar-btn" onClick={() => setShowDatabase(true)}>
+          <button className="app-titlebar-btn" onClick={() => setShowDatabase(true)} disabled={loading || saving}>
             Database
           </button>
-          <button className="app-titlebar-btn" onClick={() => setShowScripts(true)}>
+          <button className="app-titlebar-btn" onClick={() => setShowScripts(true)} disabled={loading || saving}>
             Scripts
           </button>
-          <button className="app-titlebar-btn" onClick={() => setShowPbs(true)}>
+          <button className="app-titlebar-btn" onClick={() => setShowPbs(true)} disabled={loading || saving}>
             PBS Data
           </button>
           <button
             className="app-titlebar-btn app-titlebar-btn--play"
-            onClick={handleLaunchGame}
+            onClick={handleLaunchGame} disabled={loading || saving}
           >
             ▶ Play
           </button>
@@ -866,7 +891,7 @@ function AppContent() {
           <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
             <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
-              aria-label="Choose Essentials Project ZIP" disabled={loading}
+              aria-label="Choose Essentials Project ZIP" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
@@ -876,12 +901,12 @@ function AppContent() {
           )}
           {isAndroid && (
             <button className="app-titlebar-btn" aria-label="Use native Android document picker"
-              onClick={() => void handlePickAndroidProjectZip()} disabled={loading}>
+              onClick={() => void handlePickAndroidProjectZip()} disabled={loading || saving}>
               Import ZIP (native)
             </button>
           )}
           {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
-          <button className="app-titlebar-btn" onClick={handleBrowseProject}>
+          <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
             Open...
           </button>
           {loading && <span className="app-loading">Loading...</span>}
@@ -1004,6 +1029,14 @@ function AppContent() {
           onConfirm={handleConfirmCreateMap}
           onClose={() => setCreateMapParentId(null)}
         />
+      )}
+
+      {/* Block touch painting and modal editor input while Save All or ZIP
+          export snapshots the project. Native Android pickers run separately. */}
+      {(loading || saving) && (
+        <div className="app-operation-shield" role="status" aria-live="polite">
+          {saving ? "Saving project — editing paused" : "Loading project — editing paused"}
+        </div>
       )}
 
       {/* Error display */}
