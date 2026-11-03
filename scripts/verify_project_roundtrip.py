@@ -71,6 +71,19 @@ def _members(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], set[
             dirs.add(relative.rstrip("/"))
         else:
             files[relative] = info
+    # ZIP allows a regular file to shadow a directory, even though no real
+    # filesystem can materialize both. Reject these archives before reporting
+    # successful preservation (including implicit parent directories).
+    file_keys = {name.casefold() for name in files}
+    directory_keys = {name.casefold() for name in dirs}
+    for name in [*files, *dirs]:
+        parts = name.split("/")
+        for depth in range(1, len(parts)):
+            parent = "/".join(parts[:depth]).casefold()
+            if parent in file_keys:
+                raise ValueError(f"ZIP file shadows project directory: {name}")
+    if file_keys & directory_keys:
+        raise ValueError("ZIP contains a file/directory path collision")
     if "Game.rxproj" not in files:
         raise ValueError("ZIP project root has no Game.rxproj file")
     return files, dirs
