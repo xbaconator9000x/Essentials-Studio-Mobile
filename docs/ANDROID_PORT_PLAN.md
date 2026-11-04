@@ -22,6 +22,7 @@ Android-specific adaptations:
 1. Tauri v2 ARM64 bootstrap and CI compile probe.
 2. Remove desktop-only native dependencies (initial audio preview stub on Android).
 3. Import a project ZIP through the Android document picker. Validate entries and ZIP limits; extract to **application-private storage**, never to arbitrary external paths. Keep the original archive immutable.
+   RAR is intentionally unsupported: the importer detects its signature (or browser-file extension) and directs users to extract and repackage locally as ZIP; it never renames or uploads archives to a conversion service.
 4. Open the extracted project via existing `open_project`, `load_map`, `save_map`, `load_event`, `save_event` and PBS commands. Add a secure, platform-aware project-path resolver.
 5. Resolve assets from the private project directory through Tauri's Android asset protocol or a scoped native command. Do not assume `file://` or `https://asset.localhost` works without validation.
 6. Export a replacement ZIP to a user-selected document destination. Verify the output on desktop and compare untouched input files byte-for-byte.

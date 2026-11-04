@@ -240,7 +240,20 @@ fn validate_zip_manifest(zip: &mut ZipArchive<File>) -> Result<(), String> {
 }
 
 fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, String> {
-    let src = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut src = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut signature = [0; 6];
+    let is_rar = match src.read_exact(&mut signature) {
+        Ok(()) => signature == *b"Rar!\x1a\x07",
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => false,
+        Err(error) => return Err(error.to_string()),
+    };
+    if is_rar {
+        return Err(
+            "RAR archives are not supported. Extract the archive locally, then create a ZIP containing the project folder with Game.rxproj. Renaming .rar to .zip will not convert it."
+                .into(),
+        );
+    }
+    src.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(src).map_err(|e| format!("Not a valid ZIP: {e}"))?;
     // A duplicate filename may disappear from the ZIP reader's name index.
     // Refuse the archive rather than silently losing one of its entries.
@@ -1541,6 +1554,10 @@ mod archive_roundtrip_tests {
                 vec![0, 255, 0x52, 0x58, 0x44, 0x41, 0x54, 0x41],
             ),
             (
+                "Plugins/GeneratedFixture/plugin.rb".into(),
+                b"module GeneratedFixture\nend\n".to_vec(),
+            ),
+            (
                 "Graphics/Tilesets/Synthetic.png".into(),
                 synthetic_png(256, 256, false),
             ),
@@ -1628,7 +1645,7 @@ mod archive_roundtrip_tests {
         fs::create_dir_all(&imports).unwrap();
         fs::create_dir_all(&projects).unwrap();
         let original = imports.join("import-test.zip");
-        sample_zip(&original, "ExampleProject/", None);
+        sample_zip(&original, "Essentials FRLG/", None);
         let original_zip_bytes = fs::read(&original).unwrap();
         let retained_original = sandbox.path("original-copy.zip");
         fs::copy(&original, &retained_original).unwrap();
@@ -2163,6 +2180,19 @@ mod archive_roundtrip_tests {
         super::discard_imported_project_in(&projects, &imported).unwrap();
         assert!(!projects.join("import-malformed").exists());
         assert!(!imports.join("import-malformed-extracted").exists());
+    }
+
+    #[test]
+    fn rar_signature_returns_local_conversion_guidance_before_extraction() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("mislabeled.zip");
+        fs::write(&archive, b"Rar!\x1a\x07\x01\x00opaque private archive bytes").unwrap();
+
+        let error = extract_archive(&archive, &sandbox.path("extracted")).unwrap_err();
+        assert!(error.contains("RAR archives are not supported"));
+        assert!(error.contains("Extract the archive locally"));
+        assert!(error.contains("Renaming .rar to .zip will not convert it"));
+        assert!(!sandbox.path("extracted").exists());
     }
 
     #[test]

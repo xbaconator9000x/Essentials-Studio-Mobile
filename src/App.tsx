@@ -889,7 +889,7 @@ function AppContent() {
             ) : (
             <label className="app-welcome-btn app-archive-picker">
               Import Essentials Project ZIP
-              <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+              <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed" className="app-archive-picker-input"
                 aria-label="Choose Essentials Project ZIP" disabled={loading}
                 onChange={event => {
                   const file = event.target.files?.[0];
@@ -965,7 +965,7 @@ function AppContent() {
           ) : (
           <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
-            <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed" className="app-archive-picker-input"
               aria-label="Choose Essentials Project ZIP" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
