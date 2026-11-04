@@ -504,7 +504,7 @@ mod event_save_integrity_tests {
     }
 
     #[tokio::test]
-    async fn ambiguous_event_save_returns_error_and_leaves_original_rxdata_untouched() {
+    async fn editing_event_command_in_place_saves_and_preserves_opaque_fields() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root = std::env::temp_dir().join(format!(
@@ -536,10 +536,26 @@ mod event_save_integrity_tests {
 
         let mut edited = RpgEvent::from_ruby_value(&event).unwrap();
         edited.pages[0].list[0].parameters[0] = serde_json::json!("NEW");
-        let error = save_event(root.to_string_lossy().into_owned(), 1, edited)
-            .await.unwrap_err();
-        assert!(error.contains("Ambiguous event page/command"), "{error}");
-        assert_eq!(std::fs::read(&map_file).unwrap(), original_bytes);
+        save_event(root.to_string_lossy().into_owned(), 1, edited)
+            .await.unwrap();
+        assert_ne!(std::fs::read(&map_file).unwrap(), original_bytes);
+        let saved = marshal::load_file(&map_file).unwrap();
+        let events = saved.as_object().unwrap().get("@events").unwrap();
+        let event = events.as_hash().unwrap().iter()
+            .find(|(key, _)| key.as_int() == Some(1)).unwrap().1.as_object().unwrap();
+        let page = &event.get("pages").unwrap().as_array().unwrap()[0];
+        let commands = page.as_object().unwrap().get("list").unwrap().as_array().unwrap();
+        let parameters = commands[0].as_object().unwrap()
+            .get("parameters").unwrap().as_array().unwrap();
+        assert_eq!(parameters[0].as_string().as_deref(), Some("NEW"));
+        assert_eq!(commands[0].as_object().unwrap().get_int("extension_marker"), Some(11));
+        assert_eq!(commands[1].as_object().unwrap().get_int("extension_marker"), Some(22));
+        let reopened = load_event(root.to_string_lossy().into_owned(), 1, 1)
+            .await.unwrap();
+        assert_eq!(
+            reopened.pages[0].list[0].parameters[0],
+            serde_json::Value::String("NEW".into()),
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

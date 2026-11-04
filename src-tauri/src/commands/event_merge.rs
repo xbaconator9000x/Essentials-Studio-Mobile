@@ -145,12 +145,18 @@ fn merge_event_sequence(previous: &[RubyValue], current: &[RubyValue]) -> Result
         .collect();
     let single_in_place = previous.len() == 1 && current.len() == 1
         && same_record_kind(&previous[0], &current[0]);
+    let positional_in_place = previous.len() == current.len()
+        && current.iter().enumerate().all(|(index, item)| {
+            matched[index].map_or_else(
+                || same_record_kind(&previous[index], item),
+                |old_index| old_index == index,
+            )
+        });
 
-    // An edited command and a replacement command have identical typed shapes.
-    // Without stable IDs, copying unknown ivars from an unmatched old command
-    // would corrupt the replacement. Refuse the save instead of silently
-    // misattributing or discarding extension data. Deletions alone are safe.
-    if !single_in_place && !unmatched_new.is_empty() {
+    // If the sequence shape and every unchanged anchor stay in place, an
+    // unmatched record is an in-place edit. Otherwise opaque fields cannot be
+    // assigned safely to replacements or moved records.
+    if !single_in_place && !positional_in_place && !unmatched_new.is_empty() {
         for &old_index in &unmatched_old {
             if unmatched_new.iter().any(|&new_index| {
                 same_record_kind(&previous[old_index], &current[new_index])
@@ -323,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn replacing_one_of_two_commands_with_same_code_refuses_opaque_transfer() {
+    fn editing_one_of_two_commands_in_place_preserves_opaque_fields() {
         let original = RubyValue::Array(vec![
             command(101, "A", Some(11)),
             command(101, "B", Some(22)),
@@ -332,9 +338,14 @@ mod tests {
             command(101, "NEW", None),
             command(101, "B", None),
         ]);
-        let result = preserve_unedited_event_fields(&original, &edited);
-        assert!(result.is_err(), "ambiguous replacement must not inherit A's metadata");
-        assert_eq!(marker(&original.as_array().unwrap()[0]), Some(11));
+        let merged = preserve_unedited_event_fields(&original, &edited).unwrap();
+        let commands = merged.as_array().unwrap();
+        assert_eq!(marker(&commands[0]), Some(11));
+        assert_eq!(marker(&commands[1]), Some(22));
+        let parameters = commands[0].as_object().unwrap()
+            .get("parameters").unwrap().as_array().unwrap();
+        assert_eq!(parameters[0].as_string().as_deref(), Some("NEW"));
+        assert_eq!(load(&dump(&merged).unwrap()).unwrap(), merged);
     }
 
     #[test]
