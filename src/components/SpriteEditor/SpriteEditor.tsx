@@ -40,6 +40,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pointerPositions = useRef(new Map<number, PointerPoint>());
   const activePaintPointer = useRef<number | null>(null);
+  const pendingTouchPaint = useRef<{ id: number; point: PointerPoint } | null>(null);
   const activePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const pinchStart = useRef<{
     distance: number;
@@ -284,6 +285,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         viewport: { zoom, offsetX, offsetY },
       };
       activePaintPointer.current = null;
+      pendingTouchPaint.current = null;
       activePan.current = null;
       return;
     }
@@ -291,7 +293,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       activePan.current = { id: event.pointerId, point, x: offsetX, y: offsetY };
     } else {
       activePaintPointer.current = event.pointerId;
-      paintPixel(event.clientX, event.clientY);
+      if (event.pointerType === "touch") {
+        pendingTouchPaint.current = { id: event.pointerId, point };
+      } else {
+        paintPixel(event.clientX, event.clientY);
+      }
     }
   };
 
@@ -322,17 +328,29 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (pan?.id === event.pointerId) {
       setOffsetX(pan.x + point.x - pan.point.x);
       setOffsetY(pan.y + point.y - pan.point.y);
+    } else if (pendingTouchPaint.current?.id === event.pointerId) {
+      const start = pendingTouchPaint.current.point;
+      pendingTouchPaint.current = null;
+      paintPixel(start.x, start.y);
+      if (point.x !== start.x || point.y !== start.y) paintPixel(point.x, point.y);
     } else if (activePaintPointer.current === event.pointerId) {
       paintPixel(event.clientX, event.clientY);
     }
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerEnd = (event: React.PointerEvent<HTMLCanvasElement>, commitTap: boolean) => {
+    const pending = pendingTouchPaint.current;
+    if (commitTap && pending?.id === event.pointerId) {
+      paintPixel(pending.point.x, pending.point.y);
+    }
+    if (pending?.id === event.pointerId) pendingTouchPaint.current = null;
     pointerPositions.current.delete(event.pointerId);
     if (activePaintPointer.current === event.pointerId) activePaintPointer.current = null;
     if (activePan.current?.id === event.pointerId) activePan.current = null;
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
+  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, true);
+  const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, false);
 
   const handleTraceFile = (file?: File) => {
     if (!file) return;
@@ -456,7 +474,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
             />
           </div>
         </div>

@@ -10,15 +10,21 @@ const editorApi = vi.hoisted(() => ({
   loadCharacterImage: vi.fn(),
   clearImageCache: vi.fn(),
 }));
+const editorDialogs = vi.hoisted(() => ({
+  confirmEditor: vi.fn(async () => true),
+}));
+
+const fillRect = vi.fn();
 
 vi.mock("../src/services/tauriApi", () => editorApi);
 vi.mock("../src/services/imageLoader", () => editorApi);
+vi.mock("../src/services/editorDialog", () => editorDialogs);
 
 const context = {
   imageSmoothingEnabled: false,
   fillStyle: "",
   setTransform: vi.fn(),
-  fillRect: vi.fn(),
+  fillRect,
   clearRect: vi.fn(),
   drawImage: vi.fn(),
   beginPath: vi.fn(),
@@ -124,5 +130,120 @@ describe("sprite editor integration", () => {
       "/synthetic-project",
       "Guide_copy",
     ));
+  });
+
+  it("does not paint the first touch when a second touch starts a pinch", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fillRect.mockClear();
+
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    expect(fillRect).not.toHaveBeenCalled();
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 120,
+      clientY: 100,
+    });
+
+    expect(fillRect).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
+  it("paints a single-finger touch tap on release", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fillRect.mockClear();
+
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    expect(fillRect).not.toHaveBeenCalled();
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+
+    expect(fillRect).toHaveBeenCalledWith(2, 2, 1, 1);
+    expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
+  });
+
+  it("confirms and saves an edit to the original character graphic", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Save mode" }), {
+      target: { value: "original" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide",
+      "Guide",
+      "original",
+      "data:image/png;base64,cGl4ZWxz",
+    ));
+    expect(editorDialogs.confirmEditor).toHaveBeenCalledWith(
+      "Replace the original Guide.png character graphic?",
+    );
+  });
+
+  it("loads and removes a bounded trace overlay", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByText("Trace opacity: 35%")).toBeTruthy();
+    expect(screen.getByText("Trace scale: 100%")).toBeTruthy();
+    expect(traceUrl.createObjectURL).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove trace" }));
+    expect(traceUrl.revokeObjectURL).toHaveBeenCalledWith("blob:trace");
+    expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
   });
 });
