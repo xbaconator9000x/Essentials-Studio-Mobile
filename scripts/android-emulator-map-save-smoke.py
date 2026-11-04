@@ -42,11 +42,23 @@ def bounds(text: str) -> tuple[int, int, int, int]:
     return values
 
 
+def usable_bounds(text: str) -> tuple[int, int, int, int] | None:
+    try:
+        return bounds(text)
+    except ValueError:
+        return None
+
+
 def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
     for node in nodes:
-        if node.get("text", "").strip() == name and node.get("bounds"):
+        if (node.get("text", "").strip() == name
+                and usable_bounds(node.get("bounds", ""))):
             return node
     raise AssertionError(f"Missing Android UI control: {name}")
+
+
+def tap_named(nodes: list[dict[str, str]], name: str) -> None:
+    helper.tap(helper.center(find_named(nodes, name)["bounds"]))
 
 
 def private_map_path(package: str) -> str:
@@ -77,11 +89,12 @@ def status_has(nodes: list[dict[str, str]], layer: str, tile: str) -> bool:
     for layer_node in layer_nodes:
         for label in labels:
             for value in values:
-                if not all(n.get("bounds") for n in (layer_node, label, value)):
+                rects = [usable_bounds(n.get("bounds", "")) for n in (layer_node, label, value)]
+                if any(rect is None for rect in rects):
                     continue
-                lx1, ly1, lx2, ly2 = bounds(layer_node["bounds"])
-                tx1, ty1, tx2, ty2 = bounds(label["bounds"])
-                vx1, vy1, vx2, vy2 = bounds(value["bounds"])
+                _, ly1, lx2, ly2 = rects[0]
+                tx1, ty1, tx2, ty2 = rects[1]
+                vx1, vy1, vx2, vy2 = rects[2]
                 if (max(ly1, ty1, vy1) < min(ly2, ty2, vy2)
                         and -15 <= tx1 - lx2 <= 50
                         and -15 <= vx1 - tx2 <= 50):
@@ -89,11 +102,20 @@ def status_has(nodes: list[dict[str, str]], layer: str, tile: str) -> bool:
     return False
 
 
+def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
+    return any(
+        node.get("text", "").strip() == status
+        and usable_bounds(node.get("bounds", ""))
+        for node in nodes
+    )
+
+
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """The left image is the map canvas; the right image is the tileset palette."""
     images = sorted(
-        (bounds(n["bounds"]) for n in nodes
-         if n.get("class") == "android.widget.Image" and n.get("bounds")),
+        (rect for n in nodes
+         if n.get("class") == "android.widget.Image"
+         and (rect := usable_bounds(n.get("bounds", ""))) is not None),
         key=lambda rect: rect[0],
     )
     if len(images) != 2:
@@ -107,13 +129,42 @@ def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[i
 def paint_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
     """Touch the second map column inside the real map image, not the toolbar."""
     canvas, _ = editor_images(nodes)
-    toolbar_bottom = max(bounds(find_named(nodes, name)["bounds"])[3]
-                         for name in ("Pen", "L1", "L2", "L3", "Ev", "All"))
+    toolbar_bounds = [
+        rect for name in ("Pen", "L1", "L2", "L3", "Ev", "All")
+        if (rect := usable_bounds(next(
+            (node.get("bounds", "") for node in nodes
+             if node.get("text", "").strip() == name),
+            "",
+        ))) is not None
+    ]
+    if not toolbar_bounds:
+        raise AssertionError("No visible map toolbar controls have usable bounds")
+    toolbar_bottom = max(rect[3] for rect in toolbar_bounds)
     x, y = canvas[0] + 110, canvas[1] + 40
     if not (canvas[0] < x < canvas[2] and max(toolbar_bottom, canvas[1]) < y
             < min(canvas[3], height - 80) and x < width):
         raise AssertionError(f"Paint point outside map canvas: {(x,y)}, {width}x{height}")
     return x, y
+
+
+def event_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
+    """Touch the synthetic event at map tile (1, 1) inside the visible canvas."""
+    canvas, _ = editor_images(nodes)
+    tile_size = tile_pixel_size()
+    x, y = round(canvas[0] + tile_size * 1.5), round(canvas[1] + tile_size * 1.5)
+    if not (canvas[0] < x < canvas[2] and canvas[1] < y < canvas[3]
+            and x < width and y < height):
+        raise AssertionError(f"Synthetic event target outside map canvas: {(x, y)}")
+    return x, y
+
+
+def tile_pixel_size() -> float:
+    """Translate the 32-CSS-pixel XP tile to Android's physical screen coordinates."""
+    output = run_adb("shell", "wm", "density").decode(errors="replace")
+    densities = re.findall(r"(?:Physical|Override) density:\s*(\d+)", output)
+    if not densities:
+        raise AssertionError(f"Android did not report display density: {output.strip()!r}")
+    return 32 * int(densities[-1]) / 160
 
 
 def palette_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
@@ -124,6 +175,104 @@ def palette_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple
             and palette[1] < y < min(palette[3], height)):
         raise AssertionError(f"Palette target outside image: {(x, y)}, {width}x{height}")
     return x, y
+
+
+def wait_for_status(evidence: Path, name: str, status: str, seconds: int = 12):
+    deadline = time.monotonic() + seconds
+    last_nodes: list[dict[str, str]] = []
+    while time.monotonic() < deadline:
+        last_nodes = helper.dump_ui(evidence, name)
+        if status_visible(last_nodes, status):
+            return last_nodes
+        time.sleep(1)
+    raise AssertionError(f"Map status {status!r} did not appear; visible text="
+                         f"{[n.get('text', '') for n in last_nodes if n.get('text')]!r}")
+
+
+def open_synthetic_event(evidence: Path, nodes: list[dict[str, str]],
+                         width: int, height: int,
+                         evidence_prefix: str = "map"):
+    tap_named(nodes, "Ev")
+    nodes = wait_for_status(evidence, "map-events-layer", "Events (1)")
+    time.sleep(2)
+    screenshot = run_adb("exec-out", "screencap", "-p")
+    if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise AssertionError("Events-layer screenshot was not a PNG")
+    (evidence / f"{evidence_prefix}-event-artwork.png").write_bytes(screenshot)
+    helper.tap(event_point(nodes, width, height))
+    ui_name = f"{evidence_prefix}-event-editor-open"
+    helper.wait_for(evidence, ui_name, "Event [007] Synthetic Guide", 20)
+    return helper.dump_ui(evidence, ui_name)
+
+
+def command_text_is_visible(nodes: list[dict[str, str]], text: str) -> bool:
+    return any(text in node.get("text", "") for node in nodes)
+
+
+def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
+    nodes = helper.dump_ui(evidence, "event-dialogue-before-edit")
+    row = next((
+        node for node in nodes
+        if original in node.get("text", "")
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+    if row is None:
+        raise AssertionError(f"Visible dialogue command {original!r} was not found")
+    x, y = helper.center(row["bounds"])
+    helper.tap((x, y))
+    helper.tap((x, y))
+
+    deadline = time.monotonic() + 10
+    editor = None
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-editing")
+        editor = next((
+            node for node in nodes
+            if "EditText" in node.get("class", "")
+            and original in node.get("text", "")
+            and usable_bounds(node.get("bounds", ""))
+        ), None)
+        if editor:
+            break
+        time.sleep(1)
+    if editor is None:
+        raise AssertionError("Double-tap did not expose the visible dialogue text editor")
+
+    helper.tap(helper.center(editor["bounds"]))
+    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    run_adb("shell", "input", "keyevent", *("KEYCODE_DEL",) * len(original))
+    run_adb("shell", "input", "text", updated.replace(" ", "%s"))
+    nodes = helper.dump_ui(evidence, "event-dialogue-input")
+    if any("inputmethod" in node.get("package", "").casefold()
+           or "keyboard" in node.get("class", "").casefold()
+           for node in nodes):
+        run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-edited")
+        if command_text_is_visible(nodes, updated):
+            (evidence / "event-dialogue-edited.png").write_bytes(
+                run_adb("exec-out", "screencap", "-p")
+            )
+            tap_named(nodes, "OK")
+            return
+        time.sleep(1)
+    raise AssertionError(f"Edited dialogue {updated!r} was not visible after input")
+
+
+def wait_for_map_after_event_save(evidence: Path):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "map-after-event-save")
+        if helper.editor_visible(nodes) and not any(
+            "Event [007] Synthetic Guide" in node.get("text", "") for node in nodes
+        ):
+            return nodes
+        if any(node.get("text", "").strip() == "Save failed"
+               for node in nodes):
+            raise AssertionError("Native event dialogue save failed")
+        time.sleep(1)
+    raise AssertionError("Event editor did not close after saving dialogue")
 
 
 def run(package: str, evidence: Path) -> None:
@@ -155,6 +304,15 @@ def run(package: str, evidence: Path) -> None:
             raise AssertionError("Project editor disappeared after rotation")
         if not status_has(nodes, "Layer 1/3", "384"):
             raise AssertionError("Expected synthetic map layer 1 and selected tile 384")
+        for button, expected in (("L2", "Layer 2/3"), ("L3", "Layer 3/3")):
+            tap_named(nodes, button)
+            nodes = wait_for_status(evidence, f"map-{expected.replace('/', '-')}",
+                                    expected)
+            (evidence / f"map-{expected.replace('/', '-')}.png").write_bytes(
+                run_adb("exec-out", "screencap", "-p")
+            )
+        tap_named(nodes, "L1")
+        nodes = wait_for_status(evidence, "map-layer-1-before-paint", "Layer 1/3")
         helper.tap(palette_point(nodes, width, height))
         time.sleep(2)
         nodes = helper.dump_ui(evidence, "map-after-palette-selection")
@@ -166,12 +324,17 @@ def run(package: str, evidence: Path) -> None:
         time.sleep(2)
         (evidence / "map-after-tap.png").write_bytes(run_adb("exec-out", "screencap", "-p"))
         nodes = helper.dump_ui(evidence, "map-after-tap")
+        editor_nodes = open_synthetic_event(evidence, nodes, width, height)
+        if not command_text_is_visible(editor_nodes, "Synthetic dialogue"):
+            helper.wait_for(evidence, "event-dialogue-source", "Synthetic dialogue", 12)
+        edit_dialogue_in_editor(evidence, "Synthetic dialogue", "Edited synthetic dialogue")
+        nodes = wait_for_map_after_event_save(evidence)
         helper.tap(helper.wait_for(evidence, "map-save-control", "Save All", 12))
         time.sleep(5)
         nodes = helper.dump_ui(evidence, "map-after-save")
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
                for n in nodes):
-            raise AssertionError("Editor reported a map save failure")
+            raise AssertionError("Editor reported a Save All failure")
         after = read_private_map(package, path)
         receipt["map_sha256_after"] = hashlib.sha256(after).hexdigest()
         if after == before:
@@ -183,6 +346,8 @@ def run(package: str, evidence: Path) -> None:
         if source_hash != imported["fixture_sha256"]:
             raise AssertionError("Original imported ZIP changed during map edit")
         receipt["original_zip_unchanged"] = True
+        receipt["dialogue_before"] = "Synthetic dialogue"
+        receipt["dialogue_after"] = "Edited synthetic dialogue"
         receipt["result"] = "emulator_map_touch_save_pass"
     finally:
         (evidence / "map-edit-receipt.json").write_text(
@@ -224,8 +389,26 @@ def selftest() -> None:
     ]
     assert status_has(nodes, "Layer 1/3", "384")
     assert not status_has(nodes, "Layer 1/3", "385")
+    assert status_visible(nodes, "Layer 1/3")
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
+    original_run_adb = globals()["run_adb"]
+    try:
+        globals()["run_adb"] = lambda *args, **kwargs: b"Physical density: 420\n"
+        assert tile_pixel_size() == 84
+        assert event_point(nodes, 1794, 1080) == (805, 441)
+    finally:
+        globals()["run_adb"] = original_run_adb
+    assert usable_bounds("[0,0][0,0]") is None
+    nodes[5]["bounds"] = "[0,0][0,0]"
+    assert find_named(nodes, "L1")["bounds"] == "[1399,217][1488,283]"
+    try:
+        find_named(nodes, "L2")
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("A zero-bounds toolbar node was treated as visible")
+    assert paint_point(nodes, 1794, 1080) == (789, 355)
     nodes[1]["bounds"] = "[679,315][700,1018]"
     try:
         paint_point(nodes, 1794, 1080)
