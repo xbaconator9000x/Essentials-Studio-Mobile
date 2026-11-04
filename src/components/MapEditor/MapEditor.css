@@ -19,6 +19,7 @@
 
 .map-editor-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   padding: 6px 12px;
@@ -29,8 +30,10 @@
 
 .toolbar-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .toolbar-label {
