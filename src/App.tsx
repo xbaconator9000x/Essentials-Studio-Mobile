@@ -134,6 +134,16 @@ function AppContent() {
   );
   const [graphicsRevision, setGraphicsRevision] = useState(0);
 
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const narrowViewport = window.matchMedia("(max-width: 640px)");
+    const updatePaletteVisibility = (event: MediaQueryListEvent) => {
+      setShowTilesetPalette(!event.matches);
+    };
+    narrowViewport.addEventListener("change", updatePaletteVisibility);
+    return () => narrowViewport.removeEventListener("change", updatePaletteVisibility);
+  }, []);
+
   // Refs let callbacks always read the latest values without stale closures.
   const mapDataRef = useRef<MapRenderData | null>(null);
   const mapIsDirtyRef = useRef(false);
