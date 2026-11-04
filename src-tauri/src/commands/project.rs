@@ -554,6 +554,9 @@ mod event_save_integrity_tests {
             reopened.pages[0].list[0].parameters[0],
             serde_json::Value::String("NEW".into()),
         );
+        assert_eq!(reopened.pages[0].list[0].source_index, Some(0));
+        assert_eq!(commands[0].as_object().unwrap().get_int("extension_marker"), Some(11));
+        assert_eq!(commands[1].as_object().unwrap().get_int("extension_marker"), Some(22));
         std::fs::remove_dir_all(root).unwrap();
     }
 

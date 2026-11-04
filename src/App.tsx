@@ -733,7 +733,14 @@ function AppContent() {
     if (!proj || mapId === null) return;
     try {
       const evt = await loadEvent(proj.path, mapId, eventId);
-      setClipboardEvent(evt);
+      setClipboardEvent({
+        ...evt,
+        pages: evt.pages.map((page) => ({
+          ...page,
+          source_index: undefined,
+          list: page.list.map((command) => ({ ...command, source_index: undefined })),
+        })),
+      });
     } catch (err) {
       setError(`Copy event failed: ${err}`);
     }
