@@ -304,7 +304,11 @@ export function EventEditor({
         if (cmd && cmd.code !== 0) {
           updatePage((p) => {
             const list = [...p.list];
-            list.splice(selectedCommand + 1, 0, { ...cmd, parameters: [...cmd.parameters] });
+            list.splice(selectedCommand + 1, 0, {
+              code: cmd.code,
+              indent: cmd.indent,
+              parameters: [...cmd.parameters],
+            });
             return { ...p, list };
           });
           setSelectedCommand(selectedCommand + 1);
