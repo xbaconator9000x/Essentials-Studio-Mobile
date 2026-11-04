@@ -1537,6 +1537,10 @@ mod archive_roundtrip_tests {
                 b"# synthetic PBS\r\n[TEST]\r\nName = Test\r\n".to_vec(),
             ),
             (
+                "PluginData/opaque metadata.bin".into(),
+                vec![0, 255, 0x52, 0x58, 0x44, 0x41, 0x54, 0x41],
+            ),
+            (
                 "Graphics/Tilesets/Synthetic.png".into(),
                 synthetic_png(256, 256, false),
             ),
