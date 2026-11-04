@@ -2,6 +2,8 @@
 """Re-import a real Android SAF-exported synthetic ZIP through DocumentsUI.
 
 This is an emulator persistence gate, NOT desktop RMXP or physical phone proof.
+Uses the native Android document-picker bridge so the selected content URI is
+read by the same bounded native importer used for scoped Android documents.
 Requires successful import, touch/save and SAF export receipts from this run.
 """
 from __future__ import annotations
@@ -263,12 +265,12 @@ def run(package: str, evidence: Path) -> None:
         nodes = picker.dump_ui(evidence, "reimport-editor-before")
         if not picker.editor_visible(nodes):
             raise AssertionError("Editor not open before re-import")
-        target = (picker.locate(nodes, "Import ZIP...")
-                  or picker.locate(nodes, "Choose Essentials Project ZIP"))
+        target = picker.locate(nodes, "Use native Android document picker")
         if target is None:
-            raise AssertionError("Loaded editor has no Android ZIP import control")
+            raise AssertionError("Loaded editor has no native Android ZIP import control")
         picker.tap(target)
         picker.wait_for_document_picker(evidence, 20)
+        receipt["reimport_entrypoint"] = "native_android_document_picker"
         if not select_exported_zip(evidence, export_helper.EXPORT_FILENAME):
             raise AssertionError("Native DocumentsUI did not select exported ZIP")
         # The old project remains visible while the new ZIP is importing.
