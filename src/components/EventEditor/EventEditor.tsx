@@ -11,6 +11,7 @@ import {
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
+import { updateEventCommandParam } from "../../services/eventEditorMutation";
 import { useEditorRegistration } from "../../context/ProjectSaveContext";
 import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
@@ -166,13 +167,7 @@ export function EventEditor({
 
   const handleUpdateCommandParam = useCallback(
     (index: number, paramIndex: number, value: unknown) => {
-      updatePage((p) => {
-        const list = [...p.list];
-        const cmd = { ...list[index], parameters: [...list[index].parameters] };
-        cmd.parameters[paramIndex] = value;
-        list[index] = cmd;
-        return { ...p, list };
-      });
+      updatePage((p) => updateEventCommandParam(p, index, paramIndex, value));
     },
     [updatePage]
   );

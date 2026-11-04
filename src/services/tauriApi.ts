@@ -25,6 +25,7 @@ import type { PbsSection } from "../types/pbsTypes";
 import { callBrowserBridge } from "./browserTransport";
 import { serializeProjectOperation, shouldSerializeProjectCommand } from "./projectMutationQueue";
 import { pasteEventInProjectQueue } from "./eventPasteTransaction";
+import { createEventProjectBridge } from "./eventProjectBridge";
 
 const DEMO_READ_COMMANDS = new Set([
   "open_project", "load_map", "load_tileset", "load_event",
@@ -84,6 +85,8 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
   }
   return direct(cmd, args) as Promise<T>;
 }
+
+const eventProjectBridge = createEventProjectBridge(invoke);
 
 /**
  * Open an RMXP project directory.
@@ -145,11 +148,7 @@ export async function loadEvent(
   mapId: number,
   eventId: number
 ): Promise<RpgEvent> {
-  return (await invoke("load_event", {
-    projectPath,
-    mapId,
-    eventId,
-  })) as RpgEvent;
+  return eventProjectBridge.loadEvent(projectPath, mapId, eventId);
 }
 
 /**
@@ -160,11 +159,7 @@ export async function saveEvent(
   mapId: number,
   event: RpgEvent
 ): Promise<void> {
-  await invoke("save_event", {
-    projectPath,
-    mapId,
-    event,
-  });
+  await eventProjectBridge.saveEvent(projectPath, mapId, event);
 }
 
 /**
