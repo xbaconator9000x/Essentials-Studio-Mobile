@@ -50,7 +50,6 @@ export function MapToolbar({
       setToolsCollapsed(event.matches);
     };
     narrowViewport.addEventListener("change", handleViewportChange);
-    setToolsCollapsed(narrowViewport.matches);
     return () => narrowViewport.removeEventListener("change", handleViewportChange);
   }, []);
 

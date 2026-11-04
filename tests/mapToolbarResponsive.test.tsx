@@ -10,7 +10,9 @@ describe("map toolbar responsive controls", () => {
   beforeEach(() => {
     matches = true;
     listeners = new Set();
-    vi.spyOn(window, "matchMedia").mockImplementation(() => ({
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({
       matches,
       media: "(max-width: 640px)",
       onchange: null,
@@ -23,12 +25,14 @@ describe("map toolbar responsive controls", () => {
         listeners.delete(listener as (event: MediaQueryListEvent) => void);
       },
       dispatchEvent: vi.fn(),
-    }));
+      })),
+    });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(window, "matchMedia");
   });
 
   it("reveals layer controls when a narrow viewport rotates to landscape", () => {
