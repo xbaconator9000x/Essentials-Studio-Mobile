@@ -1016,6 +1016,7 @@ mod archive_roundtrip_tests {
                 x: 1,
                 y: 1,
                 pages: vec![EventPage {
+                    source_index: None,
                     condition: EventCondition::default(),
                     graphic: EventGraphic {
                         character_name: "SyntheticGuide".into(),
@@ -1035,6 +1036,7 @@ mod archive_roundtrip_tests {
                         code: 101,
                         indent: 0,
                         parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
+                        source_index: None,
                     }],
                 }],
             },

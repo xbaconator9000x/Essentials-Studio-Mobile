@@ -14,6 +14,8 @@ pub struct RpgEvent {
 /// RPG::Event::Page — a single event page with conditions and commands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventPage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<usize>,
     pub condition: EventCondition,
     pub graphic: EventGraphic,
     pub move_type: i64,
@@ -78,6 +80,8 @@ pub struct EventCommand {
     pub indent: i64,
     /// Parameters converted to plain JSON values for frontend consumption
     pub parameters: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<usize>,
 }
 
 // --- Helper to build a RubyObject with ivars ---
@@ -117,7 +121,13 @@ impl RpgEvent {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(EventPage::from_ruby_value)
+                    .enumerate()
+                    .filter_map(|(index, page)| {
+                        EventPage::from_ruby_value(page).map(|mut page| {
+                            page.source_index = Some(index);
+                            page
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -174,12 +184,19 @@ impl EventPage {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(EventCommand::from_ruby_value)
+                    .enumerate()
+                    .filter_map(|(index, command)| {
+                        EventCommand::from_ruby_value(command).map(|mut command| {
+                            command.source_index = Some(index);
+                            command
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();
 
         Some(Self {
+            source_index: None,
             condition,
             graphic,
             move_type: obj.get_int("move_type").unwrap_or(0),
@@ -372,6 +389,7 @@ impl EventCommand {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().map(|v| v.to_json_value()).collect())
                 .unwrap_or_default(),
+            source_index: None,
         })
     }
 

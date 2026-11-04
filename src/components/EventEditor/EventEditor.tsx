@@ -279,7 +279,11 @@ export function EventEditor({
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
         const cmd = page.list[selectedCommand];
         if (cmd && cmd.code !== 0) {
-          setClipboard([{ ...cmd, parameters: [...cmd.parameters] }]);
+          setClipboard([{
+            code: cmd.code,
+            indent: cmd.indent,
+            parameters: [...cmd.parameters],
+          }]);
         }
       }
       // Paste command
