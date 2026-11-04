@@ -281,6 +281,21 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
                 attempted_value = field_text
                 run_adb("shell", "input", "text", suffix.replace(" ", "%s"))
         time.sleep(0.5)
+    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-input-committed")
+        field = next((
+            node for node in nodes
+            if "EditText" in node.get("class", "")
+            and node.get("bounds") == input_bounds
+            and usable_bounds(node.get("bounds", ""))
+        ), None)
+        if field:
+            field_text = field.get("text", "")
+            if field_text == updated:
+                break
+        time.sleep(0.5)
     if field_text != updated:
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
@@ -289,11 +304,6 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             f"Dialogue input stopped at {field_text!r}, expected {updated!r}"
         )
 
-    nodes = helper.dump_ui(evidence, "event-dialogue-input-complete")
-    if any("inputmethod" in node.get("package", "").casefold()
-           or "keyboard" in node.get("class", "").casefold()
-           for node in nodes):
-        run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-edited")
