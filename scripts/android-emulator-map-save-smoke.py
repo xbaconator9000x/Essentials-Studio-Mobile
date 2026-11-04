@@ -126,6 +126,26 @@ def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[i
     return canvas, palette
 
 
+def ensure_palette_visible(nodes: list[dict[str, str]], evidence: Path) -> list[dict[str, str]]:
+    image_count = sum(
+        node.get("class") == "android.widget.Image"
+        and usable_bounds(node.get("bounds", "")) is not None
+        for node in nodes
+    )
+    if image_count == 2:
+        return nodes
+    if not any(node.get("text", "").strip() == "Show palette"
+               and usable_bounds(node.get("bounds", ""))
+               for node in nodes):
+        raise AssertionError("Tileset palette is hidden and its Show palette control is unavailable")
+
+    tap_named(nodes, "Show palette")
+    helper.wait_for(evidence, "map-palette-shown", "Hide palette", 12)
+    nodes = helper.dump_ui(evidence, "map-palette-visible")
+    editor_images(nodes)
+    return nodes
+
+
 def paint_point(nodes: list[dict[str, str]], width: int, height: int) -> tuple[int, int]:
     """Touch the second map column inside the real map image, not the toolbar."""
     canvas, _ = editor_images(nodes)
@@ -356,7 +376,9 @@ def run(package: str, evidence: Path) -> None:
         if width <= height:
             raise AssertionError(f"Android editor did not rotate to landscape: {width}x{height}")
 
-        nodes = helper.dump_ui(evidence, "map-landscape-before")
+        nodes = ensure_palette_visible(
+            helper.dump_ui(evidence, "map-landscape-before"), evidence
+        )
         if not helper.editor_visible(nodes):
             raise AssertionError("Project editor disappeared after rotation")
         if not status_has(nodes, "Layer 1/3", "384"):
@@ -482,6 +504,31 @@ def selftest() -> None:
         assert "collapsed" in str(exc)
     else:
         raise AssertionError("Collapsed canvas incorrectly passed")
+
+    original_dump_ui = helper.dump_ui
+    original_wait_for = helper.wait_for
+    original_tap = helper.tap
+    observed_palette_taps = []
+    palette_nodes = [
+        {"text": "Show palette", "bounds": "[100,20][200,60]"},
+        {"class": "android.widget.Image", "bounds": "[679,315][1241,1018]"},
+        {"class": "android.widget.Image", "bounds": "[1241,315][1794,1018]"},
+    ]
+    try:
+        helper.dump_ui = lambda _evidence, _name: palette_nodes
+        helper.wait_for = lambda _evidence, _name, _needle, _seconds: (150, 40)
+        helper.tap = observed_palette_taps.append
+        shown = ensure_palette_visible(
+            [{"text": "Show palette", "bounds": "[100,20][200,60]"},
+             {"class": "android.widget.Image", "bounds": "[679,315][1794,1018]"}],
+            Path("."),
+        )
+        assert shown == palette_nodes
+        assert observed_palette_taps == [(150, 40)]
+    finally:
+        helper.dump_ui = original_dump_ui
+        helper.wait_for = original_wait_for
+        helper.tap = original_tap
 
 
 def main() -> int:
