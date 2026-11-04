@@ -663,7 +663,10 @@ def smoke(fixture: Path, evidence: Path, package: str) -> None:
             receipt["external_storage_picker_returned"] = try_external_storage_download(
                 evidence, "EssentialsSynthetic.zip"
             )
-        if not wait_for_editor(evidence, 35):
+        # The API30 Google DocumentsUI emulator can return to WebView while its
+        # first-start native bridge is still warming up. Keep polling the real
+        # editor state longer; a progress screen alone never counts as success.
+        if not wait_for_editor(evidence, 120):
             # Preserve a real failure when the picker stays open or import
             # rejects the ZIP; never count a live WebView as successful import.
             nodes = dump_ui(evidence, "import-attempt-final")
