@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PaintTool } from "../../types";
 import type { TileClipboard } from "../../services/mapEditor";
 
@@ -42,6 +42,18 @@ export function MapToolbar({
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
   );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const narrowViewport = window.matchMedia("(max-width: 640px)");
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setToolsCollapsed(event.matches);
+    };
+    narrowViewport.addEventListener("change", handleViewportChange);
+    setToolsCollapsed(narrowViewport.matches);
+    return () => narrowViewport.removeEventListener("change", handleViewportChange);
+  }, []);
+
   return (
     <div className="map-editor-toolbar">
       <button
