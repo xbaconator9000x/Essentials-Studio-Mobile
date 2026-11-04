@@ -209,6 +209,14 @@ def command_text_is_visible(nodes: list[dict[str, str]], text: str) -> bool:
     return any(text in node.get("text", "") for node in nodes)
 
 
+def remaining_input(current: str, expected: str) -> str:
+    if not expected.startswith(current):
+        raise AssertionError(
+            f"Dialogue input changed unexpectedly: {current!r} is not a prefix of {expected!r}"
+        )
+    return expected[len(current):]
+
+
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
     nodes = helper.dump_ui(evidence, "event-dialogue-before-edit")
     row = next((
@@ -242,7 +250,46 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
     run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
     run_adb("shell", "input", "keyevent", *("KEYCODE_DEL",) * len(original))
     run_adb("shell", "input", "text", updated.replace(" ", "%s"))
-    nodes = helper.dump_ui(evidence, "event-dialogue-input")
+
+    deadline = time.monotonic() + 12
+    attempted_value = None
+    input_bounds = editor["bounds"]
+    field_text = ""
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-input")
+        field = next((
+            node for node in nodes
+            if "EditText" in node.get("class", "")
+            and node.get("bounds") == input_bounds
+            and usable_bounds(node.get("bounds", ""))
+        ), None)
+        if field:
+            field_text = field.get("text", "")
+            if field_text == updated:
+                break
+            if field_text == original and attempted_value is None:
+                time.sleep(0.5)
+                continue
+            try:
+                suffix = remaining_input(field_text, updated)
+            except AssertionError:
+                (evidence / "event-dialogue-input-failure.png").write_bytes(
+                    run_adb("exec-out", "screencap", "-p")
+                )
+                raise
+            if suffix and field_text != attempted_value:
+                attempted_value = field_text
+                run_adb("shell", "input", "text", suffix.replace(" ", "%s"))
+        time.sleep(0.5)
+    if field_text != updated:
+        (evidence / "event-dialogue-input-failure.png").write_bytes(
+            run_adb("exec-out", "screencap", "-p")
+        )
+        raise AssertionError(
+            f"Dialogue input stopped at {field_text!r}, expected {updated!r}"
+        )
+
+    nodes = helper.dump_ui(evidence, "event-dialogue-input-complete")
     if any("inputmethod" in node.get("package", "").casefold()
            or "keyboard" in node.get("class", "").casefold()
            for node in nodes):
@@ -356,6 +403,15 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
+    assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
+    try:
+        remaining_input("Unexpected", "Edited synthetic dialogue")
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("Unexpected dialogue input was accepted")
+
     assert bounds("[10,20][100,120]") == (10, 20, 100, 120)
     for bad in ("[0,0][0,10]", "[10,10][1,20]", "nonsense"):
         try:
