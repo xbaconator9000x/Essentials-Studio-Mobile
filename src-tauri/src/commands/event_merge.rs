@@ -315,7 +315,7 @@ mod tests {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.name = "Renamed".into();
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
+        let merged = preserve_event_fields(&original, &edited).unwrap();
         let event = merged.as_object().unwrap();
         assert_eq!(event.get_int("extra_event_ivar"), Some(42));
         assert_eq!(event.get_string("name").unwrap(), "Renamed");
@@ -336,7 +336,7 @@ mod tests {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.pages.clear();
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
+        let merged = preserve_event_fields(&original, &edited).unwrap();
         let event = merged.as_object().unwrap();
         assert!(event.get("pages").unwrap().as_array().unwrap().is_empty());
         assert_eq!(event.get_int("extra_event_ivar"), Some(42));
@@ -529,7 +529,7 @@ mod tests {
         let original = original_event();
         let mut edited = RpgEvent::from_ruby_value(&original).unwrap();
         edited.pages[0].list[0].code = 111;
-        let merged = preserve_unedited_event_fields(&original, &edited.to_ruby_value()).unwrap();
+        let merged = preserve_event_fields(&original, &edited).unwrap();
         let page = &merged.as_object().unwrap().get("pages").unwrap().as_array().unwrap()[0];
         let command = &page.as_object().unwrap().get("list").unwrap().as_array().unwrap()[0];
         let command = command.as_object().unwrap();
