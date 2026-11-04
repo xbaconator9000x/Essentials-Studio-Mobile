@@ -114,7 +114,7 @@ try {
   const dialogueBefore = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueBefore.pages[0].list[0].parameters[0], "Synthetic dialogue");
   await page.getByRole("button", { name: "Ev", exact: true }).click();
-  await page.locator(".map-editor-canvas").dblclick({
+  await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
   });
   const eventEditor = page.locator(".event-editor");

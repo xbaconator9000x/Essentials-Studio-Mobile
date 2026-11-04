@@ -934,6 +934,22 @@ mod archive_roundtrip_tests {
         contents
     }
 
+    fn event_command_metadata(map: &RubyValue) -> Option<&RubyValue> {
+        let event = map
+            .as_object()?
+            .get("events")?
+            .as_hash()?
+            .first()?
+            .1
+            .as_object()?;
+        let page = event.get("pages")?.as_array()?.first()?.as_object()?;
+        page.get("list")?
+            .as_array()?
+            .first()?
+            .as_object()?
+            .get("plugin_metadata")
+    }
+
     fn ruby_string(text: &str) -> RubyValue {
         RubyValue::String(RubyString::with_encoding(text.as_bytes().to_vec(), "UTF-8".into()))
     }
@@ -1016,6 +1032,7 @@ mod archive_roundtrip_tests {
                 x: 1,
                 y: 1,
                 pages: vec![EventPage {
+                    source_index: None,
                     condition: EventCondition::default(),
                     graphic: EventGraphic {
                         character_name: "SyntheticGuide".into(),
@@ -1035,6 +1052,7 @@ mod archive_roundtrip_tests {
                         code: 101,
                         indent: 0,
                         parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
+                        source_index: None,
                     }],
                 }],
             },
@@ -1061,6 +1079,34 @@ mod archive_roundtrip_tests {
         event
             .instance_vars
             .push(("@plugin_metadata".into(), RubyValue::Symbol("keep-event".into())));
+        let RubyValue::Array(pages) = event
+            .instance_vars
+            .iter_mut()
+            .find(|(name, _)| name == "@pages")
+            .map(|(_, value)| value)
+            .expect("event pages")
+        else {
+            panic!("RPG::Event @pages must serialize as an array")
+        };
+        let RubyValue::Object(page) = &mut pages[0] else {
+            panic!("RPG::Event::Page fixture must serialize as an object")
+        };
+        let RubyValue::Array(commands) = page
+            .instance_vars
+            .iter_mut()
+            .find(|(name, _)| name == "@list")
+            .map(|(_, value)| value)
+            .expect("event command list")
+        else {
+            panic!("RPG::Event::Page @list must serialize as an array")
+        };
+        let RubyValue::Object(command) = &mut commands[0] else {
+            panic!("RPG::EventCommand fixture must serialize as an object")
+        };
+        command.instance_vars.push((
+            "@plugin_metadata".into(),
+            RubyValue::Symbol("keep-command".into()),
+        ));
 
         let map_infos = RubyValue::Hash(vec![(
             RubyValue::Integer(1),
@@ -1448,6 +1494,11 @@ mod archive_roundtrip_tests {
             saved_event.get("plugin_metadata"),
             Some(&RubyValue::Symbol("keep-event".into()))
         );
+        assert_eq!(
+            event_command_metadata(&RubyValue::Object(saved_map.clone())),
+            Some(&RubyValue::Symbol("keep-command".into())),
+            "dialogue edit must preserve opaque command metadata"
+        );
 
         assert_eq!(
             fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
@@ -1464,11 +1515,19 @@ mod archive_roundtrip_tests {
                 assert_eq!(exported_hashes.get(name), Some(original_hash), "SHA-256 mismatch in {name}");
             }
         }
-        // An archive with the expected hashes is not necessarily a project the
-        // editor can reopen. Re-extract the exported ZIP and exercise the real
-        // project/map/event/PBS readers against that fresh project root.
-        let reopened_root = extract_archive(&exported, &sandbox.path("reopened-export"))
-            .expect("reimport exported synthetic project ZIP");
+        // Re-import through the native app-private publication path rather than
+        // only extracting the ZIP, then exercise the project readers on it.
+        let staged_export = imports.join("import-rxdata-reimport.zip");
+        fs::copy(&exported, &staged_export).unwrap();
+        let reopened_root = PathBuf::from(
+            finish_import(
+                staged_export,
+                imports.clone(),
+                projects.clone(),
+                "import-rxdata-reimport".into(),
+            )
+            .expect("reimport exported synthetic project ZIP"),
+        );
         assert!(reopened_root.join("Graphics/Empty").is_dir());
         assert_eq!(
             fs::read(reopened_root.join("Data/Scripts.rxdata")).unwrap(),
@@ -1527,6 +1586,11 @@ mod archive_roundtrip_tests {
             reopened_map.get("plugin_metadata"),
             Some(&RubyValue::Symbol("keep-map".into())),
             "reimported map must retain opaque metadata"
+        );
+        assert_eq!(
+            event_command_metadata(&RubyValue::Object(reopened_map)),
+            Some(&RubyValue::Symbol("keep-command".into())),
+            "reimported dialogue command must retain opaque metadata"
         );
 
         if let Some(directory) = std::env::var_os("PROJECT_ROUNDTRIP_ARTIFACT_DIR") {

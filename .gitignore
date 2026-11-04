@@ -10,6 +10,10 @@ lerna-debug.log*
 # Dependencies
 node_modules
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Build output
 dist
 dist-ssr

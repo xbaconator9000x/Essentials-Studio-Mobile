@@ -280,6 +280,22 @@ def run(package: str, evidence: Path) -> None:
         receipt["reimported_member_count"] = verify_reimported_members(
             package, path, zip_before
         )
+        nodes = picker.dump_ui(evidence, "reimported-map-before-dialogue")
+        if not picker.editor_visible(nodes):
+            raise AssertionError("Re-imported project editor is not visible")
+        width, height = painted["landscape_pixels"]
+        event_editor_nodes = map_helper.open_synthetic_event(
+            evidence, nodes, width, height, "reimport"
+        )
+        if not map_helper.command_text_is_visible(event_editor_nodes, "Edited synthetic dialogue"):
+            picker.wait_for(evidence, "reimported-dialogue-readback",
+                            "Edited synthetic dialogue", 12)
+        nodes = picker.dump_ui(evidence, "reimported-dialogue-readback")
+        if not map_helper.command_text_is_visible(nodes, "Edited synthetic dialogue"):
+            raise AssertionError("Re-imported event does not show the saved dialogue edit")
+        (evidence / "reimported-event-dialogue.png").write_bytes(
+            map_helper.run_adb("exec-out", "screencap", "-p")
+        )
         if hashlib.sha256(export_helper.read_remote(export_helper.EXPORTED_REMOTE)).hexdigest() != zip_sha:
             raise AssertionError("SAF-exported ZIP was mutated during reimport")
         if hashlib.sha256(export_helper.read_remote(export_helper.ORIGINAL_REMOTE)).hexdigest() != imported["fixture_sha256"]:
@@ -289,6 +305,8 @@ def run(package: str, evidence: Path) -> None:
             "exported_zip_sha256": zip_sha,
             "reimported_map_sha256": map_sha,
             "new_project_map_path": path,
+            "reimported_dialogue": "Edited synthetic dialogue",
+            "dialogue_readback_pass": True,
             "source_and_export_zips_unchanged": True,
         })
     finally:
@@ -301,6 +319,20 @@ def run(package: str, evidence: Path) -> None:
             )
         except (OSError, RuntimeError, subprocess.TimeoutExpired):
             pass
+        for name, args in (
+            ("export-reimport-logcat.txt", ("logcat", "-d", "-v", "time")),
+            ("export-reimport-private-files.txt", (
+                "shell", "run-as", package, "find", ".", "-maxdepth", "6", "-type", "f", "-print",
+            )),
+        ):
+            try:
+                (evidence / name).write_bytes(
+                    map_helper.run_adb(*args, timeout=60)[-2_000_000:]
+                )
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                (evidence / name).write_text(
+                    f"Diagnostic unavailable: {type(exc).__name__}\n", encoding="utf-8"
+                )
 
 
 def selftest() -> None:

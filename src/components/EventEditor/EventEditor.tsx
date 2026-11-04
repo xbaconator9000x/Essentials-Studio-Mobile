@@ -11,6 +11,7 @@ import {
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
+import { updateEventCommandParam } from "../../services/eventEditorMutation";
 import { useEditorRegistration } from "../../context/ProjectSaveContext";
 import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
@@ -166,13 +167,7 @@ export function EventEditor({
 
   const handleUpdateCommandParam = useCallback(
     (index: number, paramIndex: number, value: unknown) => {
-      updatePage((p) => {
-        const list = [...p.list];
-        const cmd = { ...list[index], parameters: [...list[index].parameters] };
-        cmd.parameters[paramIndex] = value;
-        list[index] = cmd;
-        return { ...p, list };
-      });
+      updatePage((p) => updateEventCommandParam(p, index, paramIndex, value));
     },
     [updatePage]
   );
@@ -279,7 +274,11 @@ export function EventEditor({
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
         const cmd = page.list[selectedCommand];
         if (cmd && cmd.code !== 0) {
-          setClipboard([{ ...cmd, parameters: [...cmd.parameters] }]);
+          setClipboard([{
+            code: cmd.code,
+            indent: cmd.indent,
+            parameters: [...cmd.parameters],
+          }]);
         }
       }
       // Paste command
@@ -300,7 +299,11 @@ export function EventEditor({
         if (cmd && cmd.code !== 0) {
           updatePage((p) => {
             const list = [...p.list];
-            list.splice(selectedCommand + 1, 0, { ...cmd, parameters: [...cmd.parameters] });
+            list.splice(selectedCommand + 1, 0, {
+              code: cmd.code,
+              indent: cmd.indent,
+              parameters: [...cmd.parameters],
+            });
             return { ...p, list };
           });
           setSelectedCommand(selectedCommand + 1);
@@ -455,6 +458,15 @@ export function EventEditor({
                     <button
                       className="event-editor-btn"
                       style={{ padding: "3px 10px", fontSize: 11 }}
+                      onClick={() => setEditingCommand(selectedCommand)}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      title="Edit selected command"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="event-editor-btn"
+                      style={{ padding: "3px 10px", fontSize: 11 }}
                       onClick={() => {
                         if (selectedCommand >= 0) handleDeleteCommand(selectedCommand);
                       }}
@@ -520,7 +532,7 @@ export function EventEditor({
         {/* Footer */}
         <div className="event-editor-footer">
           <span style={{ fontSize: 10, color: "#8c8fa1" }}>
-            Dbl-click edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
+            Select + Edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             <button

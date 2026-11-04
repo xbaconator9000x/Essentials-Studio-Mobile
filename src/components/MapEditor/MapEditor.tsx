@@ -867,6 +867,15 @@ export function MapEditor({
           onTouchMove={handleTouchMoveFallback}
           onTouchEnd={handleTouchEndFallback}
           onTouchCancel={handleTouchCancelFallback}
+          onClick={(e) => {
+            if (!mapData || selectedLayer !== 3) return;
+            const pos = screenToTile(e.clientX, e.clientY);
+            if (!pos) return;
+            const evt = mapData.events.find(
+              (candidate) => candidate.x === pos.x && candidate.y === pos.y
+            );
+            if (evt) onOpenEvent?.(evt.id, evt.name);
+          }}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}

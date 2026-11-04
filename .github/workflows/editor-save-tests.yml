@@ -13,6 +13,12 @@ on:
       - 'src/services/eventMultiLineEdit.ts'
       - 'tests/eventMultiLineEdit.test.mjs'
       - 'src/components/EventEditor/EventEditor.tsx'
+      - 'src/services/eventEditorMutation.ts'
+      - 'src/services/eventProjectBridge.ts'
+      - 'tests/eventEditorSaveIntegration.test.tsx'
+      - 'src/services/tauriApi.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - 'src/services/pbsSaveGuards.ts'
       - 'src/services/pbsPreservation.ts'
       - 'src/services/pbsDistributor.ts'
@@ -39,6 +45,12 @@ on:
       - 'tests/eventSaveGuards.test.mjs'
       - 'src/services/eventSaveGuards.ts'
       - 'src/components/EventEditor/EventEditor.tsx'
+      - 'src/services/eventEditorMutation.ts'
+      - 'src/services/eventProjectBridge.ts'
+      - 'tests/eventEditorSaveIntegration.test.tsx'
+      - 'src/services/tauriApi.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - 'src/services/pbsSaveGuards.ts'
       - 'src/services/pbsPreservation.ts'
       - 'src/services/pbsDistributor.ts'
@@ -68,5 +80,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install frontend dependencies
+        run: npm ci
       - name: Verify save errors propagate and dirty state remains set
         run: node --experimental-strip-types --test tests/saveGuards.test.mjs tests/projectOpenGuards.test.mjs tests/importOpenGuards.test.mjs tests/pbsSaveGuards.test.mjs tests/pbsPreservation.test.mjs tests/eventSaveGuards.test.mjs tests/eventMultiLineEdit.test.mjs tests/editorDialog.test.mjs
+      - name: Verify rendered event editor Save All integration
+        run: npx vitest run tests/eventEditorSaveIntegration.test.tsx

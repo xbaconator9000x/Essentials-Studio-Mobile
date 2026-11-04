@@ -116,6 +116,7 @@ export interface RpgEvent {
 }
 
 export interface EventPage {
+  source_index?: number;
   condition: EventCondition;
   graphic: EventGraphic;
   move_type: number;
@@ -168,6 +169,7 @@ export interface EventCommand {
   code: number;
   indent: number;
   parameters: unknown[];
+  source_index?: number;
 }
 
 /** Trigger type constants */

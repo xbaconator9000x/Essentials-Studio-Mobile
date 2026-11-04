@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - 'src-tauri/src/commands/event_merge.rs'
+      - 'src-tauri/src/commands/project.rs'
       - 'src-tauri/src/models/event.rs'
       - '.github/workflows/event-fidelity-tests.yml'
 
@@ -44,3 +45,5 @@ jobs:
           workspaces: src-tauri
       - name: Verify event page/command Marshal preservation
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib commands::event_merge::tests -- --nocapture
+      - name: Verify native event command persistence
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib commands::project::event_save_integrity_tests -- --nocapture
