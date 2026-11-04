@@ -2,6 +2,8 @@
 
 **Status: not passed.** This is the immediate integration target for Essentials Studio Mobile, independent of the Shattered game implementation repository.
 
+The repository contains rights-cleared synthetic RMXP fixtures, but no authorised Essentials v21.1 project fixture. Real-project compatibility must be exercised with a user-authorised disposable project outside public Git, CI artifacts, and this repository. Until that external test copy and its owner-approved test session are available, ASM-004 remains open; synthetic results do not close this gate.
+
 ## Product promise
 On a standard supported Android ARM64 phone, open an **authorised Pokémon Essentials v21.1 / RPG Maker XP project** through a project ZIP, edit genuine map tiles **and event commands**, save, export a new ZIP into a user-selected Android document, reopen that ZIP in a desktop-compatible RMXP/Essentials reader, then launch the edited project in JoiPlay/NaviaXP. Native builds and synthetic tests alone cannot certify these steps.
 

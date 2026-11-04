@@ -33,6 +33,7 @@ import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
+import { getLastProjectPath, rememberLastProjectPath } from "./services/recentProject";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -79,6 +80,7 @@ function AppContent() {
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [lastProjectPath, setLastProjectPath] = useState(getLastProjectPath);
   // A new Map on every App render invalidates project-scoped PBS loaders and
   // can reload Encounters/World panels while the user has unsaved edits.
   const pbsMapNames = useMemo(
@@ -284,6 +286,8 @@ function AppContent() {
       }
       projectRef.current = proj;
       setProject(proj);
+      rememberLastProjectPath(proj.path);
+      setLastProjectPath(proj.path);
       setMapData(initialMap);
       mapDataRef.current = initialMap;
       setTilesetInfo(initialTileset);
@@ -328,6 +332,15 @@ function AppContent() {
       if (lease.isCurrent()) setLoading(false);
     }
   }, [updateMapDirty, confirmProjectSwitch, hasUnsavedEdits]);
+
+  const handleReopenLastProject = useCallback(async () => {
+    if (!lastProjectPath) return;
+    try {
+      await handleOpenProject(lastProjectPath);
+    } catch (err) {
+      setError(`Could not reopen last project: ${err}`);
+    }
+  }, [handleOpenProject, lastProjectPath]);
 
   const handleBrowseProject = useCallback(async () => {
     try {
@@ -863,6 +876,11 @@ function AppContent() {
             >
               {loading ? "Opening..." : "Open Project Folder"}
             </button>
+            {lastProjectPath && (
+              <button className="app-welcome-btn" onClick={() => void handleReopenLastProject()} disabled={loading}>
+                Reopen Last Project
+              </button>
+            )}
             {/* The native Android dialog can return without resolving its
                 callback (emulator 41304956412). Use the bounded File.slice
                 importer first; retain the scoped native picker as fallback. */}
