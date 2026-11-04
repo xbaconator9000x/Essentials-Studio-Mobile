@@ -319,6 +319,20 @@ def run(package: str, evidence: Path) -> None:
             )
         except (OSError, RuntimeError, subprocess.TimeoutExpired):
             pass
+        for name, args in (
+            ("export-reimport-logcat.txt", ("logcat", "-d", "-v", "time")),
+            ("export-reimport-private-files.txt", (
+                "shell", "run-as", package, "find", ".", "-maxdepth", "6", "-type", "f", "-print",
+            )),
+        ):
+            try:
+                (evidence / name).write_bytes(
+                    map_helper.run_adb(*args, timeout=60)[-2_000_000:]
+                )
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                (evidence / name).write_text(
+                    f"Diagnostic unavailable: {type(exc).__name__}\n", encoding="utf-8"
+                )
 
 
 def selftest() -> None:

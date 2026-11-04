@@ -12,6 +12,14 @@ use super::project_archive::{
 #[cfg(any(target_os = "android", test))]
 const DOCUMENT_IMPORT_CHUNK_BYTES: usize = 64 * 1024;
 
+#[cfg(target_os = "android")]
+fn trace_android_document_import(stage: &str) {
+    #[cfg(debug_assertions)]
+    eprintln!("[android-document-import] {stage}");
+    #[cfg(not(debug_assertions))]
+    let _ = stage;
+}
+
 fn validate_document_uri(uri: &str) -> Result<(), String> {
     let authority = uri.strip_prefix("content://")
         .and_then(|tail| tail.split('/').next())
@@ -67,7 +75,9 @@ pub async fn import_project_archive_from_document(
 
     #[cfg(target_os = "android")]
     {
+        trace_android_document_import("begin");
         let import_id = begin_project_archive_import(app.clone()).await?;
+        trace_android_document_import("staging stream start");
         let result = async {
             let path = staging_path(&import_root(&app)?, &import_id)?;
             tauri::async_runtime::spawn_blocking(move || {
@@ -75,8 +85,16 @@ pub async fn import_project_archive_from_document(
             })
             .await
             .map_err(|e| format!("Android document import worker failed: {e}"))??;
+            trace_android_document_import("staging stream complete");
+            trace_android_document_import("archive finalization start");
             finish_project_archive_import(app.clone(), import_id.clone()).await
-        }.await;
+        }
+        .await;
+        trace_android_document_import(if result.is_ok() {
+            "archive finalization complete"
+        } else {
+            "archive finalization failed"
+        });
         if result.is_err() {
             let _ = abort_project_archive_import(app, import_id).await;
         }
@@ -113,6 +131,7 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
             "(Ljava/lang/String;)Landroid/net/Uri;",
             &[JValue::Object(&uri_string)],
         )?.l()?;
+        trace_android_document_import("opening provider input stream");
         let input = env.call_method(
             &resolver,
             "openInputStream",
@@ -122,6 +141,7 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
         if input.is_null() {
             return Err(io::Error::other("Android document provider returned no input stream").into());
         }
+        trace_android_document_import("provider input stream opened");
 
         let read_result = (|| -> Result<u64, Box<dyn std::error::Error>> {
             let file = OpenOptions::new().write(true).truncate(true).open(path)?;
@@ -154,6 +174,7 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
             delete_result?;
             let (file, written) = writer.finish()?;
             file.sync_all()?;
+            trace_android_document_import("provider input stream read complete");
             Ok(written)
         })();
 
@@ -174,7 +195,13 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
         }
     }
 
-    transfer(path, uri).map_err(|e| format!("Android document import stream failed: {e}"))
+    let result =
+        transfer(path, uri).map_err(|e| format!("Android document import stream failed: {e}"));
+    #[cfg(debug_assertions)]
+    if let Ok(bytes) = result.as_ref() {
+        eprintln!("[android-document-import] staged {bytes} bytes");
+    }
+    result
 }
 
 #[tauri::command]
