@@ -110,6 +110,29 @@ def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
     )
 
 
+def ensure_palette_visible(evidence: Path, nodes: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Open the responsive palette before relying on its canvas in UIAutomator."""
+    if any(node.get("text", "").strip() == "Hide palette" for node in nodes):
+        return nodes
+
+    show_button = next((
+        node for node in nodes
+        if node.get("text", "").strip() == "Show palette"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+    if show_button is None:
+        raise AssertionError("Tileset palette is hidden and its Show palette control is unavailable")
+
+    helper.tap(helper.center(show_button["bounds"]))
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "map-palette-visible")
+        if any(node.get("text", "").strip() == "Hide palette" for node in nodes):
+            return nodes
+        time.sleep(1)
+    raise AssertionError("Show palette control did not make the tileset palette visible")
+
+
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """The left image is the map canvas; the right image is the tileset palette."""
     images = sorted(
@@ -361,6 +384,7 @@ def run(package: str, evidence: Path) -> None:
             raise AssertionError("Project editor disappeared after rotation")
         if not status_has(nodes, "Layer 1/3", "384"):
             raise AssertionError("Expected synthetic map layer 1 and selected tile 384")
+        nodes = ensure_palette_visible(evidence, nodes)
         for button, expected in (("L2", "Layer 2/3"), ("L3", "Layer 3/3")):
             tap_named(nodes, button)
             nodes = wait_for_status(evidence, f"map-{expected.replace('/', '-')}",
@@ -449,6 +473,7 @@ def selftest() -> None:
         {"text": "", "class": "android.widget.Image", "bounds": "[1241,354][1794,1039]"},
         *[{"text": name, "bounds": "[1399,217][1488,283]"}
           for name in ("Pen", "L1", "L2", "L3", "Ev", "All")],
+        {"text": "Hide palette", "bounds": "[1399,217][1488,283]"},
         {"text": "Layer 1/3", "bounds": "[895,1031][1018,1068]"},
         {"text": "Tile: ", "bounds": "[1015,1031][1081,1068]"},
         {"text": "384", "bounds": "[1076,1031][1128,1068]"},
@@ -456,6 +481,34 @@ def selftest() -> None:
     assert status_has(nodes, "Layer 1/3", "384")
     assert not status_has(nodes, "Layer 1/3", "385")
     assert status_visible(nodes, "Layer 1/3")
+    original_tap = helper.tap
+    original_dump_ui = helper.dump_ui
+    taps = []
+    try:
+        helper.tap = taps.append
+        assert ensure_palette_visible(Path("."), nodes) is nodes
+        assert not taps
+
+        hidden_nodes = [
+            {"text": "Show palette", "bounds": "[20,30][120,70]"},
+        ]
+        visible_nodes = [
+            {"text": "Hide palette", "bounds": "[20,30][120,70]"},
+        ]
+        helper.dump_ui = lambda _evidence, _name: visible_nodes
+        assert ensure_palette_visible(Path("."), hidden_nodes) is visible_nodes
+        assert taps == [(70, 50)]
+    finally:
+        helper.tap = original_tap
+        helper.dump_ui = original_dump_ui
+
+    try:
+        ensure_palette_visible(Path("."), [])
+    except AssertionError as exc:
+        assert "control is unavailable" in str(exc)
+    else:
+        raise AssertionError("A hidden palette without a toggle was accepted")
+
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
     original_run_adb = globals()["run_adb"]
