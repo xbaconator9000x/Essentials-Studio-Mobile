@@ -244,6 +244,22 @@ export async function getAssetPath(
   })) as string;
 }
 
+export async function savePrivateProjectSprite(
+  projectPath: string,
+  sourceName: string,
+  targetName: string,
+  mode: "original" | "copy",
+  imageData: string,
+): Promise<string> {
+  return invoke<string>("save_private_project_sprite", {
+    projectPath,
+    sourceName,
+    targetName,
+    mode,
+    imageData,
+  });
+}
+
 /**
  * Get full map properties for the properties dialog.
  */

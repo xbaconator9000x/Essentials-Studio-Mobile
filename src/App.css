@@ -61,6 +61,7 @@ body,
 .app-body {
   flex: 1;
   display: flex;
+  position: relative;
   overflow: hidden;
 }
 

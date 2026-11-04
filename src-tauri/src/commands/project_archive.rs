@@ -868,6 +868,369 @@ pub async fn read_private_project_image(
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
 
+const MAX_SPRITE_PIXELS: u64 = 16_777_216;
+
+fn validate_sprite_stem(name: &str) -> Result<(), String> {
+    crate::commands::util::validate_asset_name(name)?;
+    if name.len() > 128
+        || name.ends_with(' ')
+        || name.ends_with('.')
+        || name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+    {
+        return Err("Invalid character graphic name".into());
+    }
+    let device = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (device.len() == 4
+            && (device.starts_with("COM") || device.starts_with("LPT"))
+            && matches!(device.as_bytes()[3], b'1'..=b'9'))
+    {
+        return Err("Character graphic name is reserved on Windows".into());
+    }
+    Ok(())
+}
+
+fn sprite_png_bytes(data_url: &str) -> Result<Vec<u8>, String> {
+    const PREFIX: &str = "data:image/png;base64,";
+    if !data_url.starts_with(PREFIX)
+        || data_url.len() > (MAX_IMAGE_BYTES as usize * 4 / 3 + PREFIX.len() + 8)
+    {
+        return Err("Sprite edits must be a PNG no larger than 32 MiB".into());
+    }
+    let bytes = STANDARD
+        .decode(&data_url[PREFIX.len()..])
+        .map_err(|_| "Invalid sprite PNG data".to_string())?;
+    if bytes.len() > MAX_IMAGE_BYTES as usize
+        || bytes.get(..8) != Some(b"\x89PNG\r\n\x1a\n")
+        || bytes.get(12..16) != Some(&b"IHDR"[..])
+        || bytes.len() < 24
+    {
+        return Err("Invalid sprite PNG data".into());
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap()) as u64;
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap()) as u64;
+    if width == 0
+        || height == 0
+        || width.checked_mul(height).unwrap_or(u64::MAX) > MAX_SPRITE_PIXELS
+    {
+        return Err("Sprite image dimensions exceed the 16-megapixel edit limit".into());
+    }
+    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .map_err(|_| "Could not decode edited sprite PNG".to_string())?;
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not encode edited sprite PNG: {e}"))?;
+    let bytes = encoded.into_inner();
+    if bytes.len() > MAX_IMAGE_BYTES as usize {
+        return Err("Edited sprite PNG exceeds the 32 MiB limit".into());
+    }
+    Ok(bytes)
+}
+
+fn sprite_project_directory(app: &AppHandle, requested: &Path) -> Result<PathBuf, String> {
+    let project = requested.canonicalize().map_err(|e| e.to_string())?;
+    if !project.is_dir() || !project.join("Game.rxproj").is_file() {
+        return Err("Not an RPG Maker XP project directory".into());
+    }
+    #[cfg(target_os = "android")]
+    {
+        let root = projects_root(app)?
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        if project == root || !project.starts_with(&root) {
+            return Err("Only imported app-private projects can be edited on Android".into());
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    Ok(project)
+}
+
+fn character_graphics_directory(project: &Path) -> Result<PathBuf, String> {
+    let directory = project.join("Graphics/Characters");
+    for path in [project.join("Graphics"), directory.clone()] {
+        let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err("Character graphics directory must not contain links".into());
+        }
+    }
+    let resolved = directory.canonicalize().map_err(|e| e.to_string())?;
+    if !resolved.starts_with(project) || !resolved.is_dir() {
+        return Err("Character graphics directory is outside the project".into());
+    }
+    Ok(resolved)
+}
+
+fn resolve_character_png(directory: &Path, project: &Path, name: &str) -> Result<PathBuf, String> {
+    validate_sprite_stem(name)?;
+    let mut matches = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let is_png = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"));
+        if stem.eq_ignore_ascii_case(name) && is_png {
+            let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("Character graphic must be a regular project file".into());
+            }
+            let resolved = path.canonicalize().map_err(|e| e.to_string())?;
+            if !resolved.starts_with(project) {
+                return Err("Character graphic resolves outside the project".into());
+            }
+            matches.push(resolved);
+        }
+    }
+    if matches.len() != 1 {
+        return Err(if matches.is_empty() {
+            format!("PNG character graphic not found: {name}")
+        } else {
+            format!("Ambiguous character graphic: {name}")
+        });
+    }
+    Ok(matches.remove(0))
+}
+
+fn ensure_new_character_name(directory: &Path, name: &str) -> Result<(), String> {
+    validate_sprite_stem(name)?;
+    let (_, _, extensions) =
+        crate::commands::util::asset_dirs("character").ok_or("Unknown character asset type")?;
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let supported = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| {
+                extensions
+                    .iter()
+                    .any(|candidate| candidate.eq_ignore_ascii_case(ext))
+            });
+        if stem.eq_ignore_ascii_case(name) && supported {
+            return Err(format!("Character graphic already exists: {name}"));
+        }
+    }
+    Ok(())
+}
+
+fn write_new_sprite(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| format!("Could not create sprite copy: {e}"))?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(format!("Could not save sprite copy: {error}"));
+    }
+    Ok(())
+}
+
+fn save_sprite_in_directory(
+    directory: &Path,
+    project: &Path,
+    source_name: &str,
+    target_name: &str,
+    mode: &str,
+    png: &[u8],
+) -> Result<String, String> {
+    match mode {
+        "copy" => {
+            ensure_new_character_name(directory, target_name)?;
+            let target = directory.join(format!("{target_name}.png"));
+            write_new_sprite(&target, png)?;
+            Ok(target_name.to_string())
+        }
+        "original" => {
+            let original = resolve_character_png(directory, project, source_name)?;
+            let temporary = directory.join(format!(".sprite-{}.partial", unique_id()?));
+            write_new_sprite(&temporary, png)?;
+            if let Err(error) = fs::rename(&temporary, &original) {
+                let _ = fs::remove_file(&temporary);
+                return Err(format!("Could not replace the original sprite: {error}"));
+            }
+            Ok(source_name.to_string())
+        }
+        _ => Err("Invalid sprite save mode".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn save_private_project_sprite(
+    app: AppHandle,
+    project_path: String,
+    source_name: String,
+    target_name: String,
+    mode: String,
+    image_data: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = sprite_project_directory(&app, Path::new(&project_path))?;
+        let directory = character_graphics_directory(&project)?;
+        let png = sprite_png_bytes(&image_data)?;
+        save_sprite_in_directory(
+            &directory,
+            &project,
+            &source_name,
+            &target_name,
+            &mode,
+            &png,
+        )
+    })
+    .await
+    .map_err(|e| format!("Sprite save worker failed: {e}"))?
+}
+
+#[cfg(test)]
+mod sprite_edit_tests {
+    use super::{
+        save_sprite_in_directory, sprite_png_bytes, validate_sprite_stem, MAX_IMAGE_BYTES,
+        MAX_SPRITE_PIXELS,
+    };
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use std::fs;
+    use std::io::Cursor;
+    use std::path::PathBuf;
+
+    struct TempProject(PathBuf);
+
+    impl TempProject {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "essentials-sprite-edit-{}",
+                super::unique_id().unwrap(),
+            ));
+            fs::create_dir_all(root.join("Graphics/Characters")).unwrap();
+            Self(root)
+        }
+
+        fn graphics(&self) -> PathBuf {
+            self.0.join("Graphics/Characters")
+        }
+    }
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn png_data_url(width: u32, height: u32) -> String {
+        let image = image::DynamicImage::new_rgba8(width, height);
+        let mut encoded = Cursor::new(Vec::new());
+        image
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(encoded.into_inner())
+        )
+    }
+
+    #[test]
+    fn sprite_name_validation_rejects_paths_and_nonportable_names() {
+        assert!(validate_sprite_stem("Trainer Red").is_ok());
+        for invalid in ["", "../outside", "bad/name", "bad:name", "NUL", "trailing."] {
+            assert!(validate_sprite_stem(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn sprite_png_validation_reencodes_small_images_and_rejects_bad_headers() {
+        let encoded = png_data_url(2, 2);
+        let decoded = sprite_png_bytes(&encoded).unwrap();
+        assert!(decoded.len() < MAX_IMAGE_BYTES as usize);
+        assert!(image::load_from_memory_with_format(&decoded, image::ImageFormat::Png).is_ok());
+        assert!(sprite_png_bytes("data:image/jpeg;base64,AA==").is_err());
+        assert!(sprite_png_bytes("data:image/png;base64,AA==").is_err());
+    }
+
+    #[test]
+    fn sprite_png_validation_rejects_oversized_dimensions_before_decode() {
+        let mut bytes = vec![0u8; 24];
+        bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        bytes[12..16].copy_from_slice(b"IHDR");
+        bytes[16..20].copy_from_slice(&(MAX_SPRITE_PIXELS as u32).to_be_bytes());
+        bytes[20..24].copy_from_slice(&2u32.to_be_bytes());
+        let encoded = format!("data:image/png;base64,{}", STANDARD.encode(bytes));
+        assert!(sprite_png_bytes(&encoded)
+            .unwrap_err()
+            .contains("dimensions"));
+    }
+
+    #[test]
+    fn sprite_copy_preserves_source_and_never_overwrites_a_collision() {
+        let project = TempProject::new();
+        let source = project.graphics().join("Guide.png");
+        fs::write(&source, b"source-bytes").unwrap();
+        let edited = sprite_png_bytes(&png_data_url(2, 2)).unwrap();
+
+        assert_eq!(
+            save_sprite_in_directory(
+                &project.graphics(),
+                &project.0,
+                "Guide",
+                "Guide_copy",
+                "copy",
+                &edited,
+            )
+            .unwrap(),
+            "Guide_copy",
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"source-bytes");
+        assert_eq!(
+            fs::read(project.graphics().join("Guide_copy.png")).unwrap(),
+            edited
+        );
+        assert!(save_sprite_in_directory(
+            &project.graphics(),
+            &project.0,
+            "Guide",
+            "Guide_copy",
+            "copy",
+            b"replacement",
+        )
+        .is_err());
+        assert_eq!(
+            fs::read(project.graphics().join("Guide_copy.png")).unwrap(),
+            edited
+        );
+    }
+
+    #[test]
+    fn explicit_original_mode_replaces_only_the_named_png() {
+        let project = TempProject::new();
+        let source = project.graphics().join("Guide.png");
+        fs::write(&source, b"source-bytes").unwrap();
+        let edited = sprite_png_bytes(&png_data_url(2, 2)).unwrap();
+        assert_eq!(
+            save_sprite_in_directory(
+                &project.graphics(),
+                &project.0,
+                "Guide",
+                "",
+                "original",
+                &edited,
+            )
+            .unwrap(),
+            "Guide",
+        );
+        assert_eq!(fs::read(source).unwrap(), edited);
+    }
+}
+
 #[cfg(test)]
 mod archive_roundtrip_tests {
     use super::{extract_archive, export_zip, finish_import, unique_id};

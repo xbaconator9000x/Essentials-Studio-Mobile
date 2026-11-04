@@ -42,6 +42,7 @@ import { CreateMapDialog } from "./components/MapProperties/CreateMapDialog";
 import { ScriptEditor } from "./components/ScriptEditor/ScriptEditor";
 import { DatabaseEditor } from "./components/DatabaseEditor/DatabaseEditor";
 import { PbsEntityEditor } from "./components/PbsEntityEditor/PbsEntityEditor";
+import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
 import { buildPbsIndex, type PbsIndex } from "./services/pbsIndex";
 import {
   ProjectSaveProvider,
@@ -127,6 +128,11 @@ function AppContent() {
   const [showDatabase, setShowDatabase] = useState(false);
   const [showScripts, setShowScripts] = useState(false);
   const [showPbs, setShowPbs] = useState(false);
+  const [showSprites, setShowSprites] = useState(false);
+  const [showTilesetPalette, setShowTilesetPalette] = useState(
+    () => typeof window.matchMedia !== "function" || !window.matchMedia("(max-width: 640px)").matches,
+  );
+  const [graphicsRevision, setGraphicsRevision] = useState(0);
 
   // Refs let callbacks always read the latest values without stale closures.
   const mapDataRef = useRef<MapRenderData | null>(null);
@@ -912,6 +918,9 @@ function AppContent() {
           <button className="app-titlebar-btn" onClick={() => setShowPbs(true)} disabled={loading || saving}>
             PBS Data
           </button>
+          <button className="app-titlebar-btn" onClick={() => setShowSprites(true)} disabled={loading || saving}>
+            Sprites
+          </button>
           <button
             className="app-titlebar-btn app-titlebar-btn--play"
             onClick={handleLaunchGame} disabled={loading || saving}
@@ -983,6 +992,9 @@ function AppContent() {
           currentMapId={currentMapId ?? undefined}
           startPosition={startPosition ?? undefined}
           hasClipboardEvent={clipboardEvent !== null}
+          paletteVisible={showTilesetPalette}
+          onTogglePalette={() => setShowTilesetPalette((visible) => !visible)}
+          graphicsRevision={graphicsRevision}
           shortcutsDisabled={Boolean(editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
           onMapDirty={handleMapDirty}
           onOpenEvent={handleOpenEvent}
@@ -994,13 +1006,15 @@ function AppContent() {
         />
 
         {/* Right: Tileset palette */}
-        <TilesetPalette
-          tilesetInfo={tilesetInfo}
-          tilesetImage={tilesetImage}
-          autotileImages={autotileImages}
-          selectedTileId={selectedTileId}
-          onSelectTile={setSelectedTileId}
-        />
+        {showTilesetPalette && (
+          <TilesetPalette
+            tilesetInfo={tilesetInfo}
+            tilesetImage={tilesetImage}
+            autotileImages={autotileImages}
+            selectedTileId={selectedTileId}
+            onSelectTile={setSelectedTileId}
+          />
+        )}
       </div>
 
       {/* Database editor modal */}
@@ -1032,6 +1046,14 @@ function AppContent() {
             <ScriptEditor projectPath={project.path} onClose={() => setShowScripts(false)} />
           </div>
         </div>
+      )}
+
+      {showSprites && (
+        <SpriteEditor
+          projectPath={project.path}
+          onClose={() => setShowSprites(false)}
+          onSaved={() => setGraphicsRevision((revision) => revision + 1)}
+        />
       )}
 
       {/* Event editor modal */}

@@ -16,6 +16,7 @@ import {
 import {
   resolveMapTapTarget,
   TouchGestureMachine,
+  clampMapViewport,
   type TouchGestureAction,
 } from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
@@ -44,6 +45,9 @@ interface Props {
   onSetStartPosition?: (x: number, y: number) => Promise<void>;
   onCopyEvent?: (eventId: number) => Promise<void>;
   onPasteEvent?: (x: number, y: number) => Promise<void>;
+  paletteVisible: boolean;
+  onTogglePalette: () => void;
+  graphicsRevision: number;
 }
 
 export function MapEditor({
@@ -64,6 +68,9 @@ export function MapEditor({
   onSetStartPosition,
   onCopyEvent,
   onPasteEvent,
+  paletteVisible,
+  onTogglePalette,
+  graphicsRevision,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<MapRenderer | null>(null);
@@ -75,9 +82,11 @@ export function MapEditor({
   const [viewportX, setViewportX] = useState(0);
   const [viewportY, setViewportY] = useState(0);
   const [zoom, setZoom] = useState(1.0);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
   // Editor state
   const [showGrid, setShowGrid] = useState(true);
+  const [showEventPins, setShowEventPins] = useState(true);
   const [showLayers, _setShowLayers] = useState<[boolean, boolean, boolean]>([
     true,
     true,
@@ -121,6 +130,7 @@ export function MapEditor({
 
   // Character sprite cache: graphicName → HTMLImageElement
   const [characterImages, setCharacterImages] = useState<Map<string, HTMLImageElement | null>>(new Map());
+  const graphicsRevisionRef = useRef(graphicsRevision);
 
   // Initialize renderer — canvas is ALWAYS in the DOM now
   useEffect(() => {
@@ -191,7 +201,9 @@ export function MapEditor({
     if (names.size === 0) return;
 
     // Load each character image (skip already-loaded ones)
-    const toLoad = [...names].filter((n) => !characterImages.has(n));
+    const graphicsChanged = graphicsRevisionRef.current !== graphicsRevision;
+    graphicsRevisionRef.current = graphicsRevision;
+    const toLoad = [...names].filter((n) => graphicsChanged || !characterImages.has(n));
     if (toLoad.length === 0) return;
 
     let cancelled = false;
@@ -213,7 +225,7 @@ export function MapEditor({
     })();
 
     return () => { cancelled = true; };
-  }, [mapData, _projectPath]);
+  }, [mapData, _projectPath, graphicsRevision]);
 
   // Event markers only depend on the map data and loaded sprite images, not on
   // viewport/zoom — memoize so panning doesn't rebuild this array every frame.
@@ -245,15 +257,26 @@ export function MapEditor({
   const selectionRect = (selectionStart && selectionEnd)
     ? { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y }
     : null;
+  const constrainedViewport = mapData
+    ? clampMapViewport(
+        viewportX,
+        viewportY,
+        mapData.width,
+        mapData.height,
+        canvasSize.width,
+        canvasSize.height,
+        zoom,
+      )
+    : { x: viewportX, y: viewportY };
   renderStateRef.current = {
     options: {
       showGrid,
-      showEvents: true,
+      showEvents: showEventPins,
       showLayer: showLayers,
       activeLayer: selectedLayer,
       zoom,
-      viewportX,
-      viewportY,
+      viewportX: constrainedViewport.x,
+      viewportY: constrainedViewport.y,
       startMarker,
       selectionRect,
     },
@@ -281,6 +304,7 @@ export function MapEditor({
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
+          setCanvasSize({ width, height });
           canvas.width = width * window.devicePixelRatio;
           canvas.height = height * window.devicePixelRatio;
           canvas.style.width = `${width}px`;
@@ -353,15 +377,49 @@ export function MapEditor({
       if (!canvas || !rendererRef.current) return null;
 
       const rect = canvas.getBoundingClientRect();
+      const viewport = mapData
+        ? clampMapViewport(
+            viewportX,
+            viewportY,
+            mapData.width,
+            mapData.height,
+            rect.width,
+            rect.height,
+            zoom,
+          )
+        : { x: viewportX, y: viewportY };
       return rendererRef.current.screenToTile(
         clientX - rect.left,
         clientY - rect.top,
-        viewportX,
-        viewportY,
+        viewport.x,
+        viewport.y,
         zoom
       );
     },
-    [viewportX, viewportY, zoom]
+    [mapData, viewportX, viewportY, zoom]
+  );
+
+  const setClampedViewport = useCallback(
+    (x: number, y: number, scale = zoom) => {
+      if (!mapData) {
+        setViewportX(Math.max(0, x));
+        setViewportY(Math.max(0, y));
+        return;
+      }
+      const canvas = canvasRef.current;
+      const viewport = clampMapViewport(
+        x,
+        y,
+        mapData.width,
+        mapData.height,
+        canvas?.clientWidth ?? 0,
+        canvas?.clientHeight ?? 0,
+        scale,
+      );
+      setViewportX(viewport.x);
+      setViewportY(viewport.y);
+    },
+    [mapData, zoom],
   );
 
   // Apply a paint operation at a position
@@ -417,11 +475,10 @@ export function MapEditor({
         const tilePixels = TILE_SIZE * zoom;
         const dx = e.deltaX / tilePixels;
         const dy = e.deltaY / tilePixels;
-        setViewportX((v) => v + dx);
-        setViewportY((v) => v + dy);
+        setClampedViewport(viewportX + dx, viewportY + dy);
       }
     },
-    [zoom]
+    [zoom, setClampedViewport, viewportX, viewportY]
   );
 
   // Mouse down: start painting or panning
@@ -506,8 +563,7 @@ export function MapEditor({
       if (isPanning.current) {
         const dx = (e.clientX - panStart.current.x) / (TILE_SIZE * zoom);
         const dy = (e.clientY - panStart.current.y) / (TILE_SIZE * zoom);
-        setViewportX(panViewport.current.x - dx);
-        setViewportY(panViewport.current.y - dy);
+        setClampedViewport(panViewport.current.x - dx, panViewport.current.y - dy);
         return;
       }
 
@@ -536,7 +592,7 @@ export function MapEditor({
         }
       }
     },
-    [mapData, zoom, screenToTile, paintTool, doPaint]
+    [mapData, zoom, screenToTile, paintTool, doPaint, setClampedViewport]
   );
 
   // Mouse up: finish painting
@@ -705,8 +761,10 @@ export function MapEditor({
         return;
       }
       if (action.type === "pan") {
-        setViewportX((value) => value - action.deltaX / (TILE_SIZE * zoom));
-        setViewportY((value) => value - action.deltaY / (TILE_SIZE * zoom));
+        setClampedViewport(
+          viewportX - action.deltaX / (TILE_SIZE * zoom),
+          viewportY - action.deltaY / (TILE_SIZE * zoom),
+        );
         return;
       }
 
@@ -715,14 +773,26 @@ export function MapEditor({
       const rect = canvas.getBoundingClientRect();
       const oldCenterX = action.center.x - action.deltaX;
       const oldCenterY = action.center.y - action.deltaY;
-      const worldX = (oldCenterX - rect.left) / (TILE_SIZE * zoom) + viewportX;
-      const worldY = (oldCenterY - rect.top) / (TILE_SIZE * zoom) + viewportY;
+      const viewport = clampMapViewport(
+        viewportX,
+        viewportY,
+        mapData?.width ?? 0,
+        mapData?.height ?? 0,
+        rect.width,
+        rect.height,
+        zoom,
+      );
+      const worldX = (oldCenterX - rect.left) / (TILE_SIZE * zoom) + viewport.x;
+      const worldY = (oldCenterY - rect.top) / (TILE_SIZE * zoom) + viewport.y;
       const nextZoom = Math.max(0.25, Math.min(4, zoom * action.scale));
       setZoom(nextZoom);
-      setViewportX(worldX - (action.center.x - rect.left) / (TILE_SIZE * nextZoom));
-      setViewportY(worldY - (action.center.y - rect.top) / (TILE_SIZE * nextZoom));
+      setClampedViewport(
+        worldX - (action.center.x - rect.left) / (TILE_SIZE * nextZoom),
+        worldY - (action.center.y - rect.top) / (TILE_SIZE * nextZoom),
+        nextZoom,
+      );
     },
-    [handleTouchTap, mapData, onOpenEvent, screenToTile, viewportX, viewportY, zoom],
+    [handleTouchTap, mapData, onOpenEvent, screenToTile, viewportX, viewportY, zoom, setClampedViewport],
   );
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -845,6 +915,10 @@ export function MapEditor({
           setSelectedLayer={setSelectedLayer}
           showGrid={showGrid}
           setShowGrid={setShowGrid}
+          showEventPins={showEventPins}
+          setShowEventPins={setShowEventPins}
+          paletteVisible={paletteVisible}
+          onTogglePalette={onTogglePalette}
           zoom={zoom}
           setZoom={setZoom}
           onUndo={() => { handleHistory("undo"); }}
@@ -931,8 +1005,8 @@ export function MapEditor({
           <MapScrollbars
             mapWidth={mapData.width}
             mapHeight={mapData.height}
-            viewportX={viewportX}
-            viewportY={viewportY}
+            viewportX={constrainedViewport.x}
+            viewportY={constrainedViewport.y}
             zoom={zoom}
             canvasRef={canvasRef}
             onViewportChange={(x, y) => {

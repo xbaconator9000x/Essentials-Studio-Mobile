@@ -23,6 +23,7 @@ pub fn run() {
             save_project_archive_to_document,
             discard_project_archive_export,
             read_private_project_image,
+            save_private_project_sprite,
             load_map,
             load_tileset,
             get_asset_path,

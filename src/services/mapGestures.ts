@@ -1,6 +1,35 @@
+const MAP_TILE_SIZE = 32;
+
 export interface GesturePoint {
   x: number;
   y: number;
+}
+
+export function clampMapViewport(
+  viewportX: number,
+  viewportY: number,
+  mapWidth: number,
+  mapHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  zoom: number,
+): GesturePoint {
+  if (
+    !Number.isFinite(zoom) ||
+    zoom <= 0 ||
+    !Number.isFinite(mapWidth) ||
+    !Number.isFinite(mapHeight) ||
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(viewportHeight)
+  ) {
+    return { x: 0, y: 0 };
+  }
+  const visibleWidth = Math.max(0, viewportWidth / (MAP_TILE_SIZE * zoom));
+  const visibleHeight = Math.max(0, viewportHeight / (MAP_TILE_SIZE * zoom));
+  return {
+    x: Math.min(Math.max(0, Number.isFinite(viewportX) ? viewportX : 0), Math.max(0, mapWidth - visibleWidth)),
+    y: Math.min(Math.max(0, Number.isFinite(viewportY) ? viewportY : 0), Math.max(0, mapHeight - visibleHeight)),
+  };
 }
 
 export type TouchGestureAction =

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { PaintTool } from "../../types";
 import type { TileClipboard } from "../../services/mapEditor";
 
@@ -14,6 +15,10 @@ interface MapToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   historyDisabled?: boolean;
+  showEventPins: boolean;
+  setShowEventPins: (show: boolean) => void;
+  paletteVisible: boolean;
+  onTogglePalette: () => void;
 }
 
 export function MapToolbar({
@@ -29,10 +34,24 @@ export function MapToolbar({
   onUndo,
   onRedo,
   historyDisabled = false,
+  showEventPins,
+  setShowEventPins,
+  paletteVisible,
+  onTogglePalette,
 }: MapToolbarProps) {
+  const [toolsCollapsed, setToolsCollapsed] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
+  );
   return (
     <div className="map-editor-toolbar">
-      <div className="toolbar-group">
+      <button
+        className="toolbar-btn"
+        aria-expanded={!toolsCollapsed}
+        onClick={() => setToolsCollapsed((collapsed) => !collapsed)}
+      >
+        {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
+      </button>
+      {!toolsCollapsed && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
         {(["pencil", "rectangle", "bucket", "eraser", "select"] as PaintTool[]).map(
           (tool) => (
@@ -59,7 +78,7 @@ export function MapToolbar({
             ✓ Copied ({tileClipboard.width}×{tileClipboard.height})
           </span>
         )}
-      </div>
+      </div>}
 
       <div className="toolbar-separator" />
 
@@ -74,7 +93,7 @@ export function MapToolbar({
 
       <div className="toolbar-separator" />
 
-      <div className="toolbar-group">
+      {!toolsCollapsed && <div className="toolbar-group">
         <span className="toolbar-label">Layer:</span>
         {[0, 1, 2].map((l) => (
           <button
@@ -100,11 +119,11 @@ export function MapToolbar({
         >
           All
         </button>
-      </div>
+      </div>}
 
       <div className="toolbar-separator" />
 
-      <div className="toolbar-group">
+      {!toolsCollapsed && <div className="toolbar-group">
         <label className="toolbar-check">
           <input
             type="checkbox"
@@ -113,7 +132,23 @@ export function MapToolbar({
           />
           Grid
         </label>
-      </div>
+        <label className="toolbar-check">
+          <input
+            type="checkbox"
+            checked={showEventPins}
+            onChange={(e) => setShowEventPins(e.target.checked)}
+          />
+          Pins
+        </label>
+      </div>}
+
+      <button
+        className="toolbar-btn"
+        aria-pressed={paletteVisible}
+        onClick={onTogglePalette}
+      >
+        {paletteVisible ? "Hide palette" : "Show palette"}
+      </button>
 
       <div className="toolbar-group toolbar-right">
         <span className="toolbar-label">

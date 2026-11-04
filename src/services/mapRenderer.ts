@@ -181,7 +181,7 @@ export class MapRenderer {
 
     // Render event markers — visible on Events layer (3), All (-1), or when showEvents is on
     // They are dimmed when a tile layer (0-2) is active
-    const eventsVisible = activeLayer === -1 || activeLayer === 3 || showEvents;
+    const eventsVisible = showEvents;
     if (eventsVisible) {
       const eventsDimmed = activeLayer >= 0 && activeLayer <= 2;
       if (eventsDimmed) {
