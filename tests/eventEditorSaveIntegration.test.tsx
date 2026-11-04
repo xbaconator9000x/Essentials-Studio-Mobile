@@ -146,7 +146,10 @@ describe("rendered event editor Save All integration", () => {
   it("edits dialogue through the UI, saves the registered editor, and reloads its origin", async () => {
     renderProject();
 
-    fireEvent.doubleClick(await screen.findByText("Original dialogue"));
+    fireEvent.click(await screen.findByText("Original dialogue"));
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect((edit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(edit);
     const editor = await screen.findByDisplayValue("Original dialogue");
     fireEvent.change(editor, { target: { value: "Edited dialogue" } });
     fireEvent.blur(editor);

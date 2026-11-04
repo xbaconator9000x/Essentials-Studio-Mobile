@@ -218,9 +218,9 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
     ), None)
     if row is None:
         raise AssertionError(f"Visible dialogue command {original!r} was not found")
-    x, y = helper.center(row["bounds"])
-    helper.tap((x, y))
-    helper.tap((x, y))
+    helper.tap(helper.center(row["bounds"]))
+    nodes = helper.dump_ui(evidence, "event-dialogue-selected")
+    tap_named(nodes, "Edit")
 
     deadline = time.monotonic() + 10
     editor = None

@@ -458,6 +458,15 @@ export function EventEditor({
                     <button
                       className="event-editor-btn"
                       style={{ padding: "3px 10px", fontSize: 11 }}
+                      onClick={() => setEditingCommand(selectedCommand)}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      title="Edit selected command"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="event-editor-btn"
+                      style={{ padding: "3px 10px", fontSize: 11 }}
                       onClick={() => {
                         if (selectedCommand >= 0) handleDeleteCommand(selectedCommand);
                       }}
@@ -523,7 +532,7 @@ export function EventEditor({
         {/* Footer */}
         <div className="event-editor-footer">
           <span style={{ fontSize: 10, color: "#8c8fa1" }}>
-            Dbl-click edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
+            Select + Edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             <button
