@@ -90,7 +90,8 @@ def main() -> int:
 
     if args.self_test:
         sample = [{"text": name, "bounds": "[0,0][100,100]"}
-                  for name in ("Projects", "Maps", "Sprites", "Settings", "Read-only preview")]
+                  for name in ("Projects", "Maps", "Sprites", "Settings",
+                               "Read-only preview", "Map [001] 2x2 Layer 1/3")]
         sample.insert(0, {"text": "Maps", "class": "android.widget.TextView",
                           "bounds": "[0,0][50,50]"})
         sample.append({"text": "Maps", "class": "android.widget.Button",
@@ -100,6 +101,7 @@ def main() -> int:
         if matching_button(sample, "Maps") is not sample[-1]:
             raise AssertionError("Maps navigation must select the button, not the heading")
         require_text(sample, "Read-only preview", "self-test")
+        require_text(sample, "Map [001]", "self-test map content")
         print("Android preview smoke self-test passed")
         return 0
 
@@ -128,7 +130,7 @@ def main() -> int:
     require_text(nodes, "Synthetic Map", "project map list")
     tap_button(nodes, "Maps", "open Maps section")
     nodes = wait_for_text(evidence, "Read-only preview", "preview-map")
-    require_text(nodes, "Synthetic Map", "preview map")
+    require_text(nodes, "Map [001]", "visible map content")
     tap_text(nodes, "Tools ▸", "open mobile tools")
     nodes = wait_for_text(evidence, "Tools ▾", "expanded read-only tools")
     if matching_node(nodes, "Pen") or matching_node(nodes, "Erase"):
