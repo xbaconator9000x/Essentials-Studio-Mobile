@@ -110,8 +110,12 @@ def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
     )
 
 
-def save_all_complete(nodes: list[dict[str, str]]) -> bool:
-    return status_visible(nodes, "Save All")
+def save_all_completed_in_log(log: str) -> bool:
+    lock = log.rfind("[save-all] operation lock acquired")
+    native_save = log.find("[save-all] native map save completed", lock)
+    operation = log.find("[save-all] operation completed", native_save)
+    reset = log.find("[save-all] toolbar state saving=false", operation)
+    return lock >= 0 and lock < native_save < operation < reset
 
 
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -404,9 +408,13 @@ def run(package: str, evidence: Path) -> None:
         nodes = wait_for_map_after_event_save(evidence)
         helper.tap(helper.wait_for(evidence, "map-save-control", "Save All", 12))
         deadline = time.monotonic() + 90
+        log_output = ""
         while time.monotonic() < deadline:
             nodes = helper.dump_ui(evidence, "map-save-progress")
-            if save_all_complete(nodes):
+            log_output = run_adb("logcat", "-d", "-s", "Tauri/Console:I").decode(
+                errors="replace"
+            )
+            if save_all_completed_in_log(log_output):
                 break
             time.sleep(1)
         else:
@@ -415,7 +423,11 @@ def run(package: str, evidence: Path) -> None:
             if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
                 raise AssertionError("Save All timeout screenshot was not a PNG")
             (evidence / "map-save-timeout.png").write_bytes(screenshot)
-            raise AssertionError(f"Save All did not finish; visible text={visible[-12:]!r}")
+            save_events = [line for line in log_output.splitlines() if "[save-all]" in line]
+            raise AssertionError(
+                f"Save All did not finish; visible text={visible[-12:]!r}; "
+                f"save events={save_events[-8:]!r}"
+            )
         nodes = helper.dump_ui(evidence, "map-after-save")
         screenshot = run_adb("exec-out", "screencap", "-p")
         if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -496,9 +508,23 @@ def selftest() -> None:
     assert status_has(nodes, "Layer 1/3", "384")
     assert not status_has(nodes, "Layer 1/3", "385")
     assert status_visible(nodes, "Layer 1/3")
-    assert not save_all_complete([{"text": "Saving...", "bounds": "[42,65][202,162]"}])
-    assert save_all_complete([{"text": "Save All", "bounds": "[42,65][202,162]"}])
-    assert not save_all_complete([{"text": "Save All", "bounds": "[0,0][0,0]"}])
+    assert not save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed"
+    )
+    assert save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed\n"
+        "[save-all] toolbar state saving=false"
+    )
+    assert not save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] toolbar state saving=false\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed"
+    )
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
     original_run_adb = globals()["run_adb"]
