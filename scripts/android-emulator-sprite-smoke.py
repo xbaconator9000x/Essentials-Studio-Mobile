@@ -31,14 +31,20 @@ def run_binary(*args: str) -> bytes:
 
 
 def locate_control(nodes: list[dict[str, str]], name: str) -> tuple[int, int] | None:
-    for node in nodes:
-        label = " ".join((node.get("text", ""), node.get("content-desc", ""))).strip()
-        if name.casefold() not in label.casefold():
-            continue
-        try:
-            return helper.center(node.get("bounds", ""))
-        except ValueError:
-            continue
+    for exact_match in (True, False):
+        for node in nodes:
+            label = " ".join((node.get("text", ""), node.get("content-desc", ""))).strip()
+            matched = (
+                label.casefold() == name.casefold()
+                if exact_match
+                else name.casefold() in label.casefold()
+            )
+            if not matched:
+                continue
+            try:
+                return helper.center(node.get("bounds", ""))
+            except ValueError:
+                continue
     return None
 
 
@@ -208,7 +214,7 @@ def private_sprite_path(package: str, stem: str) -> str:
     return paths[0]
 
 
-def png_pixel(payload: bytes, x: int, y: int) -> tuple[int, int, int, int]:
+def png_rgba_rows(payload: bytes) -> tuple[int, int, list[bytearray]]:
     if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
         raise AssertionError("Saved sprite is not a PNG")
     offset = 8
@@ -229,9 +235,6 @@ def png_pixel(payload: bytes, x: int, y: int) -> tuple[int, int, int, int]:
         offset += length + 12
     if bit_depth != 8 or color_type != 6 or interlace != 0:
         raise AssertionError("Sprite PNG must use non-interlaced 8-bit RGBA pixels")
-    if not (0 <= x < width and 0 <= y < height):
-        raise AssertionError(f"Requested sprite pixel outside {width}x{height}")
-
     raw = zlib.decompress(compressed)
     stride = width * 4
     rows: list[bytearray] = []
@@ -262,8 +265,32 @@ def png_pixel(payload: bytes, x: int, y: int) -> tuple[int, int, int, int]:
                 raise AssertionError(f"Unsupported PNG filter {filter_type}")
         rows.append(scanline)
         previous = scanline
+    return width, height, rows
+
+
+def png_pixel(payload: bytes, x: int, y: int) -> tuple[int, int, int, int]:
+    width, height, rows = png_rgba_rows(payload)
+    if not (0 <= x < width and 0 <= y < height):
+        raise AssertionError(f"Requested sprite pixel outside {width}x{height}")
     start = x * 4
     return tuple(rows[y][start:start + 4])
+
+
+def count_new_color_pixels(
+    original: bytes,
+    edited: bytes,
+    color: tuple[int, int, int, int],
+) -> int:
+    original_width, original_height, original_rows = png_rgba_rows(original)
+    edited_width, edited_height, edited_rows = png_rgba_rows(edited)
+    if (original_width, original_height) != (edited_width, edited_height):
+        raise AssertionError("Edited sprite dimensions differ from the original")
+    return sum(
+        tuple(edited_rows[y][offset:offset + 4]) == color
+        and tuple(original_rows[y][offset:offset + 4]) != color
+        for y in range(original_height)
+        for offset in range(0, original_width * 4, 4)
+    )
 
 
 def original_fixture_sprite(fixture: Path) -> bytes:
@@ -348,19 +375,21 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
 
         copy_path = private_sprite_path(package, "SyntheticGuide_copy")
         saved = run_binary("exec-out", "run-as", package, "cat", copy_path)
-        saved_pixel = png_pixel(saved, 64, 64)
-        if len(saved) < 64 or saved_pixel != (30, 102, 245, 255):
+        edited_pixel_count = count_new_color_pixels(
+            original, saved, (30, 102, 245, 255)
+        )
+        if len(saved) < 64 or edited_pixel_count == 0:
             raise AssertionError(
-                f"Saved sprite pixel {saved_pixel!r} does not match the edited color"
+                "Saved sprite has no new pixel matching the selected blue color"
             )
         if struct.unpack_from(">II", saved, 16) != (128, 128):
             raise AssertionError("Sprite editing changed the original 128x128 pixel dimensions")
         receipt.update({
             "result": "android_sprite_edit_copy_pass",
             "source_center_rgba": list(original_center),
-            "edited_center_rgba": list(saved_pixel),
             "saved_copy": copy_path,
             "saved_copy_sha256": hashlib.sha256(saved).hexdigest(),
+            "new_blue_pixel_count": edited_pixel_count,
             "original_sha256_unchanged": hashlib.sha256(original_saved_bytes).hexdigest()
                 == hashlib.sha256(original).hexdigest(),
             "source_dimensions": [128, 128],
@@ -373,12 +402,20 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
 
 
 def selftest() -> None:
-    assert png_pixel(original_fixture_sprite_bytes(), 0, 0) == (1, 2, 3, 255)
-    assert png_pixel(original_fixture_sprite_bytes(), 1, 0) == (4, 5, 6, 255)
+    fixture_sprite = original_fixture_sprite_bytes()
+    assert png_pixel(fixture_sprite, 0, 0) == (1, 2, 3, 255)
+    assert png_pixel(fixture_sprite, 1, 0) == (4, 5, 6, 255)
+    blue_edit = rgba_png_bytes(2, 1, bytes((30, 102, 245, 255, 4, 5, 6, 255)))
+    assert count_new_color_pixels(fixture_sprite, blue_edit, (30, 102, 245, 255)) == 1
+    assert count_new_color_pixels(fixture_sprite, fixture_sprite, (30, 102, 245, 255)) == 0
     assert locate_control([
         {"text": "Sprites", "bounds": "[0,0][0,0]"},
         {"text": "Sprites", "bounds": "[10,20][30,40]"},
     ], "Sprites") == (20, 30)
+    assert locate_control([
+        {"text": "Undo tile edit", "bounds": "[700,500][840,600]"},
+        {"text": "Undo", "bounds": "[20,30][220,90]"},
+    ], "Undo") == (120, 60)
     assert locate_control([{"text": "Sprites", "bounds": "[0,0][0,0]"}], "Sprites") is None
     assert locate_control([{"text": "Save mode", "bounds": "[10,20][30,40]"}],
                           "Save as copy (safe default)") is None
@@ -431,19 +468,29 @@ def selftest() -> None:
     assert locate_control(opened_options, "Replace original PNG") == (110, 95)
 
 
-def original_fixture_sprite_bytes() -> bytes:
+def rgba_png_bytes(width: int, height: int, pixels: bytes) -> bytes:
     def chunk(kind: bytes, payload: bytes) -> bytes:
         return struct.pack(">I", len(payload)) + kind + payload + struct.pack(
             ">I", zlib.crc32(kind + payload) & 0xffffffff
         )
-    header = struct.pack(">IIBBBBB", 2, 1, 8, 6, 0, 0, 0)
-    raw = b"\x00" + bytes((1, 2, 3, 255, 4, 5, 6, 255))
+    if len(pixels) != width * height * 4:
+        raise ValueError("RGBA pixel data does not match image dimensions")
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    stride = width * 4
+    raw = b"".join(
+        b"\x00" + pixels[y * stride:(y + 1) * stride]
+        for y in range(height)
+    )
     return (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", header)
         + chunk(b"IDAT", zlib.compress(raw))
         + chunk(b"IEND", b"")
     )
+
+
+def original_fixture_sprite_bytes() -> bytes:
+    return rgba_png_bytes(2, 1, bytes((1, 2, 3, 255, 4, 5, 6, 255)))
 
 
 def main() -> None:
