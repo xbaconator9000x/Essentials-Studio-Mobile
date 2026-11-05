@@ -72,9 +72,10 @@ def main() -> int:
 
     if args.self_test:
         sample = [{"text": name, "bounds": "[0,0][100,100]"}
-                  for name in ("Projects", "Maps", "Sprites", "Settings")]
+                  for name in ("Projects", "Maps", "Sprites", "Settings", "Read-only preview")]
         verify_navigation(sample)
         require_text(sample, "Maps", "self-test")
+        require_text(sample, "Read-only preview", "self-test")
         print("Android preview smoke self-test passed")
         return 0
 
@@ -102,7 +103,7 @@ def main() -> int:
     # is explicitly read-only before exercising any editor controls.
     require_text(nodes, "Synthetic Map", "project map list")
     tap_text(nodes, "Maps", "open Maps section")
-    nodes = wait_for_text(evidence, "Read-only map preview", "preview-map")
+    nodes = wait_for_text(evidence, "Read-only preview", "preview-map")
     require_text(nodes, "Synthetic Map", "preview map")
     tap_text(nodes, "Tools ▸", "open mobile tools")
     nodes = wait_for_text(evidence, "Tools ▾", "expanded read-only tools")
@@ -117,7 +118,7 @@ def main() -> int:
     nodes = wait_for_text(evidence, "Tools ▾", "expanded experimental tools")
     require_text(nodes, "Pen", "experimental editing tools")
     tap_text(nodes, "Turn editing off", "return to read-only preview")
-    nodes = wait_for_text(evidence, "Read-only map preview", "read-only-restored")
+    nodes = wait_for_text(evidence, "Read-only preview", "read-only-restored")
 
     tap_text(nodes, "Settings", "open Settings section")
     nodes = wait_for_text(evidence, "Preview settings", "preview-settings")
