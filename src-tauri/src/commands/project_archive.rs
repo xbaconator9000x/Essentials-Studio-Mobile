@@ -1724,6 +1724,63 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
+    fn wrapped_project_with_7674_opaque_members_survives_import_export_and_reimport() {
+        const MEMBER_COUNT: usize = 7_674;
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("large-wrapped-project.zip");
+        let wrapper = "Essentials FRLG V1.1/Essentials FRLG/";
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        let options = SimpleFileOptions::default();
+        let mut member_count = 0;
+        for (name, bytes) in [
+            ("Game.rxproj", b"RPGXP 1.02".as_slice()),
+            ("Game.ini", b"[Game]\r\nTitle=Generated Fixture\r\n"),
+            ("Data/MapInfos.rxdata", b"\x04\x08generated map infos"),
+            ("Data/System.rxdata", b"\x04\x08generated system"),
+            ("Data/Tilesets.rxdata", b"\x04\x08generated tilesets"),
+            ("Data/Map001.rxdata", b"\x04\x08generated binary map"),
+            ("Data/Scripts.rxdata", b"\x04\x08generated scripts"),
+            ("PBS/pokemon.txt", b"# generated fixture\r\n[TEST]\r\n"),
+            (
+                "Plugins/GeneratedFixture/plugin.rb",
+                b"module GeneratedFixture\nend\n",
+            ),
+        ] {
+            writer
+                .start_file(format!("{wrapper}{name}"), options)
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+            member_count += 1;
+        }
+        for index in 0..MEMBER_COUNT - member_count {
+            let name = format!("{wrapper}PluginData/opaque-{index:04}.rxdata");
+            let bytes = [index as u8, (index >> 8) as u8, (index >> 16) as u8, 0xff];
+            writer.start_file(name, options).unwrap();
+            writer.write_all(&bytes).unwrap();
+        }
+        writer.finish().unwrap();
+
+        let input_hashes = member_sha256(&archive, wrapper);
+        assert_eq!(input_hashes.len(), MEMBER_COUNT);
+        let imported = extract_archive(&archive, &sandbox.path("first-extraction")).unwrap();
+        assert!(imported.join("Game.rxproj").is_file());
+        assert_eq!(
+            fs::read(imported.join("Data/Map001.rxdata")).unwrap(),
+            b"\x04\x08generated binary map"
+        );
+
+        let exported = sandbox.path("exported-large-project.zip");
+        export_zip(&imported, &exported).unwrap();
+        assert_eq!(member_sha256(&exported, ""), input_hashes);
+
+        let reimported =
+            extract_archive(&exported, &sandbox.path("reimported-large-project")).unwrap();
+        let reexported = sandbox.path("reexported-large-project.zip");
+        export_zip(&reimported, &reexported).unwrap();
+        assert_eq!(member_sha256(&reexported, ""), input_hashes);
+    }
+
+    #[test]
     fn wrapped_rxdata_project_opens_edits_and_reads_back_without_losing_source_members() {
         let sandbox = Sandbox::new();
         let source_archive = sandbox.path("original-rxdata.zip");
