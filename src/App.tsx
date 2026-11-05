@@ -462,6 +462,10 @@ function AppContent() {
       await saveAllWithLock();
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
+    } finally {
+      // The toolbar owns the visible busy state; clear it at this boundary too
+      // so its completion does not depend on a nested save callback's render.
+      flushSync(() => setSaving(false));
     }
   }, [saveAllWithLock]);
 
