@@ -74,6 +74,23 @@ def save_mode_trigger(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     )
 
 
+def sprite_controls_scroll_gesture(
+    nodes: list[dict[str, str]],
+) -> tuple[int, int, int, int] | None:
+    for node in nodes:
+        if node.get("resource-id") != "sprite-editor-controls" or node.get("scrollable") != "true":
+            continue
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+        if not match:
+            continue
+        left, top, right, bottom = map(int, match.groups())
+        if right <= left or bottom - top < 160:
+            continue
+        x = (left + right) // 2
+        return x, bottom - 50, x, top + 50
+    return None
+
+
 def screen_size() -> tuple[int, int]:
     output = helper.adb("shell", "wm", "size").stdout
     match = re.search(r"(?:Physical|Override) size:\s*(\d+)x(\d+)", output)
@@ -100,9 +117,28 @@ def open_sprite_editor(evidence: Path) -> list[dict[str, str]]:
 
 def select_safe_copy_mode(nodes: list[dict[str, str]], evidence: Path) -> list[dict[str, str]]:
     trigger = save_mode_trigger(nodes)
+    for attempt in range(6):
+        if trigger:
+            break
+        gesture = sprite_controls_scroll_gesture(nodes)
+        if not gesture:
+            raise AssertionError(
+                "Save mode selector is offscreen and the sprite controls pane has no usable scroll bounds"
+            )
+        helper.adb(
+            "shell", "input", "swipe", *(str(point) for point in gesture), "450"
+        )
+        nodes = helper.dump_ui(evidence, f"sprite-save-mode-scroll-{attempt + 1}")
+        trigger = save_mode_trigger(nodes)
     if not trigger:
+        visible = [
+            node.get("text", "") or node.get("content-desc", "")
+            for node in nodes
+            if node.get("text") or node.get("content-desc")
+        ]
         raise AssertionError(
-            "Save mode selector has no tappable label or selected-value accessibility bounds"
+            "Save mode selector remained offscreen after scrolling sprite controls; "
+            f"visible controls={visible[-20:]!r}"
         )
     helper.tap(trigger)
     options = helper.dump_ui(evidence, "sprite-save-mode-options")
@@ -324,13 +360,24 @@ def selftest() -> None:
         {
             "class": "android.widget.Spinner",
             "text": "Save as copy (safe default)",
-            "bounds": "[100,200][300,250]",
+            "bounds": "[0,0][0,0]",
         },
         {"text": "Copy name", "bounds": ""},
         {"text": "SyntheticGuide_copy", "bounds": "[100,260][300,310]"},
+        {
+            "resource-id": "sprite-editor-controls",
+            "scrollable": "true",
+            "bounds": "[0,149][635,1015]",
+        },
     ]
-    assert save_mode_trigger(observed_hierarchy) == (200, 225)
+    assert save_mode_trigger(observed_hierarchy) is None
+    assert sprite_controls_scroll_gesture(observed_hierarchy) == (317, 965, 317, 199)
     assert has_control(observed_hierarchy, "Copy name")
+    observed_hierarchy[1]["bounds"] = "[100,200][300,250]"
+    assert save_mode_trigger(observed_hierarchy) == (200, 225)
+    assert sprite_controls_scroll_gesture([
+        {"resource-id": "sprite-editor-controls", "scrollable": "true", "bounds": "[0,0][0,0]"}
+    ]) is None
     opened_options = [
         {"text": "Save as copy (safe default)", "bounds": "[10,20][210,70]"},
         {"text": "Replace original PNG", "bounds": "[10,70][210,120]"},
