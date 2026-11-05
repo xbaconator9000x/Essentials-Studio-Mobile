@@ -124,15 +124,19 @@ export function ProjectSaveProvider({ children }: { children: ReactNode }) {
   const saveAll = useCallback((prefix?: string): Promise<void> => {
     // Snapshot at execution time, not at the time a second Save All is queued.
     // Maps and events can write the same MapNNN.rxdata: parallel writes lose edits.
+    console.info("[save-all] queued", prefix ?? "all");
     const operation = saveTailRef.current.then(async () => {
+      console.info("[save-all] started");
       const jobs: { id: string; save: () => Promise<void> }[] = [];
       editorsRef.current.forEach((entry, id) => {
         if (entry.isDirty && (!prefix || id.startsWith(prefix))) {
           jobs.push({ id, save: entry.save });
         }
       });
+      console.info("[save-all] jobs", jobs.map(({ id }) => id));
       try {
         await saveSequentially(jobs);
+        console.info("[save-all] completed");
       } finally {
         // Preserve dirty flags after failed writes or edits made during a save.
         recalcDirty();

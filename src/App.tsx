@@ -186,8 +186,13 @@ function AppContent() {
     const savedRevision = mapEditRevisionRef.current;
     setLoading(true);
     try {
+      console.info("[save-all] map callback entered", md.id);
       await saveThenMarkClean(
-        () => saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height),
+        async () => {
+          console.info("[save-all] invoking native map save", md.id);
+          await saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height);
+          console.info("[save-all] native map save completed", md.id);
+        },
         () => updateMapDirty(false),
         () => mapStillUnchanged(
           { projectPath: proj.path, map: md, revision: savedRevision },
@@ -221,12 +226,15 @@ function AppContent() {
   // Every Save All entry point must freeze in-memory edits, not just ZIP export.
   const saveAllWithLock = useCallback(async (): Promise<void> => {
     if (editorOperationRef.current) {
+      console.warn("[save-all] rejected: project operation already running");
       throw new Error("Another project save or export is already running");
     }
+    console.info("[save-all] operation lock acquired");
     editorOperationRef.current = true;
     setSaving(true);
     try {
       await saveAll();
+      console.info("[save-all] operation completed");
     } finally {
       editorOperationRef.current = false;
       setSaving(false);
@@ -429,7 +437,10 @@ function AppContent() {
   }, [handleImportSource]);
 
   const handleSaveAll = useCallback(async () => {
-    if (editorOperationRef.current) return;
+    if (editorOperationRef.current) {
+      console.warn("[save-all] toolbar tap ignored: project operation already running");
+      return;
+    }
     setError(null);
     try {
       await saveAllWithLock();
