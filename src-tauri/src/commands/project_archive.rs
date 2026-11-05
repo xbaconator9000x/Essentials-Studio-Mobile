@@ -1688,9 +1688,10 @@ mod archive_roundtrip_tests {
         sample_zip(&archive, wrapper, None);
         let original_zip = fs::read(&archive).unwrap();
         let imported = extract_archive(&archive, &sandbox.path("extracted")).unwrap();
+        let expected_path = format!("extracted/{}", wrapper.trim_end_matches('/'));
         assert_eq!(
             imported,
-            sandbox.path(format!("extracted/{}", wrapper.trim_end_matches('/')))
+            sandbox.path(&expected_path)
         );
         assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
             b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
