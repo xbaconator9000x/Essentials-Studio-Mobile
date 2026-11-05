@@ -134,10 +134,11 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 30_000 });
   await save.click();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(b => b.textContent?.trim() === "Save All");
-    return button?.disabled === true;
-  }, null, { timeout: 60_000 });
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  ).waitFor({ state: "visible", timeout: 60_000 });
+  assert.equal(await sha(input), originalHash, "Save All must not modify the imported source ZIP");
   const after = await invoke("load_map", { projectPath: root, mapId });
   const changes = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);

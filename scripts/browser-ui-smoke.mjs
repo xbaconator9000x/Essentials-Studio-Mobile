@@ -89,8 +89,12 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 10_000 });
   await page.getByRole("button", { name: "Save All" }).click();
-  await page.getByText("All registered editor changes were saved.", { exact: true })
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  )
     .waitFor({ state: "visible", timeout: 20_000 });
+  assert.equal(sha(original), originalHash, "Save All must not modify the imported source ZIP");
   const after = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
