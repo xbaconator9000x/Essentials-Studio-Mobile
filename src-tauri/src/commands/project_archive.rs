@@ -312,18 +312,14 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
 }
 
 /// ZIPs created by GitHub or project backup tools may wrap the actual RMXP
-/// project in more than one directory (e.g. repository/project/Game.rxproj).
-/// Follow only a bounded chain of *single* directories. Never silently discard
-/// sibling files or an additional project when the staging tree is removed.
+/// project in multiple directories. Follow only a chain of *single* directories.
+/// Never silently discard sibling files or an additional project when the
+/// staging tree is removed.
 fn discover_project_root(extracted: &Path) -> Result<PathBuf, String> {
-    const MAX_WRAPPER_DIRS: usize = 4;
     let mut candidate = extracted.to_path_buf();
-    for depth in 0..=MAX_WRAPPER_DIRS {
+    loop {
         if candidate.join("Game.rxproj").is_file() {
             return Ok(candidate);
-        }
-        if depth == MAX_WRAPPER_DIRS {
-            return Err("ZIP project root exceeds four wrapper directories; repackage with Game.rxproj closer to the ZIP root".into());
         }
         let mut entries = fs::read_dir(&candidate).map_err(|e| e.to_string())?;
         let only = entries
@@ -341,7 +337,6 @@ fn discover_project_root(extracted: &Path) -> Result<PathBuf, String> {
         }
         candidate = only.path();
     }
-    unreachable!("bounded wrapper search returns within the loop")
 }
 
 fn finish_import(archive_path: PathBuf, imports: PathBuf, projects: PathBuf, id: String) -> Result<String, String> {
@@ -1686,13 +1681,16 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
-    fn discovers_bounded_multilevel_project_root_without_losing_source_bytes() {
+    fn discovers_deep_multilevel_project_root_without_losing_source_bytes() {
         let sandbox = Sandbox::new();
         let archive = sandbox.path("multi-wrapper.zip");
-        sample_zip(&archive, "Repository/Essentials/Shattered/", None);
+        sample_zip(&archive, "One/Two/Three/Four/Five/Essentials FRLG/", None);
         let original_zip = fs::read(&archive).unwrap();
         let imported = extract_archive(&archive, &sandbox.path("extracted")).unwrap();
-        assert_eq!(imported, sandbox.path("extracted/Repository/Essentials/Shattered"));
+        assert_eq!(
+            imported,
+            sandbox.path("extracted/One/Two/Three/Four/Five/Essentials FRLG")
+        );
         assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
             b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
         assert_eq!(fs::read(&archive).unwrap(), original_zip);
@@ -2219,12 +2217,12 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
-    fn rejects_excessive_wrapper_depth_and_multiple_project_roots() {
+    fn accepts_deep_wrapper_and_rejects_multiple_project_roots() {
         let sandbox = Sandbox::new();
-        let deep = sandbox.path("too-deep.zip");
-        sample_zip(&deep, "One/Two/Three/Four/Five/", None);
-        let error = extract_archive(&deep, &sandbox.path("too-deep-extracted")).unwrap_err();
-        assert!(error.contains("four wrapper directories"), "{error}");
+        let deep = sandbox.path("deep.zip");
+        sample_zip(&deep, "One/Two/Three/Four/Five/Six/Seven/", None);
+        let imported = extract_archive(&deep, &sandbox.path("deep-extracted")).unwrap();
+        assert!(imported.join("Game.rxproj").is_file());
 
         let multi = sandbox.path("multiple-projects.zip");
         let mut zip = ZipWriter::new(File::create(&multi).unwrap());
