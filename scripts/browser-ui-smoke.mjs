@@ -89,10 +89,8 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 10_000 });
   await page.getByRole("button", { name: "Save All" }).click();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(b => b.textContent?.trim() === "Save All");
-    return button?.disabled === true;
-  }, null, { timeout: 20_000 });
+  await page.getByText("All registered editor changes were saved.", { exact: true })
+    .waitFor({ state: "visible", timeout: 20_000 });
   const after = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
