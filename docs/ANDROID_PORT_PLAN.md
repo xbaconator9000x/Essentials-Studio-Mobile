@@ -39,6 +39,14 @@ Android-specific adaptations:
 
 The first compile may fail. Read the actual compiler/Gradle logs and fix the earliest *root cause* on this branch; do not disable editor features as a shortcut without recording it in the queue.
 
+## Android release signing (local only)
+
+Android CI artifacts are unsigned debug previews, not release builds. Do not add a release-signing workflow or put a keystore, passwords, signing properties, or signing credentials in the repository, GitHub configuration, logs, or artifacts. No signing secret is needed for editor development or preview APKs.
+
+When a release is authorized and licensing/release gates are satisfied, a maintainer can sign the locally built APK with the Android SDK tools. Keep the keystore on encrypted storage outside the checkout, enter passwords through a protected local tool/input mechanism rather than command arguments or source files, and write the signed APK outside the checkout. If local Gradle configuration is required, keep it in the maintainer's private Gradle user home, never in project-level files. Verify the result with `apksigner verify` before distribution; protect and back up the keystore separately because losing it prevents updates signed with that key.
+
+The repository ignores common Android keystore/container extensions as an accidental-commit safeguard. This does not replace checking staged changes or secret scans.
+
 ## Scoped Android graphics loading (draft PR #3)
 
 The original desktop image loader resolves `Graphics/Tilesets`, `Graphics/Autotiles` and `Graphics/Characters` through Tauri's asset URL protocol. Android WebView asset protocol support for app-private imported projects is not yet verified.
