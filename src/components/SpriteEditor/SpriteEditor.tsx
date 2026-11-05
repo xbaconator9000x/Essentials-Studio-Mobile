@@ -14,6 +14,7 @@ import {
   type SpriteTool,
 } from "../../services/spriteEditorPixels";
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
+import "./SpriteEditor.css";
 
 interface Props {
   projectPath: string;
