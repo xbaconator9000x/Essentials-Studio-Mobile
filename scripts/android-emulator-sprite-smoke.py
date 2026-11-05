@@ -57,6 +57,23 @@ def tap_control(nodes: list[dict[str, str]], name: str) -> None:
     helper.tap(point)
 
 
+def has_control(nodes: list[dict[str, str]], name: str) -> bool:
+    return any(
+        name.casefold() in " ".join(
+            (node.get("text", ""), node.get("content-desc", ""))
+        ).casefold()
+        for node in nodes
+    )
+
+
+def save_mode_trigger(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    return (
+        locate_control(nodes, "Save mode")
+        or locate_control(nodes, "Save as copy (safe default)")
+        or locate_control(nodes, "Replace original PNG")
+    )
+
+
 def screen_size() -> tuple[int, int]:
     output = helper.adb("shell", "wm", "size").stdout
     match = re.search(r"(?:Physical|Override) size:\s*(\d+)x(\d+)", output)
@@ -82,22 +99,35 @@ def open_sprite_editor(evidence: Path) -> list[dict[str, str]]:
 
 
 def select_safe_copy_mode(nodes: list[dict[str, str]], evidence: Path) -> list[dict[str, str]]:
-    tap_control(nodes, "Save mode")
+    trigger = save_mode_trigger(nodes)
+    if not trigger:
+        raise AssertionError(
+            "Save mode selector has no tappable label or selected-value accessibility bounds"
+        )
+    helper.tap(trigger)
     options = helper.dump_ui(evidence, "sprite-save-mode-options")
     safe_copy = "Save as copy (safe default)"
-    if not locate_control(options, safe_copy):
+    replace_original = "Replace original PNG"
+    if not locate_control(options, safe_copy) or not locate_control(options, replace_original):
         visible = [
             node.get("text", "") or node.get("content-desc", "")
             for node in options
             if node.get("text") or node.get("content-desc")
         ]
         raise AssertionError(
-            f"Safe copy mode was not exposed after opening Save mode: {visible[-20:]!r}"
+            f"Save mode options were not exposed after opening selector: {visible[-20:]!r}"
         )
     tap_control(options, safe_copy)
     selected = helper.dump_ui(evidence, "sprite-save-mode-copy-selected")
-    if not locate_control(selected, "Copy name"):
-        raise AssertionError("Selecting safe copy mode did not expose the copy-name field")
+    if not locate_control(selected, safe_copy) or not has_control(selected, "Copy name"):
+        visible = [
+            node.get("text", "") or node.get("content-desc", "")
+            for node in selected
+            if node.get("text") or node.get("content-desc")
+        ]
+        raise AssertionError(
+            f"Safe copy mode was not selected with a copy-name field: {visible[-20:]!r}"
+        )
     return selected
 
 
@@ -196,7 +226,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         if not locate_control(nodes, "Brush (B)"):
             tap_control(nodes, "Tools")
             nodes = helper.dump_ui(evidence, "sprite-editor-controls-open")
-        for control in ("Brush (B)", "Palette", "Undo", "Redo", "Save mode"):
+        for control in ("Brush (B)", "Palette", "Undo", "Redo"):
             if not locate_control(nodes, control):
                 visible = [
                     node.get("text", "") or node.get("content-desc", "")
@@ -289,6 +319,24 @@ def selftest() -> None:
                           "Save as copy (safe default)") is None
     assert locate_control([{"text": "Save as copy (safe default)", "bounds": "[10,20][30,40]"}],
                           "Save as copy (safe default)") == (20, 30)
+    observed_hierarchy = [
+        {"text": "Save mode", "bounds": ""},
+        {
+            "class": "android.widget.Spinner",
+            "text": "Save as copy (safe default)",
+            "bounds": "[100,200][300,250]",
+        },
+        {"text": "Copy name", "bounds": ""},
+        {"text": "SyntheticGuide_copy", "bounds": "[100,260][300,310]"},
+    ]
+    assert save_mode_trigger(observed_hierarchy) == (200, 225)
+    assert has_control(observed_hierarchy, "Copy name")
+    opened_options = [
+        {"text": "Save as copy (safe default)", "bounds": "[10,20][210,70]"},
+        {"text": "Replace original PNG", "bounds": "[10,70][210,120]"},
+    ]
+    assert locate_control(opened_options, "Save as copy (safe default)") == (110, 45)
+    assert locate_control(opened_options, "Replace original PNG") == (110, 95)
 
 
 def original_fixture_sprite_bytes() -> bytes:
