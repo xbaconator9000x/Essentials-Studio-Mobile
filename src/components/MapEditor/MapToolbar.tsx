@@ -15,6 +15,7 @@ interface MapToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   historyDisabled?: boolean;
+  readOnly?: boolean;
   showEventPins: boolean;
   setShowEventPins: (show: boolean) => void;
   paletteVisible: boolean;
@@ -34,6 +35,7 @@ export function MapToolbar({
   onUndo,
   onRedo,
   historyDisabled = false,
+  readOnly = false,
   showEventPins,
   setShowEventPins,
   paletteVisible,
@@ -61,7 +63,7 @@ export function MapToolbar({
       >
         {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
       </button>
-      {!toolsCollapsed && <div className="toolbar-group">
+      {!toolsCollapsed && !readOnly && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
         {(["pencil", "rectangle", "bucket", "eraser", "select"] as PaintTool[]).map(
           (tool) => (
@@ -95,9 +97,9 @@ export function MapToolbar({
       {/* Touch users have no physical Ctrl/Cmd+Z/Y keyboard. Keep map history
           accessible directly and route it through the same dirty-save path. */}
       <div className="toolbar-group" aria-label="Map edit history">
-        <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled}
+        <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled || readOnly}
           title="Undo tile edit" aria-label="Undo tile edit">Undo</button>
-        <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled}
+        <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled || readOnly}
           title="Redo tile edit" aria-label="Redo tile edit">Redo</button>
       </div>
 
@@ -165,6 +167,7 @@ export function MapToolbar({
         <span className="toolbar-label">
           Zoom: {Math.round(zoom * 100)}%
         </span>
+        {readOnly && <span className="toolbar-label">Read-only preview</span>}
         <button
           className="toolbar-btn toolbar-btn-sm"
           onClick={() => setZoom(1)}

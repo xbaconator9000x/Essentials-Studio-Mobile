@@ -22,6 +22,11 @@ python3 scripts/android-emulator-import-smoke.py \
   --package "$package" \
   --evidence android-runtime-evidence
 
+# Keep the phone preview gate independent of the persistence regression below.
+python3 scripts/android-emulator-preview-smoke.py \
+  --package "$package" \
+  --evidence-dir android-runtime-evidence/preview-smoke
+
 # This second gate uses actual Android touch input and Save All, then reads
 # Map001.rxdata from the debug app sandbox and checks the original ZIP hash.
 # Do not confuse this with physical ARM64 SAF export or desktop reopening.

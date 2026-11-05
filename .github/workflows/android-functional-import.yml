@@ -95,6 +95,7 @@ jobs:
         run: |
           bash -n scripts/android-emulator-smoke.sh
           python3 scripts/android-emulator-import-smoke.py --self-test
+          python3 scripts/android-emulator-preview-smoke.py --self-test
           python3 scripts/android-emulator-map-save-smoke.py --self-test
           python3 scripts/android-emulator-sprite-smoke.py --self-test
           python3 scripts/android-emulator-saf-export-smoke.py --self-test

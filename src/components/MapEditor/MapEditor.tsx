@@ -42,6 +42,7 @@ interface Props {
   startPosition?: { mapId: number; x: number; y: number };
   hasClipboardEvent?: boolean;
   shortcutsDisabled?: boolean;
+  readOnly?: boolean;
   onMapDirty: () => void;
   onOpenEvent?: (eventId: number, eventName: string) => void;
   onCreateEvent?: (x: number, y: number) => void;
@@ -65,6 +66,7 @@ export function MapEditor({
   startPosition,
   hasClipboardEvent,
   shortcutsDisabled = false,
+  readOnly = false,
   onMapDirty,
   onOpenEvent,
   onCreateEvent,
@@ -345,7 +347,7 @@ export function MapEditor({
   // script textarea or any other text-editing surface.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!mapData || e.defaultPrevented || e.altKey ||
+      if (!mapData || readOnly || e.defaultPrevented || e.altKey ||
           !(e.ctrlKey || e.metaKey) ||
           !shouldHandleMapShortcut(e.target, shortcutsDisabled)) return;
 
@@ -382,7 +384,7 @@ export function MapEditor({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mapData, selectedLayer, onMapDirty, shortcutsDisabled,
+  }, [mapData, selectedLayer, onMapDirty, shortcutsDisabled, readOnly,
       selectionStart, selectionEnd, cursorTile, tileClipboard, handleHistory]);
 
   // Convert screen position to tile coordinates
@@ -440,7 +442,7 @@ export function MapEditor({
   // Apply a paint operation at a position
   const doPaint = useCallback(
     (x: number, y: number) => {
-      if (!mapData) return;
+      if (!mapData || readOnly) return;
       if (selectedLayer < 0 || selectedLayer > 2) return; // Can't paint on Events or All layer
 
       if (paintTool === "pencil") {
@@ -473,7 +475,7 @@ export function MapEditor({
         }
       }
     },
-    [mapData, paintTool, selectedLayer, selectedTileId, onMapDirty]
+    [mapData, paintTool, selectedLayer, selectedTileId, onMapDirty, readOnly]
   );
 
   // Mouse wheel: scroll to pan, Ctrl+scroll (pinch-to-zoom) to zoom
@@ -506,6 +508,8 @@ export function MapEditor({
         panViewport.current = { x: viewportX, y: viewportY };
         return;
       }
+
+      if (readOnly) return;
 
       if (e.button === 0 && mapData) {
         const pos = screenToTile(e.clientX, e.clientY);
@@ -569,6 +573,7 @@ export function MapEditor({
       screenToTile,
       doPaint,
       onMapDirty,
+      readOnly,
     ]
   );
 
@@ -677,7 +682,7 @@ export function MapEditor({
 
   const handleTouchTap = useCallback(
     (point: { x: number; y: number }) => {
-      if (!mapData) return;
+      if (!mapData || readOnly) return;
       const tile = screenToTile(point.x, point.y);
       if (!tile) return;
       const target = resolveMapTapTarget(
@@ -725,6 +730,7 @@ export function MapEditor({
           tile.y,
           selectedLayer,
           selectedTileId,
+          readOnly,
         );
         if (changes.length > 0) {
           undoStackRef.current.push({ type: "rectangle", changes, timestamp: Date.now() });
@@ -939,6 +945,7 @@ export function MapEditor({
           onUndo={() => { handleHistory("undo"); }}
           onRedo={() => { handleHistory("redo"); }}
           historyDisabled={shortcutsDisabled}
+          readOnly={readOnly}
         />
       )}
 
@@ -957,7 +964,7 @@ export function MapEditor({
           onTouchEnd={handleTouchEndFallback}
           onTouchCancel={handleTouchCancelFallback}
           onClick={(e) => {
-            if (!mapData || selectedLayer !== 3) return;
+            if (readOnly || !mapData || selectedLayer !== 3) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;
             const evt = mapData.events.find(
@@ -969,7 +976,7 @@ export function MapEditor({
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onDoubleClick={(e) => {
-            if (!mapData) return;
+            if (readOnly || !mapData) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;
             const evt = mapData.events.find(
@@ -1001,7 +1008,7 @@ export function MapEditor({
           }}
           onContextMenu={(e) => {
             e.preventDefault();
-            if (!mapData) return;
+            if (readOnly || !mapData) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;
             if (pos.x < 0 || pos.x >= mapData.width || pos.y < 0 || pos.y >= mapData.height) return;

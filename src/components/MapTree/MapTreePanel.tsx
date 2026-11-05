@@ -10,6 +10,7 @@ interface Props {
   onDeleteMap: (id: number, name: string) => void;
   onRenameMap: (id: number, currentName: string) => void;
   onMapProperties: (id: number) => void;
+  readOnly?: boolean;
 }
 
 interface ContextMenuState {
@@ -30,6 +31,7 @@ export function MapTreePanel({
   onDeleteMap,
   onRenameMap,
   onMapProperties,
+  readOnly = false,
 }: Props) {
   const tree = useMemo(() => buildTree(mapInfos), [mapInfos]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -93,7 +95,7 @@ export function MapTreePanel({
     <div className="map-tree-panel" onClick={closeMenu}>
       <div className="map-tree-header">
         <span>Maps</span>
-        <button
+        {!readOnly && <button
           className="map-tree-add-btn"
           title="Create new map"
           onClick={(e) => {
@@ -102,7 +104,7 @@ export function MapTreePanel({
           }}
         >
           +
-        </button>
+        </button>}
       </div>
       <div className="map-tree-list">
         {tree.map((node) => (
@@ -112,7 +114,8 @@ export function MapTreePanel({
             depth={0}
             currentMapId={currentMapId}
             onSelectMap={onSelectMap}
-            onContextMenu={handleContextMenu}
+            onContextMenu={readOnly ? undefined : handleContextMenu}
+            readOnly={readOnly}
             expandedIds={expandedIds}
             onToggle={toggleExpanded}
           />
@@ -154,6 +157,7 @@ function MapTreeNodeItem({
   currentMapId,
   onSelectMap,
   onContextMenu,
+  readOnly,
   expandedIds,
   onToggle,
 }: {
@@ -161,7 +165,8 @@ function MapTreeNodeItem({
   depth: number;
   currentMapId: number | null;
   onSelectMap: (id: number) => void;
-  onContextMenu: (e: React.MouseEvent, id: number, name: string) => void;
+  onContextMenu?: (e: React.MouseEvent, id: number, name: string) => void;
+  readOnly: boolean;
   expandedIds: Set<number>;
   onToggle: (id: number) => void;
 }) {
@@ -179,7 +184,7 @@ function MapTreeNodeItem({
         aria-selected={isSelected}
         aria-expanded={hasChildren ? expanded : undefined}
         onClick={() => onSelectMap(node.id)}
-        onContextMenu={(e) => onContextMenu(e, node.id, node.name)}
+        onContextMenu={onContextMenu ? (e) => onContextMenu(e, node.id, node.name) : undefined}
         onDoubleClick={() => onSelectMap(node.id)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectMap(node.id); }
@@ -214,6 +219,7 @@ function MapTreeNodeItem({
             currentMapId={currentMapId}
             onSelectMap={onSelectMap}
             onContextMenu={onContextMenu}
+            readOnly={readOnly}
             expandedIds={expandedIds}
             onToggle={onToggle}
           />

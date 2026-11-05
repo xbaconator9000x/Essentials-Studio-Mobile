@@ -321,11 +321,11 @@ def picker_list_view_control(nodes: list[dict[str, str]]) -> tuple[int, int] | N
 
 def editor_visible(nodes: list[dict[str, str]]) -> bool:
     """Require a loaded project, not merely the welcome screen or picker."""
-    return (
-        locate(nodes, "Essentials Studio —") is not None
-        and locate(nodes, "Export ZIP") is not None
-        and not any("Project ZIP import failed" in n.get("text", "") for n in nodes)
-    )
+    opened = locate(nodes, "Essentials Studio —") is not None
+    desktop_actions_visible = locate(nodes, "Export ZIP") is not None
+    phone_project_view_visible = locate(nodes, "Projects") is not None
+    import_failed = any("Project ZIP import failed" in n.get("text", "") for n in nodes)
+    return opened and (desktop_actions_visible or phone_project_view_visible) and not import_failed
 
 
 def wait_for_editor(evidence: Path, seconds: int) -> bool:

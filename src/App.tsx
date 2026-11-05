@@ -78,6 +78,19 @@ function AppContent() {
   const { saveAll, dirtyCount, hasUnsavedEdits, updateDirty } = useProjectSave();
   const isAndroid = /Android/i.test(navigator.userAgent);
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
+  const [mobileLayout, setMobileLayout] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
+  );
+  const [mobileSection, setMobileSection] = useState<"projects" | "maps" | "sprites" | "settings">("projects");
+  const [mobileEditEnabled, setMobileEditEnabled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const phoneViewport = window.matchMedia("(max-width: 700px)");
+    const updateLayout = (event: MediaQueryListEvent) => setMobileLayout(event.matches);
+    phoneViewport.addEventListener("change", updateLayout);
+    return () => phoneViewport.removeEventListener("change", updateLayout);
+  }, []);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [lastProjectPath, setLastProjectPath] = useState(getLastProjectPath);
@@ -943,6 +956,7 @@ function AppContent() {
         <span className="app-title">
           Essentials Studio — {project.name}{dirtyCount > 0 ? " *" : ""}
         </span>
+        {mobileLayout && <span className="app-preview-badge">PREVIEW</span>}
         <div className="app-titlebar-right">
           <button className="app-titlebar-btn" disabled={loading || saving || dirtyCount === 0}
             onClick={() => void handleSaveAll()}>
@@ -1007,17 +1021,52 @@ function AppContent() {
       {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
       {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
-      {/* Main layout — map editor always visible */}
-      <div className="app-body">
+      {mobileLayout && (
+        <div className="app-mobile-experimental-banner" role="note">
+          Preview: map browsing is read-only by default. Editing, Save All and ZIP export are experimental; use a disposable ZIP.
+        </div>
+      )}
+      {mobileLayout && mobileSection === "maps" && (
+        <div className="app-mobile-map-controls">
+          <span>{mobileEditEnabled ? "Experimental editing enabled" : "Read-only map preview"}</span>
+          <button onClick={() => setMobileEditEnabled((enabled) => !enabled)}>
+            {mobileEditEnabled ? "Turn editing off" : "Enable editing (experimental)"}
+          </button>
+        </div>
+      )}
+
+      {/* Desktop keeps the three-panel layout; Android uses project/map screens. */}
+      <div className={`app-body${mobileLayout ? ` app-body--mobile app-body--${mobileSection}` : ""}`}>
+        <section className="app-mobile-project-summary">
+          <div>
+            <h1>{project.name}</h1>
+            <p>{Object.keys(project.map_infos).length} maps · read-only preview</p>
+          </div>
+          <p>Choose a map below to inspect its layers and events. The imported archive remains untouched.</p>
+          <label className="app-mobile-import-btn">
+            Import disposable ZIP
+            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed"
+              aria-label="Import disposable project ZIP" disabled={loading || saving}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+          </label>
+        </section>
         {/* Left: Map tree */}
         <MapTreePanel
           mapInfos={project.map_infos}
           currentMapId={currentMapId}
-          onSelectMap={(id) => handleSelectMap(id)}
+          onSelectMap={(id) => {
+            if (mobileLayout) setMobileSection("maps");
+            void handleSelectMap(id);
+          }}
           onCreateMap={handleCreateMap}
           onDeleteMap={handleDeleteMap}
           onRenameMap={handleRenameMap}
           onMapProperties={handleMapProperties}
+          readOnly={mobileLayout && mobileSection === "projects"}
         />
 
         {/* Center: Map editor */}
@@ -1031,13 +1080,14 @@ function AppContent() {
           currentMapId={currentMapId ?? undefined}
           startPosition={startPosition ?? undefined}
           hasClipboardEvent={clipboardEvent !== null}
+          readOnly={mobileLayout && !mobileEditEnabled}
           paletteVisible={showTilesetPalette}
           onTogglePalette={() => setShowTilesetPalette((visible) => !visible)}
           graphicsRevision={graphicsRevision}
-          shortcutsDisabled={Boolean(editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
+          shortcutsDisabled={Boolean(mobileLayout && !mobileEditEnabled || editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
           onMapDirty={handleMapDirty}
-          onOpenEvent={handleOpenEvent}
-          onCreateEvent={handleCreateEvent}
+          onOpenEvent={mobileLayout && !mobileEditEnabled ? undefined : handleOpenEvent}
+          onCreateEvent={mobileLayout && !mobileEditEnabled ? undefined : handleCreateEvent}
           onDeleteEvent={handleDeleteEvent}
           onSetStartPosition={handleSetStartPosition}
           onCopyEvent={handleCopyEvent}
@@ -1054,7 +1104,51 @@ function AppContent() {
             onSelectTile={setSelectedTileId}
           />
         )}
+
+        <section className="app-mobile-settings">
+          <h1>Preview settings</h1>
+          <p>Current project: <strong>{project.name}</strong></p>
+          <div className="app-mobile-safety-note" role="alert">
+            Saving, editing and export have not passed Android persistence acceptance. Keep the original ZIP and work only on a disposable copy.
+          </div>
+          <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
+          <label className="app-mobile-import-btn">
+            Import disposable ZIP
+            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed"
+              aria-label="Import disposable project ZIP from Settings" disabled={loading || saving}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+          </label>
+          <button disabled={loading || saving || dirtyCount === 0} onClick={() => void handleSaveAll()}>
+            Save All (experimental)
+          </button>
+          <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
+            Export ZIP (experimental)
+          </button>
+        </section>
       </div>
+
+      {mobileLayout && mobileSection !== "sprites" && (
+        <nav className="app-mobile-nav" aria-label="Main navigation">
+          {([
+            ["projects", "Projects"],
+            ["maps", "Maps"],
+            ["sprites", "Sprites"],
+            ["settings", "Settings"],
+          ] as const).map(([section, label]) => (
+            <button key={section} aria-current={mobileSection === section ? "page" : undefined}
+              onClick={() => {
+                setMobileSection(section);
+                if (section === "sprites") setShowSprites(true);
+              }}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {/* Database editor modal */}
       {showDatabase && (
@@ -1090,7 +1184,10 @@ function AppContent() {
       {showSprites && (
         <SpriteEditor
           projectPath={project.path}
-          onClose={() => setShowSprites(false)}
+          onClose={() => {
+            setShowSprites(false);
+            if (mobileLayout) setMobileSection("projects");
+          }}
           onSaved={() => setGraphicsRevision((revision) => revision + 1)}
         />
       )}
