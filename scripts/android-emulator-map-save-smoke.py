@@ -110,6 +110,10 @@ def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
     )
 
 
+def save_all_complete(nodes: list[dict[str, str]]) -> bool:
+    return status_visible(nodes, "Save All")
+
+
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """The left image is the map canvas; the right image is the tileset palette."""
     images = sorted(
@@ -387,7 +391,15 @@ def run(package: str, evidence: Path) -> None:
         edit_dialogue_in_editor(evidence, "Synthetic dialogue", "Edited synthetic dialogue")
         nodes = wait_for_map_after_event_save(evidence)
         helper.tap(helper.wait_for(evidence, "map-save-control", "Save All", 12))
-        time.sleep(5)
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            nodes = helper.dump_ui(evidence, "map-save-progress")
+            if save_all_complete(nodes):
+                break
+            time.sleep(1)
+        else:
+            visible = [n.get("text", "") for n in nodes if n.get("text")]
+            raise AssertionError(f"Save All did not finish; visible text={visible[-12:]!r}")
         nodes = helper.dump_ui(evidence, "map-after-save")
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
                for n in nodes):
@@ -456,6 +468,9 @@ def selftest() -> None:
     assert status_has(nodes, "Layer 1/3", "384")
     assert not status_has(nodes, "Layer 1/3", "385")
     assert status_visible(nodes, "Layer 1/3")
+    assert not save_all_complete([{"text": "Saving...", "bounds": "[42,65][202,162]"}])
+    assert save_all_complete([{"text": "Save All", "bounds": "[42,65][202,162]"}])
+    assert not save_all_complete([{"text": "Save All", "bounds": "[0,0][0,0]"}])
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
     original_run_adb = globals()["run_adb"]
