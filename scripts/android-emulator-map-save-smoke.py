@@ -72,7 +72,7 @@ def tap_named(nodes: list[dict[str, str]], name: str) -> None:
 
 
 def map_editor_visible(nodes: list[dict[str, str]]) -> bool:
-    if not find_button(nodes, "Ev") or not status_visible(nodes, "Events (1)"):
+    if any(find_button(nodes, layer) is None for layer in ("L1", "L2", "L3", "Ev")):
         return False
     return len([
         node for node in nodes
@@ -675,7 +675,11 @@ def selftest() -> None:
     map_editor = [
         {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
          "bounds": "[1057,462][1147,527]"},
-        {"text": "Events (1)", "bounds": "[868,987][955,1068]"},
+        *[
+            {"text": layer, "class": "android.widget.Button", "clickable": "true",
+             "bounds": f"[{left},462][{left + 90},527]"}
+            for layer, left in (("L1", 805), ("L2", 889), ("L3", 973))
+        ],
         {"text": "", "class": "android.widget.Image", "bounds": "[679,315][1241,1018]"},
         {"text": "", "class": "android.widget.Image", "bounds": "[1241,354][1794,1039]"},
     ]
