@@ -411,8 +411,16 @@ def run(package: str, evidence: Path) -> None:
             time.sleep(1)
         else:
             visible = [n.get("text", "") for n in nodes if n.get("text")]
+            screenshot = run_adb("exec-out", "screencap", "-p")
+            if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise AssertionError("Save All timeout screenshot was not a PNG")
+            (evidence / "map-save-timeout.png").write_bytes(screenshot)
             raise AssertionError(f"Save All did not finish; visible text={visible[-12:]!r}")
         nodes = helper.dump_ui(evidence, "map-after-save")
+        screenshot = run_adb("exec-out", "screencap", "-p")
+        if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise AssertionError("Post-save screenshot was not a PNG")
+        (evidence / "map-after-save.png").write_bytes(screenshot)
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
                for n in nodes):
             raise AssertionError("Editor reported a Save All failure")
