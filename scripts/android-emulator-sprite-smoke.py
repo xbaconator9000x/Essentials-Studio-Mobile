@@ -81,6 +81,26 @@ def open_sprite_editor(evidence: Path) -> list[dict[str, str]]:
     raise AssertionError("Sprites action was not reachable in the Android project toolbar")
 
 
+def select_safe_copy_mode(nodes: list[dict[str, str]], evidence: Path) -> list[dict[str, str]]:
+    tap_control(nodes, "Save mode")
+    options = helper.dump_ui(evidence, "sprite-save-mode-options")
+    safe_copy = "Save as copy (safe default)"
+    if not locate_control(options, safe_copy):
+        visible = [
+            node.get("text", "") or node.get("content-desc", "")
+            for node in options
+            if node.get("text") or node.get("content-desc")
+        ]
+        raise AssertionError(
+            f"Safe copy mode was not exposed after opening Save mode: {visible[-20:]!r}"
+        )
+    tap_control(options, safe_copy)
+    selected = helper.dump_ui(evidence, "sprite-save-mode-copy-selected")
+    if not locate_control(selected, "Copy name"):
+        raise AssertionError("Selecting safe copy mode did not expose the copy-name field")
+    return selected
+
+
 def private_sprite_path(package: str, stem: str) -> str:
     output = run_binary(
         "shell", "run-as", package, "find", ".", "-type", "f",
@@ -176,9 +196,18 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         if not locate_control(nodes, "Brush (B)"):
             tap_control(nodes, "Tools")
             nodes = helper.dump_ui(evidence, "sprite-editor-controls-open")
-        for control in ("Brush (B)", "Palette", "Undo", "Redo", "Save as copy"):
+        for control in ("Brush (B)", "Palette", "Undo", "Redo", "Save mode"):
             if not locate_control(nodes, control):
-                raise AssertionError(f"Sprite editor control was not exposed: {control}")
+                visible = [
+                    node.get("text", "") or node.get("content-desc", "")
+                    for node in nodes
+                    if node.get("text") or node.get("content-desc")
+                ]
+                raise AssertionError(
+                    f"Sprite editor control was not exposed: {control}; "
+                    f"visible controls={visible[-20:]!r}"
+                )
+        nodes = select_safe_copy_mode(nodes, evidence)
         tap_control(nodes, "Select #e64553")
         nodes = helper.dump_ui(evidence, "sprite-editor-color-selected")
         canvas_node = ui_control(nodes, "Sprite canvas")
@@ -256,6 +285,10 @@ def selftest() -> None:
         {"text": "Sprites", "bounds": "[10,20][30,40]"},
     ], "Sprites") == (20, 30)
     assert locate_control([{"text": "Sprites", "bounds": "[0,0][0,0]"}], "Sprites") is None
+    assert locate_control([{"text": "Save mode", "bounds": "[10,20][30,40]"}],
+                          "Save as copy (safe default)") is None
+    assert locate_control([{"text": "Save as copy (safe default)", "bounds": "[10,20][30,40]"}],
+                          "Save as copy (safe default)") == (20, 30)
 
 
 def original_fixture_sprite_bytes() -> bytes:
