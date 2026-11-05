@@ -57,8 +57,62 @@ def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
     raise AssertionError(f"Missing Android UI control: {name}")
 
 
+def find_button(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if node.get("text", "").strip() == name
+        and node.get("class") == "android.widget.Button"
+        and node.get("clickable") == "true"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
 def tap_named(nodes: list[dict[str, str]], name: str) -> None:
     helper.tap(helper.center(find_named(nodes, name)["bounds"]))
+
+
+def map_editor_visible(nodes: list[dict[str, str]]) -> bool:
+    if not find_button(nodes, "Ev") or not status_visible(nodes, "Events (1)"):
+        return False
+    return len([
+        node for node in nodes
+        if node.get("class") == "android.widget.Image"
+        and usable_bounds(node.get("bounds", ""))
+    ]) == 2
+
+
+def wait_for_restarted_map(evidence: Path) -> tuple[list[dict[str, str]], int, int]:
+    nodes = helper.dump_ui(evidence, "restart-project-open")
+    if not map_editor_visible(nodes):
+        # A fresh Android process restores the project in its portrait Projects
+        # overview. Enter Maps through the bounded navigation button, not the
+        # similarly named static section heading.
+        maps_button = find_button(nodes, "Maps")
+        if maps_button is None:
+            raise AssertionError(
+                "Reopened project showed neither map editor controls nor a "
+                "touchable Maps navigation button"
+            )
+        helper.tap(helper.center(maps_button["bounds"]))
+
+    run_adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    run_adb("shell", "settings", "put", "system", "user_rotation", "1")
+    deadline = time.monotonic() + 30
+    last_size = (0, 0)
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "restart-map-editor")
+        screenshot = run_adb("exec-out", "screencap", "-p")
+        if screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+            last_size = struct.unpack(">II", screenshot[16:24])
+            if last_size[0] > last_size[1] and map_editor_visible(nodes):
+                (evidence / "restart-map-editor.png").write_bytes(screenshot)
+                return nodes, *last_size
+        time.sleep(1)
+    visible = [node.get("text", "") for node in nodes if node.get("text")]
+    raise AssertionError(
+        f"Reopened project did not reach the landscape map editor; "
+        f"screen={last_size!r}, visible text={visible[-16:]!r}"
+    )
 
 
 def private_map_path(package: str) -> str:
@@ -493,7 +547,7 @@ def run(package: str, evidence: Path) -> None:
                 f"Save All working-copy bytes changed after process restart: "
                 f"{reopened_sha} != {receipt['map_sha256_after']}"
             )
-        width, height = receipt["landscape_pixels"]
+        nodes, width, height = wait_for_restarted_map(evidence)
         event_nodes = open_synthetic_event(
             evidence, nodes, width, height, "restart"
         )
@@ -610,6 +664,26 @@ def selftest() -> None:
     finally:
         globals()["run_adb"] = original_run_adb
     assert usable_bounds("[0,0][0,0]") is None
+    overview = [
+        {"text": "Maps", "class": "android.widget.TextView",
+         "clickable": "false", "bounds": "[28,693][118,737]"},
+        {"text": "Maps", "class": "android.widget.Button",
+         "clickable": "true", "bounds": "[280,1774][543,1794]"},
+    ]
+    assert find_button(overview, "Maps") is overview[1]
+    assert not map_editor_visible(overview)
+    map_editor = [
+        {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[1057,462][1147,527]"},
+        {"text": "Events (1)", "bounds": "[868,987][955,1068]"},
+        {"text": "", "class": "android.widget.Image", "bounds": "[679,315][1241,1018]"},
+        {"text": "", "class": "android.widget.Image", "bounds": "[1241,354][1794,1039]"},
+    ]
+    assert map_editor_visible(map_editor)
+    assert not map_editor_visible([
+        {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[0,0][100,50]"},
+    ])
     nodes[5]["bounds"] = "[0,0][0,0]"
     assert find_named(nodes, "L1")["bounds"] == "[1399,217][1488,283]"
     try:
