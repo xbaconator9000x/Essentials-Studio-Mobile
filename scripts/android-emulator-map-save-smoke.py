@@ -110,6 +110,15 @@ def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
     )
 
 
+def save_all_success_visible(nodes: list[dict[str, str]]) -> bool:
+    return any(
+        "All registered editor changes were saved to the working project."
+        in node.get("text", "")
+        and usable_bounds(node.get("bounds", "")) is not None
+        for node in nodes
+    )
+
+
 def save_all_completed_in_log(log: str) -> bool:
     lock = log.rfind("[save-all] operation lock acquired")
     native_save = log.find("[save-all] native map save completed", lock)
@@ -436,6 +445,8 @@ def run(package: str, evidence: Path) -> None:
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
                for n in nodes):
             raise AssertionError("Editor reported a Save All failure")
+        if not save_all_success_visible(nodes):
+            raise AssertionError("Save All did not show working-project success status")
         after = read_private_map(package, path)
         receipt["map_sha256_after"] = hashlib.sha256(after).hexdigest()
         if after == before:
@@ -449,6 +460,58 @@ def run(package: str, evidence: Path) -> None:
         receipt["original_zip_unchanged"] = True
         receipt["dialogue_before"] = "Synthetic dialogue"
         receipt["dialogue_after"] = "Edited synthetic dialogue"
+
+        run_adb("shell", "am", "force-stop", package)
+        time.sleep(2)
+        run_adb(
+            "shell", "monkey", "-p", package,
+            "-c", "android.intent.category.LAUNCHER", "1",
+        )
+        helper.wait_for(evidence, "restart-welcome", "Reopen Last Project", 45)
+        nodes = helper.dump_ui(evidence, "restart-welcome")
+        if helper.editor_visible(nodes):
+            raise AssertionError("Process restart unexpectedly skipped explicit project reopening")
+        tap_named(nodes, "Reopen Last Project")
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            nodes = helper.dump_ui(evidence, "restart-project-open")
+            helper.reject_editor_anr(nodes)
+            if helper.editor_visible(nodes):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError("Reopen Last Project did not restore the Android editor")
+        reopened_path = private_map_path(package)
+        if reopened_path != path:
+            raise AssertionError(
+                f"Reopen Last Project changed working-copy identity: {reopened_path!r} != {path!r}"
+            )
+        reopened_map = read_private_map(package, reopened_path)
+        reopened_sha = hashlib.sha256(reopened_map).hexdigest()
+        if reopened_map != after:
+            raise AssertionError(
+                f"Save All working-copy bytes changed after process restart: "
+                f"{reopened_sha} != {receipt['map_sha256_after']}"
+            )
+        width, height = receipt["landscape_pixels"]
+        event_nodes = open_synthetic_event(
+            evidence, nodes, width, height, "restart"
+        )
+        if not command_text_is_visible(event_nodes, "Edited synthetic dialogue"):
+            raise AssertionError("Reopened working copy lost the saved event dialogue")
+        (evidence / "restart-event-dialogue.png").write_bytes(
+            run_adb("exec-out", "screencap", "-p")
+        )
+        source_hash = run_adb(
+            "shell", "sha256sum", "/sdcard/Download/EssentialsSynthetic.zip"
+        ).decode().split()[0]
+        if source_hash != imported["fixture_sha256"]:
+            raise AssertionError("Original imported ZIP changed during process restart")
+        run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        nodes = wait_for_map_after_event_save(evidence)
+        receipt["working_copy_sha256_after_restart"] = reopened_sha
+        receipt["process_restart_pass"] = True
+        receipt["reopened_dialogue"] = "Edited synthetic dialogue"
         receipt["result"] = "emulator_map_touch_save_pass"
     finally:
         try:
@@ -465,6 +528,18 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    assert save_all_success_visible([{
+        "text": "All registered editor changes were saved to the working project. "
+                "The imported source ZIP is unchanged.",
+        "bounds": "[20,100][600,180]",
+    }])
+    assert not save_all_success_visible([{"text": "Save all failed: storage unavailable"}])
+    assert not save_all_success_visible([{
+        "text": "All registered editor changes were saved to the working project.",
+        "bounds": "[0,0][0,0]",
+    }])
+    assert not save_all_success_visible([])
+
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
     try:
