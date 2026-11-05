@@ -24,7 +24,6 @@ python3 scripts/android-emulator-import-smoke.py \
 
 # Keep the phone preview gate independent of the persistence regression below.
 python3 scripts/android-emulator-preview-smoke.py \
-  --package "$package" \
   --evidence-dir android-runtime-evidence/preview-smoke
 
 # This second gate uses actual Android touch input and Save All, then reads

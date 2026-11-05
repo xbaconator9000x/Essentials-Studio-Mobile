@@ -67,7 +67,6 @@ def verify_navigation(nodes: list[dict[str, str]]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", type=Path)
-    parser.add_argument("--package", default="com.essentialsstudio.mobile")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -84,6 +83,12 @@ def main() -> int:
     evidence = args.evidence_dir
     evidence.mkdir(parents=True, exist_ok=True)
 
+    previous_accelerometer_rotation = helpers.adb(
+        "shell", "settings", "get", "system", "accelerometer_rotation"
+    ).stdout.strip()
+    previous_user_rotation = helpers.adb(
+        "shell", "settings", "get", "system", "user_rotation"
+    ).stdout.strip()
     helpers.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
     helpers.adb("shell", "settings", "put", "system", "user_rotation", "0")
     time.sleep(3)
@@ -130,6 +135,15 @@ def main() -> int:
     tap_text(nodes, "Close", "close Sprite Editor")
     nodes = wait_for_text(evidence, "Settings", "return to phone navigation")
     verify_navigation(nodes)
+
+    helpers.adb(
+        "shell", "settings", "put", "system", "user_rotation", previous_user_rotation
+    )
+    helpers.adb(
+        "shell", "settings", "put", "system", "accelerometer_rotation",
+        previous_accelerometer_rotation,
+    )
+    time.sleep(3)
 
     receipt = {
         "result": "passed",

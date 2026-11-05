@@ -730,7 +730,6 @@ export function MapEditor({
           tile.y,
           selectedLayer,
           selectedTileId,
-          readOnly,
         );
         if (changes.length > 0) {
           undoStackRef.current.push({ type: "rectangle", changes, timestamp: Date.now() });
