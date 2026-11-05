@@ -312,7 +312,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         tap_control(nodes, "Fill (G)")
         helper.tap((canvas_x, canvas_y))
         nodes = helper.dump_ui(evidence, "sprite-after-fill")
-        if not locate_control(nodes, "Unsaved pixel edits"):
+        if not has_control(nodes, "Unsaved pixel edits"):
             raise AssertionError("Touch fill did not mark sprite pixels dirty")
         tap_control(nodes, "Undo")
         nodes = helper.dump_ui(evidence, "sprite-after-undo")
@@ -418,6 +418,11 @@ def selftest() -> None:
     ]
     assert locate_control(fill_offscreen_hierarchy, "Fill (G)") is None
     assert sprite_controls_scroll_gesture(fill_offscreen_hierarchy, "up") == (317, 199, 317, 965)
+    dirty_status_hierarchy = [
+        {"text": "Unsaved pixel edits", "bounds": "[0,0][0,0]"},
+    ]
+    assert has_control(dirty_status_hierarchy, "Unsaved pixel edits")
+    assert locate_control(dirty_status_hierarchy, "Unsaved pixel edits") is None
     opened_options = [
         {"text": "Save as copy (safe default)", "bounds": "[10,20][210,70]"},
         {"text": "Replace original PNG", "bounds": "[10,70][210,120]"},
