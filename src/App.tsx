@@ -250,7 +250,12 @@ function AppContent() {
       console.info("[save-all] operation completed");
     } finally {
       editorOperationRef.current = false;
-      setSaving(false);
+      // Let the async save finish before committing the idle UI state in a
+      // fresh task. Android WebView can otherwise leave the toolbar disabled
+      // even though the native write and save queue have both completed.
+      window.setTimeout(() => {
+        if (!editorOperationRef.current) setSaving(false);
+      }, 0);
     }
   }, [saveAll]);
 
