@@ -121,6 +121,8 @@ export async function exportProjectZip(
         }),
         writeAndVerify: (exportId, documentUri) =>
           invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
+        discardDestination: (exportId, documentUri) =>
+          invoke<void>("discard_incomplete_project_archive_document", { exportId, documentUri }),
       }, onProgress);
     }
 

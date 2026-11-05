@@ -244,6 +244,27 @@ pub async fn save_project_archive_to_document(
     }
 }
 
+#[tauri::command]
+pub async fn discard_incomplete_project_archive_document(
+    export_id: String,
+    document_uri: String,
+) -> Result<(), String> {
+    safe_export_id(&export_id)?;
+    validate_document_uri(&document_uri)?;
+
+    #[cfg(target_os = "android")]
+    {
+        tauri::async_runtime::spawn_blocking(move || delete_android_document(&document_uri))
+            .await
+            .map_err(|e| format!("Android document cleanup worker failed: {e}"))?
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = document_uri;
+        Err("Android document cleanup is only available on Android".into())
+    }
+}
+
 #[cfg(target_os = "android")]
 fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Result<u64, String> {
     use jni::objects::{JObject, JValue};

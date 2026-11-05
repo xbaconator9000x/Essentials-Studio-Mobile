@@ -10,6 +10,7 @@ export async function exportAndroidDocument(
   io: {
     pickDestination: (filename: string) => Promise<string | null>;
     writeAndVerify: (exportId: string, documentUri: string) => Promise<number>;
+    discardDestination: (exportId: string, documentUri: string) => Promise<void>;
   },
   onProgress?: (percent: number) => void,
   pickerTimeoutMs = 120_000,
@@ -23,13 +24,25 @@ export async function exportAndroidDocument(
   onProgress?.(20);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let documentUri: string | null;
+  let pickerTimedOut = false;
   try {
     documentUri = await Promise.race([
-      io.pickDestination(filename),
+      io.pickDestination(filename).then(async (uri) => {
+        if (pickerTimedOut && uri !== null) {
+          await io.discardDestination(exportId, uri).catch((error: unknown) => {
+            console.error("Could not remove late Android ZIP destination:", error);
+          });
+          return null;
+        }
+        return uri;
+      }),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(
-          "Android document picker did not return a destination. No ZIP bytes were written by the editor; retry export."
-        )), pickerTimeoutMs);
+        timer = setTimeout(() => {
+          pickerTimedOut = true;
+          reject(new Error(
+            "Android document picker did not return a destination. No ZIP bytes were written by the editor; retry export."
+          ));
+        }, pickerTimeoutMs);
       }),
     ]);
   } finally {

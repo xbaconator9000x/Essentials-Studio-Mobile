@@ -21,6 +21,7 @@ pub fn run() {
             begin_project_archive_export,
             read_project_archive_export_chunk,
             save_project_archive_to_document,
+            discard_incomplete_project_archive_document,
             discard_project_archive_export,
             read_private_project_image,
             save_private_project_sprite,
