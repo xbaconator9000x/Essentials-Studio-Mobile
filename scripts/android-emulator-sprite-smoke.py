@@ -149,6 +149,22 @@ def open_sprite_editor(evidence: Path) -> list[dict[str, str]]:
     raise AssertionError("Sprites action was not reachable in the Android project toolbar")
 
 
+def close_sprite_editor(evidence: Path) -> None:
+    nodes = helper.dump_ui(evidence, "sprite-before-close")
+    if not has_control(nodes, "Character Sprite Editor"):
+        raise AssertionError("Sprite Editor was not open after the saved-copy checks")
+    tap_control(nodes, "Close")
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "sprite-after-close")
+        if not has_control(nodes, "Character Sprite Editor"):
+            if not locate_control(nodes, "Export ZIP..."):
+                raise AssertionError("Project export control was not exposed after closing Sprite Editor")
+            return
+        time.sleep(1)
+    raise AssertionError("Sprite Editor did not close after tapping its Close control")
+
+
 def select_safe_copy_mode(nodes: list[dict[str, str]], evidence: Path) -> list[dict[str, str]]:
     trigger = save_mode_trigger(nodes)
     for attempt in range(6):
@@ -395,6 +411,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
             "source_dimensions": [128, 128],
             "save_mode": "copy",
         })
+        close_sprite_editor(evidence)
     finally:
         (evidence / "sprite-edit-receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
