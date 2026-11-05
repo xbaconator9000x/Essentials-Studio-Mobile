@@ -47,7 +47,12 @@ def locate(nodes: list[dict[str, str]], needle: str) -> tuple[int, int] | None:
     for node in nodes:
         text = node.get("text", "") + " " + node.get("content-desc", "")
         if needle.casefold() in text.casefold() and node.get("bounds"):
-            return center(node["bounds"])
+            try:
+                return center(node["bounds"])
+            except ValueError:
+                # Collapsed or off-screen controls report empty bounds; keep
+                # looking for a visible match instead of aborting.
+                continue
     return None
 
 
