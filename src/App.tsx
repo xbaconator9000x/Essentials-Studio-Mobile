@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { ProjectInfo, MapRenderData, TilesetRenderInfo, MapProperties, RpgEvent, EventInfo } from "./types";
 import { FIRST_REGULAR_TILE } from "./types";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -250,12 +251,9 @@ function AppContent() {
       console.info("[save-all] operation completed");
     } finally {
       editorOperationRef.current = false;
-      // Let the async save finish before committing the idle UI state in a
-      // fresh task. Android WebView can otherwise leave the toolbar disabled
-      // even though the native write and save queue have both completed.
-      window.setTimeout(() => {
-        if (!editorOperationRef.current) setSaving(false);
-      }, 0);
+      // Commit the idle toolbar state before the save promise settles back to
+      // callers such as export and the Android acceptance flow.
+      flushSync(() => setSaving(false));
     }
   }, [saveAll]);
 

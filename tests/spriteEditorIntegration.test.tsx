@@ -15,6 +15,7 @@ const editorDialogs = vi.hoisted(() => ({
 }));
 
 const fillRect = vi.fn();
+const putImageData = vi.fn();
 
 vi.mock("../src/services/tauriApi", () => editorApi);
 vi.mock("../src/services/imageLoader", () => editorApi);
@@ -27,6 +28,13 @@ const context = {
   fillRect,
   clearRect: vi.fn(),
   drawImage: vi.fn(),
+  getImageData: vi.fn((_x: number, _y: number, width: number, height: number) => ({
+    data: new Uint8ClampedArray(width * height * 4),
+    width,
+    height,
+    colorSpace: "srgb",
+  })),
+  putImageData,
   beginPath: vi.fn(),
   moveTo: vi.fn(),
   lineTo: vi.fn(),
@@ -139,6 +147,7 @@ describe("sprite editor integration", () => {
     const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
     expect(editorCanvas).toBeTruthy();
     fillRect.mockClear();
+    putImageData.mockClear();
 
     fireEvent.pointerDown(editorCanvas!, {
       pointerId: 1,
@@ -148,6 +157,7 @@ describe("sprite editor integration", () => {
       clientY: 100,
     });
     expect(fillRect).not.toHaveBeenCalled();
+    expect(putImageData).not.toHaveBeenCalled();
     fireEvent.pointerDown(editorCanvas!, {
       pointerId: 2,
       pointerType: "touch",
@@ -166,7 +176,7 @@ describe("sprite editor integration", () => {
     await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
     const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
     expect(editorCanvas).toBeTruthy();
-    fillRect.mockClear();
+    putImageData.mockClear();
 
     fireEvent.pointerDown(editorCanvas!, {
       pointerId: 1,
@@ -175,7 +185,7 @@ describe("sprite editor integration", () => {
       clientX: 100,
       clientY: 100,
     });
-    expect(fillRect).not.toHaveBeenCalled();
+    expect(putImageData).not.toHaveBeenCalled();
     fireEvent.pointerUp(editorCanvas!, {
       pointerId: 1,
       pointerType: "touch",
@@ -184,7 +194,8 @@ describe("sprite editor integration", () => {
       clientY: 100,
     });
 
-    expect(fillRect).toHaveBeenCalledWith(2, 2, 1, 1);
+    expect(putImageData).toHaveBeenCalledTimes(1);
+    expect(putImageData.mock.calls[0][0].data[2 * 4 * 4 + 2 * 4 + 3]).toBe(255);
     expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
   });
 
