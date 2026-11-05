@@ -114,8 +114,6 @@ def main() -> int:
     # immediately return to the safe preview state without saving any changes.
     tap_text(nodes, "Enable editing (experimental)", "enable experimental editing")
     nodes = wait_for_text(evidence, "Experimental editing enabled", "experimental-editing")
-    tap_text(nodes, "Tools ▸", "open experimental tools")
-    nodes = wait_for_text(evidence, "Tools ▾", "expanded experimental tools")
     require_text(nodes, "Pen", "experimental editing tools")
     tap_text(nodes, "Turn editing off", "return to read-only preview")
     nodes = wait_for_text(evidence, "Read-only preview", "read-only-restored")
