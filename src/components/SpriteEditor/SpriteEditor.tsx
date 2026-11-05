@@ -4,6 +4,16 @@ import { clearImageCache, loadCharacterImage } from "../../services/imageLoader"
 import { listAssetFiles, savePrivateProjectSprite } from "../../services/tauriApi";
 import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import { spritePixelAt, zoomSpriteViewport } from "../../services/spriteEditorGeometry";
+import {
+  applySpritePixelAction,
+  fillSpritePixels,
+  paintSpritePixels,
+  spriteColorAt,
+  SpritePixelHistory,
+  type SpritePixelAction,
+  type SpriteTool,
+} from "../../services/spriteEditorPixels";
+import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
 
 interface Props {
   projectPath: string;
@@ -22,7 +32,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [selectedName, setSelectedName] = useState("");
   const [targetName, setTargetName] = useState("");
   const [saveMode, setSaveMode] = useState<"original" | "copy">("copy");
-  const [tool, setTool] = useState<"brush" | "pan">("brush");
+  const [tool, setTool] = useState<SpriteTool>("brush");
   const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(1);
   const [zoom, setZoom] = useState(4);
@@ -31,13 +41,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [traceImage, setTraceImage] = useState<HTMLImageElement | null>(null);
   const [traceOpacity, setTraceOpacity] = useState(35);
   const [traceScale, setTraceScale] = useState(100);
+  const [traceOffsetX, setTraceOffsetX] = useState(0);
+  const [traceOffsetY, setTraceOffsetY] = useState(0);
   const [imageRevision, setImageRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [controlsCollapsed, setControlsCollapsed] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
+  );
+  const [paletteVisible, setPaletteVisible] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageDataRef = useRef<ImageData | null>(null);
+  const historyRef = useRef(new SpritePixelHistory());
+  const dirtyBeforeStroke = useRef(false);
   const pointerPositions = useRef(new Map<number, PointerPoint>());
   const activePaintPointer = useRef<number | null>(null);
   const pendingTouchPaint = useRef<{ id: number; point: PointerPoint } | null>(null);
@@ -48,6 +67,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     viewport: { zoom: number; offsetX: number; offsetY: number };
   } | null>(null);
   const traceUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const compactViewport = window.matchMedia("(max-width: 700px)");
+    const updateControls = (event: MediaQueryListEvent) => setControlsCollapsed(event.matches);
+    compactViewport.addEventListener("change", updateControls);
+    return () => compactViewport.removeEventListener("change", updateControls);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +112,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         context.imageSmoothingEnabled = false;
         context.drawImage(image, 0, 0);
         imageCanvasRef.current = source;
+        imageDataRef.current = context.getImageData(0, 0, source.width, source.height);
+        historyRef.current.clear();
         const bounds = canvasRef.current?.parentElement?.getBoundingClientRect();
         if (bounds?.width && bounds.height) {
           const fit = Math.max(1, Math.min(16, Math.floor(
@@ -143,8 +172,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           context.globalAlpha = traceOpacity / 100;
           context.drawImage(
             traceImage,
-            offsetX + (source.width * zoom - width) / 2,
-            offsetY + (source.height * zoom - height) / 2,
+            offsetX + (source.width * zoom - width) / 2 + source.width * zoom * traceOffsetX / 100,
+            offsetY + (source.height * zoom - height) / 2 + source.height * zoom * traceOffsetY / 100,
             width,
             height,
           );
@@ -176,13 +205,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     observer.observe(container);
     draw();
     return () => observer.disconnect();
-  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale]);
+  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY]);
 
   const paintPixel = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const source = imageCanvasRef.current;
     const context = source?.getContext("2d");
-    if (!canvas || !source || !context) return;
+    const imageData = imageDataRef.current;
+    if (!canvas || !source || !context || !imageData) return;
     const rect = canvas.getBoundingClientRect();
     const pixel = spritePixelAt(
       clientX - rect.left,
@@ -192,17 +222,82 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       source.height,
     );
     if (!pixel) return;
-    context.fillStyle = brushColor;
-    context.fillRect(
-      pixel.x - Math.floor(brushSize / 2),
-      pixel.y - Math.floor(brushSize / 2),
-      brushSize,
-      brushSize,
-    );
+    if (tool === "eyedropper") {
+      const sampled = spriteColorAt(imageData.data, source.width, source.height, pixel.x, pixel.y);
+      if (sampled) setBrushColor(sampled);
+      return;
+    }
+
+    let action: SpritePixelAction | null = null;
+    try {
+      if (tool === "fill") {
+        historyRef.current.begin();
+        action = fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor);
+        if (action) {
+          if (!historyRef.current.push(action)) {
+            applySpritePixelAction(imageData.data, action, "before");
+            setError("This fill exceeds the one-million-pixel undo limit");
+            return;
+          }
+        }
+      } else if (tool === "brush" || tool === "eraser") {
+        action = paintSpritePixels(
+          imageData.data,
+          source.width,
+          source.height,
+          pixel.x,
+          pixel.y,
+          brushColor,
+          brushSize,
+          tool === "eraser",
+        );
+        if (action && !historyRef.current.record(action)) {
+          applySpritePixelAction(imageData.data, action, "before");
+          setError("This stroke exceeds the one-million-pixel undo limit");
+          return;
+        }
+      }
+    } catch (cause) {
+      setError(String(cause));
+      return;
+    }
+    if (!action) return;
+
+    context.putImageData(imageData, 0, 0);
     setDirty(true);
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
-  }, [brushColor, brushSize, offsetX, offsetY, updateDirty, zoom]);
+  }, [brushColor, brushSize, offsetX, offsetY, tool, updateDirty, zoom]);
+
+  const undoSprite = useCallback(() => {
+    const imageData = imageDataRef.current;
+    const source = imageCanvasRef.current;
+    if (!imageData || !source || !historyRef.current.undo(imageData.data)) return;
+    source.getContext("2d")?.putImageData(imageData, 0, 0);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setImageRevision((value) => value + 1);
+  }, [updateDirty]);
+
+  const redoSprite = useCallback(() => {
+    const imageData = imageDataRef.current;
+    const source = imageCanvasRef.current;
+    if (!imageData || !source || !historyRef.current.redo(imageData.data)) return;
+    source.getContext("2d")?.putImageData(imageData, 0, 0);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setImageRevision((value) => value + 1);
+  }, [updateDirty]);
+
+  const cancelStroke = useCallback(() => {
+    const imageData = imageDataRef.current;
+    const source = imageCanvasRef.current;
+    if (!imageData || !source || !historyRef.current.cancel(imageData.data)) return;
+    source.getContext("2d")?.putImageData(imageData, 0, 0);
+    setDirty(dirtyBeforeStroke.current);
+    updateDirty("sprite-editor", dirtyBeforeStroke.current);
+    setImageRevision((value) => value + 1);
+  }, [updateDirty]);
 
   const saveSprite = useCallback(async () => {
     const source = imageCanvasRef.current;
@@ -246,8 +341,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         const source = document.createElement("canvas");
         source.width = image.width;
         source.height = image.height;
-        source.getContext("2d")?.drawImage(image, 0, 0);
+        const context = source.getContext("2d");
+        context?.drawImage(image, 0, 0);
         imageCanvasRef.current = source;
+        imageDataRef.current = context?.getImageData(0, 0, source.width, source.height) ?? null;
+        historyRef.current.clear();
         setImageRevision((value) => value + 1);
       });
     }
@@ -284,14 +382,21 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         center,
         viewport: { zoom, offsetX, offsetY },
       };
+      cancelStroke();
       activePaintPointer.current = null;
       pendingTouchPaint.current = null;
       activePan.current = null;
       return;
     }
+    if (tool === "fill" || tool === "eyedropper") {
+      paintPixel(event.clientX, event.clientY);
+      return;
+    }
     if (tool === "pan" || event.button === 1) {
       activePan.current = { id: event.pointerId, point, x: offsetX, y: offsetY };
     } else {
+      dirtyBeforeStroke.current = dirty;
+      historyRef.current.begin();
       activePaintPointer.current = event.pointerId;
       if (event.pointerType === "touch") {
         pendingTouchPaint.current = { id: event.pointerId, point };
@@ -345,12 +450,35 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     }
     if (pending?.id === event.pointerId) pendingTouchPaint.current = null;
     pointerPositions.current.delete(event.pointerId);
-    if (activePaintPointer.current === event.pointerId) activePaintPointer.current = null;
+    if (activePaintPointer.current === event.pointerId) {
+      if (commitTap) historyRef.current.commit();
+      else cancelStroke();
+      activePaintPointer.current = null;
+    }
     if (activePan.current?.id === event.pointerId) activePan.current = null;
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, true);
   const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, false);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const shortcut = resolveSpriteShortcut(event);
+      if (!shortcut) return;
+      if (shortcut.type === "undo") {
+        event.preventDefault();
+        undoSprite();
+      } else if (shortcut.type === "redo") {
+        event.preventDefault();
+        redoSprite();
+      } else {
+        event.preventDefault();
+        setTool(shortcut.tool);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [redoSprite, undoSprite]);
 
   const handleTraceFile = (file?: File) => {
     if (!file) return;
@@ -389,6 +517,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         <header className="sprite-editor-header">
           <strong>Character Sprite Editor</strong>
           <div className="sprite-editor-header-actions">
+            <button
+              aria-expanded={!controlsCollapsed}
+              aria-controls="sprite-editor-controls"
+              onClick={() => setControlsCollapsed((collapsed) => !collapsed)}
+            >
+              {controlsCollapsed ? "Tools ▸" : "Tools ▾"}
+            </button>
             <button disabled={!dirty || saving} onClick={() => void saveSprite().catch(() => {})}>
               {saving ? "Saving…" : "Save sprite"}
             </button>
@@ -396,7 +531,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           </div>
         </header>
         <div className="sprite-editor-workspace">
-          <aside className="sprite-editor-tools">
+          <aside
+            id="sprite-editor-controls"
+            className={`sprite-editor-tools${controlsCollapsed ? " is-collapsed" : ""}`}
+            hidden={controlsCollapsed}
+          >
             <label>
               Character
               <select value={selectedName} onChange={(event) => {
@@ -409,22 +548,58 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 {names.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
-            <div className="sprite-editor-tool-row" aria-label="Sprite tool">
-              <button aria-pressed={tool === "brush"} onClick={() => setTool("brush")}>Brush</button>
-              <button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Pan</button>
+            <div className="sprite-editor-tool-row" role="group" aria-label="Sprite tools">
+              {([
+                ["brush", "Brush (B)"],
+                ["eraser", "Erase (E)"],
+                ["eyedropper", "Pick (I)"],
+                ["fill", "Fill (G)"],
+                ["pan", "Pan (P)"],
+              ] as [SpriteTool, string][]).map(([name, label]) => (
+                <button key={name} aria-pressed={tool === name} onClick={() => setTool(name)}>{label}</button>
+              ))}
             </div>
-            <label>
-              Brush color
-              <input type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} />
-            </label>
-            <label>
-              Brush size: {brushSize}px
-              <input type="range" min="1" max="8" value={brushSize}
-                onChange={(event) => setBrushSize(Number(event.target.value))} />
-            </label>
+            <section className="sprite-editor-palette" aria-label="Sprite color palette">
+              <button
+                className="sprite-editor-panel-toggle"
+                aria-expanded={paletteVisible}
+                onClick={() => setPaletteVisible((visible) => !visible)}
+              >
+                Palette {paletteVisible ? "▾" : "▸"}
+              </button>
+              {paletteVisible && (
+                <div className="sprite-editor-palette-content">
+                  <label>
+                    Selected color
+                    <input type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} />
+                  </label>
+                  <div className="sprite-editor-swatches" role="group" aria-label="Quick colors">
+                    {["#000000", "#ffffff", "#e64553", "#40a02b", "#1e66f5", "#df8e1d", "#8839ef", "#179299"].map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-label={`Select ${color}`}
+                        aria-pressed={brushColor.toLowerCase() === color}
+                        style={{ backgroundColor: color }}
+                        onClick={() => setBrushColor(color)}
+                      />
+                    ))}
+                  </div>
+                  <label>
+                    Brush size: {brushSize}px
+                    <input type="range" min="1" max="8" value={brushSize}
+                      onChange={(event) => setBrushSize(Number(event.target.value))} />
+                  </label>
+                </div>
+              )}
+            </section>
+            <div className="sprite-editor-tool-row" role="group" aria-label="Sprite edit history">
+              <button disabled={!historyRef.current.canUndo()} onClick={undoSprite}>Undo</button>
+              <button disabled={!historyRef.current.canRedo()} onClick={redoSprite}>Redo</button>
+            </div>
             <div className="sprite-editor-tool-row">
-              <button onClick={() => setZoom((value) => Math.min(32, value * 2))}>Zoom +</button>
-              <button onClick={() => setZoom((value) => Math.max(1, value / 2))}>Zoom −</button>
+              <button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(32, value * 2))}>Zoom +</button>
+              <button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(1, value / 2))}>Zoom −</button>
               <button onClick={fitSprite}>Fit</button>
             </div>
             <label>
@@ -443,10 +618,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   <input type="range" min="25" max="200" value={traceScale}
                     onChange={(event) => setTraceScale(Number(event.target.value))} />
                 </label>
+                <label>
+                  Trace horizontal alignment: {traceOffsetX}
+                  <input type="range" min="-100" max="100" value={traceOffsetX}
+                    onChange={(event) => setTraceOffsetX(Number(event.target.value))} />
+                </label>
+                <label>
+                  Trace vertical alignment: {traceOffsetY}
+                  <input type="range" min="-100" max="100" value={traceOffsetY}
+                    onChange={(event) => setTraceOffsetY(Number(event.target.value))} />
+                </label>
                 <button onClick={() => {
                   if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
                   traceUrl.current = null;
                   setTraceImage(null);
+                  setTraceOffsetX(0);
+                  setTraceOffsetY(0);
                 }}>Remove trace</button>
               </>
             )}
@@ -466,11 +653,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             {loading && <span role="status">Loading sprite…</span>}
             {dirty && <span className="sprite-editor-dirty">Unsaved pixel edits</span>}
             {error && <span className="sprite-editor-error" role="alert">{error}</span>}
+            <span className="sprite-editor-shortcuts">
+              B brush · E erase · I pick · G fill · P pan · Ctrl/Cmd+Z undo · Ctrl/Cmd+Y redo
+            </span>
           </aside>
           <div className="sprite-editor-canvas-wrap">
             <canvas
               ref={canvasRef}
               className="sprite-editor-canvas"
+              role="application"
+              aria-label="Sprite canvas"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}

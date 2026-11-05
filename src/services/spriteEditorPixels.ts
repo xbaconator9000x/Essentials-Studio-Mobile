@@ -121,7 +121,7 @@ export function fillSpritePixels(
   if (target === replacement) return null;
 
   const seen = new Uint8Array(width * height);
-  const queue = new Int32Array(Math.min(width * height, MAX_SPRITE_EDIT_PIXELS) + 1);
+  const queue = new Uint32Array(Math.min(width * height, MAX_SPRITE_EDIT_PIXELS));
   let readIndex = 0;
   let writeIndex = 1;
   queue[0] = start;
@@ -131,20 +131,16 @@ export function fillSpritePixels(
     const pixel = queue[readIndex++];
     const px = pixel % width;
     const py = Math.floor(pixel / width);
-    const neighbors = [
-      px > 0 ? pixel - 1 : -1,
-      px + 1 < width ? pixel + 1 : -1,
-      py > 0 ? pixel - width : -1,
-      py + 1 < height ? pixel + width : -1,
-    ];
-    for (const neighbor of neighbors) {
-      if (neighbor < 0 || seen[neighbor] || readPackedPixel(data, neighbor) !== target) continue;
-      if (writeIndex >= queue.length) {
-        throw new Error("Fill region exceeds the one-million-pixel edit limit");
-      }
+    const enqueue = (neighbor: number) => {
+      if (seen[neighbor] || readPackedPixel(data, neighbor) !== target) return;
+      if (writeIndex >= queue.length) throw new Error("Fill region exceeds the one-million-pixel edit limit");
       seen[neighbor] = 1;
       queue[writeIndex++] = neighbor;
-    }
+    };
+    if (px > 0) enqueue(pixel - 1);
+    if (px + 1 < width) enqueue(pixel + 1);
+    if (py > 0) enqueue(pixel - width);
+    if (py + 1 < height) enqueue(pixel + width);
   }
 
   const pixels = queue.slice(0, writeIndex);
@@ -204,6 +200,12 @@ export class SpritePixelHistory {
     const action = createAction(this.pending);
     this.pending.clear();
     if (!action) return false;
+    return this.push(action);
+  }
+
+  push(action: SpritePixelAction): boolean {
+    if (action.pixels.length > MAX_SPRITE_EDIT_PIXELS) return false;
+    if (this.pending.size) this.commit();
     this.future = [];
     this.futurePixels = 0;
     this.past.push(action);

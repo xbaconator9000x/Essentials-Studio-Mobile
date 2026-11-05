@@ -142,15 +142,16 @@ export function MapToolbar({
           />
           Grid
         </label>
-        <label className="toolbar-check">
-          <input
-            type="checkbox"
-            checked={showEventPins}
-            onChange={(e) => setShowEventPins(e.target.checked)}
-          />
-          Pins
-        </label>
       </div>}
+
+      <label className="toolbar-check toolbar-pin-toggle">
+        <input
+          type="checkbox"
+          checked={showEventPins}
+          onChange={(e) => setShowEventPins(e.target.checked)}
+        />
+        Pins
+      </label>
 
       <button
         className="toolbar-btn"

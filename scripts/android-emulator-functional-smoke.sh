@@ -29,6 +29,13 @@ python3 scripts/android-emulator-map-save-smoke.py \
   --package "$package" \
   --evidence android-runtime-evidence
 
+# Exercise the actual character picker, touch fill/brush, grouped history and
+# safe copy save path; the smoke reads the saved PNG back from app-private data.
+python3 scripts/android-emulator-sprite-smoke.py \
+  --package "$package" \
+  --evidence android-runtime-evidence \
+  --fixture android-synthetic-fixture/original.zip
+
 # Third gate: exercise the actual native SAF CREATE_DOCUMENT picker and verify
 # exported project members against the original synthetic fixture and the
 # map bytes just saved on-device. Physical phone/desktop remain separate.

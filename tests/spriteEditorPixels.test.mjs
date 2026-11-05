@@ -59,3 +59,15 @@ test("sprite history groups a stroke and supports undo, redo, and cancellation",
   assert.equal(history.cancel(data), true);
   assert.deepEqual([...data.slice(0, 4)], [255, 0, 0, 255]);
 });
+
+test("sprite history stores flood-fill actions directly and supports undo/redo", () => {
+  const data = image(3, 3);
+  const history = new SpritePixelHistory();
+  const action = fillSpritePixels(data, 3, 3, 1, 1, "#123456");
+
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], [...image(3, 3)]);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(16, 20)], [18, 52, 86, 255]);
+});

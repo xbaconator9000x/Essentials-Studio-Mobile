@@ -22,6 +22,10 @@ import {
 import { loadCharacterImage } from "../../services/imageLoader";
 import { replayMapHistory } from "../../services/mapHistory";
 import { shouldHandleMapShortcut } from "../../services/mapShortcutGuards";
+import {
+  readMapEventPinsVisible,
+  writeMapEventPinsVisible,
+} from "../../services/mapEditorPreferences";
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
@@ -55,7 +59,7 @@ export function MapEditor({
   tilesetInfo,
   tilesetImage,
   autotileImages,
-  projectPath: _projectPath,
+  projectPath,
   selectedTileId,
   currentMapId,
   startPosition,
@@ -86,7 +90,9 @@ export function MapEditor({
 
   // Editor state
   const [showGrid, setShowGrid] = useState(true);
-  const [showEventPins, setShowEventPins] = useState(true);
+  const [showEventPins, setShowEventPins] = useState(
+    () => readMapEventPinsVisible(projectPath, currentMapId),
+  );
   const [showLayers, _setShowLayers] = useState<[boolean, boolean, boolean]>([
     true,
     true,
@@ -186,11 +192,20 @@ export function MapEditor({
   // map keeps currentMapId stable, so its sprites are preserved.)
   useEffect(() => {
     setCharacterImages(new Map());
-  }, [currentMapId, _projectPath]);
+  }, [currentMapId, projectPath]);
+
+  useEffect(() => {
+    setShowEventPins(readMapEventPinsVisible(projectPath, currentMapId));
+  }, [currentMapId, projectPath]);
+
+  const updateShowEventPins = useCallback((visible: boolean) => {
+    setShowEventPins(visible);
+    writeMapEventPinsVisible(projectPath, currentMapId, visible);
+  }, [currentMapId, projectPath]);
 
   // Load character sprite images for events
   useEffect(() => {
-    if (!mapData || !_projectPath) return;
+    if (!mapData || !projectPath) return;
 
     // Collect unique character graphic names from events
     const names = new Set<string>();
@@ -210,7 +225,7 @@ export function MapEditor({
     (async () => {
       const results = await Promise.all(
         toLoad.map(async (name) => {
-          const img = await loadCharacterImage(_projectPath, name);
+          const img = await loadCharacterImage(projectPath, name);
           return [name, img] as [string, HTMLImageElement | null];
         })
       );
@@ -225,7 +240,7 @@ export function MapEditor({
     })();
 
     return () => { cancelled = true; };
-  }, [mapData, _projectPath, graphicsRevision]);
+  }, [mapData, projectPath, graphicsRevision]);
 
   // Event markers only depend on the map data and loaded sprite images, not on
   // viewport/zoom — memoize so panning doesn't rebuild this array every frame.
@@ -916,7 +931,7 @@ export function MapEditor({
           showGrid={showGrid}
           setShowGrid={setShowGrid}
           showEventPins={showEventPins}
-          setShowEventPins={setShowEventPins}
+          setShowEventPins={updateShowEventPins}
           paletteVisible={paletteVisible}
           onTogglePalette={onTogglePalette}
           zoom={zoom}

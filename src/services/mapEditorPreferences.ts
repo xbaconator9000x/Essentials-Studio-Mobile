@@ -4,7 +4,7 @@ export interface PreferenceStorage {
 }
 
 export function mapEventPinsPreferenceKey(projectPath: string | undefined, mapId: number | undefined): string | null {
-  if (!projectPath || !Number.isSafeInteger(mapId) || mapId! < 1) return null;
+  if (!projectPath || typeof mapId !== "number" || !Number.isSafeInteger(mapId) || mapId < 1) return null;
   return `essentials-studio:map-event-pins:${encodeURIComponent(projectPath)}:${mapId}`;
 }
 
