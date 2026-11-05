@@ -14,6 +14,7 @@ import re
 import struct
 import subprocess
 import time
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 IMPORT_HELPER = Path(__file__).with_name("android-emulator-import-smoke.py")
@@ -348,6 +349,29 @@ def wait_for_map_after_event_save(evidence: Path):
     raise AssertionError("Event editor did not close after saving dialogue")
 
 
+def capture_save_timeout_evidence(package: str, path: str, evidence: Path) -> None:
+    failures: list[str] = []
+    for name, args in (
+        ("map-save-timeout-logcat.txt", ("logcat", "-d", "-v", "threadtime")),
+        ("map-save-timeout.png", ("exec-out", "screencap", "-p")),
+    ):
+        try:
+            (evidence / name).write_bytes(run_adb(*args, timeout=30))
+        except Exception as exc:
+            failures.append(f"{name}: {exc}")
+    try:
+        current = read_private_map(package, path)
+        (evidence / "map-save-timeout-sha256.txt").write_text(
+            hashlib.sha256(current).hexdigest() + "\n", encoding="utf-8",
+        )
+    except Exception as exc:
+        failures.append(f"map-save-timeout-sha256.txt: {exc}")
+    if failures:
+        (evidence / "map-save-timeout-diagnostics-errors.txt").write_text(
+            "\n".join(failures) + "\n", encoding="utf-8",
+        )
+
+
 def run(package: str, evidence: Path) -> None:
     receipt_path = evidence / "import-receipt.json"
     imported = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -411,6 +435,7 @@ def run(package: str, evidence: Path) -> None:
             time.sleep(1)
         else:
             visible = [n.get("text", "") for n in nodes if n.get("text")]
+            capture_save_timeout_evidence(package, path, evidence)
             raise AssertionError(f"Save All did not finish; visible text={visible[-12:]!r}")
         nodes = helper.dump_ui(evidence, "map-after-save")
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
@@ -483,6 +508,25 @@ def selftest() -> None:
     assert not save_all_complete([{"text": "Saving...", "bounds": "[42,65][202,162]"}])
     assert save_all_complete([{"text": "Save All", "bounds": "[42,65][202,162]"}])
     assert not save_all_complete([{"text": "Save All", "bounds": "[0,0][0,0]"}])
+    with TemporaryDirectory() as temporary:
+        original_run_adb = globals()["run_adb"]
+        def fake_run_adb(*args: str, timeout: int = 45) -> bytes:
+            if args[0] == "logcat":
+                return b"synthetic log"
+            if args[:2] == ("exec-out", "screencap"):
+                return b"\x89PNG\r\n\x1a\nsynthetic screenshot"
+            return b"x" * 128
+        try:
+            globals()["run_adb"] = fake_run_adb
+            evidence = Path(temporary)
+            capture_save_timeout_evidence(
+                "com.example.fixture", "./projects/test/Data/Map001.rxdata", evidence,
+            )
+            assert (evidence / "map-save-timeout-logcat.txt").read_bytes() == b"synthetic log"
+            assert (evidence / "map-save-timeout.png").read_bytes().startswith(b"\x89PNG")
+            assert len((evidence / "map-save-timeout-sha256.txt").read_text().strip()) == 64
+        finally:
+            globals()["run_adb"] = original_run_adb
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
     original_run_adb = globals()["run_adb"]

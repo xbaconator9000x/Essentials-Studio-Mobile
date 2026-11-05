@@ -937,21 +937,31 @@ pub async fn save_map(
     width: i64,
     height: i64,
 ) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=started");
     let path = PathBuf::from(&project_path);
     let map_file = path.join("Data").join(format!("Map{:03}.rxdata", map_id));
     if !map_file.exists() {
         return Err(format!("Map file not found: Map{:03}.rxdata", map_id));
     }
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=reading");
     let original_bytes = std::fs::read(&map_file)
         .map_err(|e| format!("Failed to read map: {e}"))?;
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=decoding bytes={}", original_bytes.len());
     let mut value = marshal::load(&original_bytes)
         .map_err(|e| format!("Failed to decode map: {e}"))?;
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=decoded");
     // A no-op Save All must not touch the source Marshal stream.
     if let Some(existing) = RpgMap::from_ruby_value(&value) {
         if existing.width == width
             && existing.height == height
             && existing.data.data == tiles
         {
+            #[cfg(debug_assertions)]
+            eprintln!("[save_map] map={map_id} stage=noop");
             return Ok(());
         }
     }
@@ -982,8 +992,12 @@ pub async fn save_map(
     if decoded != value {
         return Err("Patched map differs from requested tile edit; original retained".into());
     }
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=writing bytes={}", patched.len());
     marshal::writer::write_bytes_file_atomic(&map_file, &patched)
         .map_err(|e| format!("Failed to save map: {e}"))?;
+    #[cfg(debug_assertions)]
+    eprintln!("[save_map] map={map_id} stage=complete");
     Ok(())
 }
 
