@@ -358,7 +358,7 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
             let cleanup = delete_android_document(uri);
             Err(document_failure_message(
                 "Android document write/readback failed",
-                &error,
+                &error.to_string(),
                 cleanup,
             ))
         }
