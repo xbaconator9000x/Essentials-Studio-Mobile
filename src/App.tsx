@@ -1036,7 +1036,7 @@ function AppContent() {
       )}
 
       {/* Desktop keeps the three-panel layout; Android uses project/map screens. */}
-      <div className={`app-body${mobileLayout ? ` app-body--mobile app-body--${mobileSection}` : ""}`}>
+      <div className={`app-body${mobileLayout ? ` app-body--mobile app-body--mobile-${mobileSection}` : ""}`}>
         <section className="app-mobile-project-summary">
           <div>
             <h1>{project.name}</h1>

@@ -27,6 +27,14 @@ def matching_node(nodes: list[dict[str, str]], text: str) -> dict[str, str] | No
     return next((node for node in nodes if text in node.get("text", "")), None)
 
 
+def matching_button(nodes: list[dict[str, str]], text: str) -> dict[str, str] | None:
+    return next(
+        (node for node in nodes
+         if node.get("text") == text and node.get("class", "").endswith("Button")),
+        None,
+    )
+
+
 def require_text(nodes: list[dict[str, str]], text: str, stage: str) -> dict[str, str]:
     node = matching_node(nodes, text)
     if node is None:
@@ -40,6 +48,16 @@ def tap_text(nodes: list[dict[str, str]], text: str, stage: str) -> None:
     bounds = node.get("bounds", "")
     if not bounds:
         raise RuntimeError(f"{stage}: '{text}' has no touch bounds")
+    helpers.tap(helpers.center(bounds))
+
+
+def tap_button(nodes: list[dict[str, str]], text: str, stage: str) -> None:
+    node = matching_button(nodes, text)
+    if node is None:
+        raise RuntimeError(f"{stage}: Missing button '{text}'")
+    bounds = node.get("bounds", "")
+    if not bounds:
+        raise RuntimeError(f"{stage}: button '{text}' has no touch bounds")
     helpers.tap(helpers.center(bounds))
 
 
@@ -73,8 +91,14 @@ def main() -> int:
     if args.self_test:
         sample = [{"text": name, "bounds": "[0,0][100,100]"}
                   for name in ("Projects", "Maps", "Sprites", "Settings", "Read-only preview")]
+        sample.insert(0, {"text": "Maps", "class": "android.widget.TextView",
+                          "bounds": "[0,0][50,50]"})
+        sample.append({"text": "Maps", "class": "android.widget.Button",
+                       "bounds": "[100,100][200,200]"})
         verify_navigation(sample)
         require_text(sample, "Maps", "self-test")
+        if matching_button(sample, "Maps") is not sample[-1]:
+            raise AssertionError("Maps navigation must select the button, not the heading")
         require_text(sample, "Read-only preview", "self-test")
         print("Android preview smoke self-test passed")
         return 0
@@ -102,7 +126,7 @@ def main() -> int:
     # Confirm that the Projects view contains the imported map and the preview
     # is explicitly read-only before exercising any editor controls.
     require_text(nodes, "Synthetic Map", "project map list")
-    tap_text(nodes, "Maps", "open Maps section")
+    tap_button(nodes, "Maps", "open Maps section")
     nodes = wait_for_text(evidence, "Read-only preview", "preview-map")
     require_text(nodes, "Synthetic Map", "preview map")
     tap_text(nodes, "Tools ▸", "open mobile tools")
