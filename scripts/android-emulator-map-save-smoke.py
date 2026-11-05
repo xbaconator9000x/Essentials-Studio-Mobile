@@ -431,6 +431,14 @@ def run(package: str, evidence: Path) -> None:
         receipt["dialogue_after"] = "Edited synthetic dialogue"
         receipt["result"] = "emulator_map_touch_save_pass"
     finally:
+        try:
+            (evidence / "map-save-logcat.txt").write_bytes(
+                run_adb("logcat", "-d", "-v", "threadtime")
+            )
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            (evidence / "map-save-logcat-error.txt").write_text(
+                str(exc), encoding="utf-8"
+            )
         (evidence / "map-edit-receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
         )
