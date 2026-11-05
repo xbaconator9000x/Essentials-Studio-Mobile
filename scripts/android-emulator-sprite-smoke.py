@@ -30,16 +30,28 @@ def run_binary(*args: str) -> bytes:
     return completed.stdout
 
 
+def locate_control(nodes: list[dict[str, str]], name: str) -> tuple[int, int] | None:
+    for node in nodes:
+        label = " ".join((node.get("text", ""), node.get("content-desc", ""))).strip()
+        if name.casefold() not in label.casefold():
+            continue
+        try:
+            return helper.center(node.get("bounds", ""))
+        except ValueError:
+            continue
+    return None
+
+
 def ui_control(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None:
     for node in nodes:
         label = " ".join((node.get("text", ""), node.get("content-desc", ""))).strip()
-        if name.casefold() in label.casefold() and helper.locate([node], name):
+        if name.casefold() in label.casefold() and locate_control([node], name):
             return node
     return None
 
 
 def tap_control(nodes: list[dict[str, str]], name: str) -> None:
-    point = helper.locate(nodes, name)
+    point = locate_control(nodes, name)
     if not point:
         raise AssertionError(f"Missing visible Android sprite control: {name}")
     helper.tap(point)
@@ -161,11 +173,11 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
             raise AssertionError("Synthetic sprite already matches the selected paint color")
 
         nodes = open_sprite_editor(evidence)
-        if not helper.locate(nodes, "Brush (B)"):
+        if not locate_control(nodes, "Brush (B)"):
             tap_control(nodes, "Tools")
             nodes = helper.dump_ui(evidence, "sprite-editor-controls-open")
         for control in ("Brush (B)", "Palette", "Undo", "Redo", "Save as copy"):
-            if not helper.locate(nodes, control):
+            if not locate_control(nodes, control):
                 raise AssertionError(f"Sprite editor control was not exposed: {control}")
         tap_control(nodes, "Select #e64553")
         nodes = helper.dump_ui(evidence, "sprite-editor-color-selected")
@@ -176,7 +188,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         tap_control(nodes, "Fill (G)")
         helper.tap((canvas_x, canvas_y))
         nodes = helper.dump_ui(evidence, "sprite-after-fill")
-        if not helper.locate(nodes, "Unsaved pixel edits"):
+        if not locate_control(nodes, "Unsaved pixel edits"):
             raise AssertionError("Touch fill did not mark sprite pixels dirty")
         tap_control(nodes, "Undo")
         nodes = helper.dump_ui(evidence, "sprite-after-undo")
@@ -197,7 +209,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             nodes = helper.dump_ui(evidence, "sprite-after-copy-save")
-            if helper.locate(nodes, "SyntheticGuide_copy") and not helper.locate(nodes, "Unsaved pixel edits"):
+            if locate_control(nodes, "SyntheticGuide_copy") and not locate_control(nodes, "Unsaved pixel edits"):
                 break
             if any("Sprite save failed" in node.get("text", "") for node in nodes):
                 raise AssertionError("Sprite copy save reported a failure")
@@ -239,6 +251,11 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
 def selftest() -> None:
     assert png_pixel(original_fixture_sprite_bytes(), 0, 0) == (1, 2, 3, 255)
     assert png_pixel(original_fixture_sprite_bytes(), 1, 0) == (4, 5, 6, 255)
+    assert locate_control([
+        {"text": "Sprites", "bounds": "[0,0][0,0]"},
+        {"text": "Sprites", "bounds": "[10,20][30,40]"},
+    ], "Sprites") == (20, 30)
+    assert locate_control([{"text": "Sprites", "bounds": "[0,0][0,0]"}], "Sprites") is None
 
 
 def original_fixture_sprite_bytes() -> bytes:

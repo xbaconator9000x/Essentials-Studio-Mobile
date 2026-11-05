@@ -569,13 +569,21 @@ function AppContent() {
       console.warn("[save-all] toolbar tap ignored: project operation already running");
       return;
     }
+    const hadUnsavedEdits = hasUnsavedEdits();
     setError(null);
+    setArchiveOutcome(null);
     try {
       await saveAllWithLock();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      setArchiveOutcome(hasUnsavedEdits()
+        ? "Save completed, but unsaved editor changes remain."
+        : hadUnsavedEdits
+          ? "All registered editor changes were saved."
+          : "No unsaved editor changes were registered; nothing to save.");
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
     }
-  }, [saveAllWithLock]);
+  }, [saveAllWithLock, hasUnsavedEdits]);
 
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
@@ -1073,7 +1081,7 @@ function AppContent() {
         </span>
         {mobileLayout && <span className="app-preview-badge">PREVIEW</span>}
         <div className="app-titlebar-right">
-          <button className="app-titlebar-btn" disabled={loading || saving || dirtyCount === 0}
+          <button className="app-titlebar-btn" disabled={loading || saving}
             onClick={() => void handleSaveAll()}>
             {saving ? "Saving..." : "Save All"}
           </button>
@@ -1238,7 +1246,7 @@ function AppContent() {
                 if (file) void handleImportProjectZip(file);
               }} />
           </label>
-          <button disabled={loading || saving || dirtyCount === 0} onClick={() => void handleSaveAll()}>
+          <button disabled={loading || saving} onClick={() => void handleSaveAll()}>
             Save All (experimental)
           </button>
           <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>

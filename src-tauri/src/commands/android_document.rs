@@ -220,12 +220,21 @@ pub async fn save_project_archive_to_document(
 
     #[cfg(target_os = "android")]
     {
+        let expected_size = size;
         let written = tauri::async_runtime::spawn_blocking(move || {
-            write_and_verify_android_document(&path, &document_uri)
-        }).await.map_err(|e| format!("Android document worker failed: {e}"))??;
-        if written != size {
-            return Err("Android document export byte count mismatch".into());
-        }
+            let written = write_and_verify_android_document(&path, &document_uri)?;
+            if written != expected_size {
+                let cleanup = delete_android_document(&document_uri);
+                return Err(document_failure_message(
+                    "Android document export",
+                    "byte count mismatch",
+                    cleanup,
+                ));
+            }
+            Ok(written)
+        })
+        .await
+        .map_err(|e| format!("Android document worker failed: {e}"))??;
         Ok(written)
     }
     #[cfg(not(target_os = "android"))]
@@ -343,12 +352,82 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
         Ok(copied)
     }
 
-    transfer(path, uri).map_err(|e| format!("Android document write/readback failed: {e}"))
+    match transfer(path, uri) {
+        Ok(written) => Ok(written),
+        Err(error) => {
+            let cleanup = delete_android_document(uri);
+            Err(document_failure_message(
+                "Android document write/readback failed",
+                &error,
+                cleanup,
+            ))
+        }
+    }
+}
+
+fn document_failure_message(context: &str, failure: &str, cleanup: Result<(), String>) -> String {
+    match cleanup {
+        Ok(()) => format!("{context}: {failure}; incomplete destination removed"),
+        Err(cleanup_error) => {
+            format!("{context}: {failure}; incomplete destination cleanup failed: {cleanup_error}")
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn delete_android_document(uri: &str) -> Result<(), String> {
+    use jni::objects::{JObject, JValue};
+
+    fn delete(uri: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let context = ndk_context::android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }?;
+        let mut env = vm.attach_current_thread()?;
+        if env.exception_check()? {
+            env.exception_clear()?;
+        }
+        // ndk-context holds the application context reference for the lifetime
+        // of the Android runtime; it is not a Rust-owned filesystem path.
+        let android_context = unsafe { JObject::from_raw(context.context().cast()) };
+        let resolver = env.call_method(
+            &android_context,
+            "getContentResolver",
+            "()Landroid/content/ContentResolver;",
+            &[],
+        )?.l()?;
+        let uri_string = JObject::from(env.new_string(uri)?);
+        let document = env.call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&uri_string)],
+        )?.l()?;
+        let selection = JObject::null();
+        let selection_args = JObject::null();
+        let deleted = env.call_method(
+            &resolver,
+            "delete",
+            "(Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I",
+            &[
+                JValue::Object(&document),
+                JValue::Object(&selection),
+                JValue::Object(&selection_args),
+            ],
+        )?.i()?;
+        if deleted == 0 {
+            return Err("document provider did not remove the selected destination".into());
+        }
+        Ok(())
+    }
+
+    delete(uri).map_err(|error| format!("could not delete incomplete Android document: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_document_uri, BoundedDocumentWriter, DOCUMENT_IMPORT_CHUNK_BYTES};
+    use super::{
+        document_failure_message, validate_document_uri, BoundedDocumentWriter,
+        DOCUMENT_IMPORT_CHUNK_BYTES,
+    };
     use std::io::Cursor;
 
     #[test]
@@ -387,5 +466,21 @@ mod tests {
         assert!(writer.write_chunk(&vec![0; DOCUMENT_IMPORT_CHUNK_BYTES + 1]).is_err());
         writer.write_chunk(b"12345678").unwrap();
         assert!(writer.write_chunk(b"x").unwrap_err().to_string().contains("limit"));
+    }
+
+    #[test]
+    fn failed_export_reports_whether_the_partial_document_was_removed() {
+        assert_eq!(
+            document_failure_message("write failed", "provider error", Ok(())),
+            "write failed: provider error; incomplete destination removed"
+        );
+        assert_eq!(
+            document_failure_message(
+                "write failed",
+                "provider error",
+                Err("provider denied delete".into()),
+            ),
+            "write failed: provider error; incomplete destination cleanup failed: provider denied delete"
+        );
     }
 }
