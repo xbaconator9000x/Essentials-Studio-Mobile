@@ -1129,9 +1129,19 @@ function AppContent() {
             Export ZIP (experimental)
           </button>
         </section>
+        {mobileLayout && mobileSection === "sprites" && (
+          <section className="app-mobile-sprite-preview">
+            <h1>Sprite tools</h1>
+            <p>Browse the project without editing. Sprite changes are experimental and may write project files.</p>
+            <div className="app-mobile-safety-note" role="alert">
+              Keep the original ZIP and open the editor only on a disposable project copy.
+            </div>
+            <button onClick={() => setShowSprites(true)}>Open Sprite Editor (experimental)</button>
+          </section>
+        )}
       </div>
 
-      {mobileLayout && mobileSection !== "sprites" && (
+      {mobileLayout && !showSprites && (
         <nav className="app-mobile-nav" aria-label="Main navigation">
           {([
             ["projects", "Projects"],
@@ -1142,7 +1152,7 @@ function AppContent() {
             <button key={section} aria-current={mobileSection === section ? "page" : undefined}
               onClick={() => {
                 setMobileSection(section);
-                if (section === "sprites") setShowSprites(true);
+                if (section === "sprites") setShowSprites(false);
               }}>
               {label}
             </button>
@@ -1186,7 +1196,7 @@ function AppContent() {
           projectPath={project.path}
           onClose={() => {
             setShowSprites(false);
-            if (mobileLayout) setMobileSection("projects");
+            if (mobileLayout) setMobileSection("sprites");
           }}
           onSaved={() => setGraphicsRevision((revision) => revision + 1)}
         />

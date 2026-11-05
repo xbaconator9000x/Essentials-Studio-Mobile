@@ -412,7 +412,9 @@ body,
   .app-body--mobile-settings .map-tree-panel,
   .app-body--mobile-settings .map-editor,
   .app-body--mobile-settings .tileset-palette,
-  .app-body--mobile-sprites > * {
+  .app-body--mobile-sprites .map-tree-panel,
+  .app-body--mobile-sprites .map-editor,
+  .app-body--mobile-sprites .tileset-palette {
     display: none !important;
   }
 
@@ -439,6 +441,30 @@ body,
     border-radius: 8px;
     background: #4a2d19;
     color: #ffe0ad;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .app-body--mobile-sprites {
+    flex-direction: column;
+  }
+
+  .app-mobile-sprite-preview {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    overflow-y: auto;
+    padding: 18px 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .app-mobile-sprite-preview h1 {
+    font-size: 20px;
+  }
+
+  .app-mobile-sprite-preview p {
+    color: var(--color-subtext1);
     font-size: 14px;
     line-height: 1.45;
   }

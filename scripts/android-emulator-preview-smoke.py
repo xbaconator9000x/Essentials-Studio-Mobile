@@ -131,9 +131,15 @@ def main() -> int:
     (evidence / "preview-settings.png").write_bytes(screenshot.stdout)
 
     tap_text(nodes, "Sprites", "open Sprites section")
-    nodes = wait_for_text(evidence, "Character Sprite Editor", "preview-sprites")
+    nodes = wait_for_text(evidence, "Sprite tools", "preview-sprites")
+    require_text(nodes, "Open Sprite Editor (experimental)", "sprite edit opt-in")
+    require_text(nodes, "Sprite changes are experimental", "sprite safety warning")
+    if matching_node(nodes, "Character Sprite Editor"):
+        raise RuntimeError("Preview smoke: Sprite Editor opened without opt-in")
+    tap_text(nodes, "Open Sprite Editor (experimental)", "open experimental Sprite Editor")
+    nodes = wait_for_text(evidence, "Character Sprite Editor", "experimental-sprites")
     tap_text(nodes, "Close", "close Sprite Editor")
-    nodes = wait_for_text(evidence, "Settings", "return to phone navigation")
+    nodes = wait_for_text(evidence, "Sprite tools", "return to sprite preview")
     verify_navigation(nodes)
 
     helpers.adb(
@@ -150,7 +156,7 @@ def main() -> int:
         "checks": [
             "imported project opened",
             "Projects/Maps/Sprites/Settings navigation visible",
-            "Sprite Editor opens and closes from phone navigation",
+            "Sprite Editor opens only after explicit experimental opt-in",
             "map browsing is read-only by default",
             "editing is explicitly opt-in and can be disabled",
             "Save All and ZIP export are labeled experimental",
