@@ -76,7 +76,10 @@ def save_mode_trigger(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
 
 def sprite_controls_scroll_gesture(
     nodes: list[dict[str, str]],
+    direction: str = "down",
 ) -> tuple[int, int, int, int] | None:
+    if direction not in {"down", "up"}:
+        raise ValueError(f"Unsupported sprite controls scroll direction: {direction}")
     for node in nodes:
         if node.get("resource-id") != "sprite-editor-controls" or node.get("scrollable") != "true":
             continue
@@ -87,8 +90,33 @@ def sprite_controls_scroll_gesture(
         if right <= left or bottom - top < 160:
             continue
         x = (left + right) // 2
-        return x, bottom - 50, x, top + 50
+        if direction == "down":
+            return x, bottom - 50, x, top + 50
+        return x, top + 50, x, bottom - 50
     return None
+
+
+def ensure_sprite_control_visible(
+    nodes: list[dict[str, str]],
+    name: str,
+    evidence: Path,
+    direction: str,
+) -> list[dict[str, str]]:
+    for attempt in range(6):
+        if locate_control(nodes, name):
+            return nodes
+        gesture = sprite_controls_scroll_gesture(nodes, direction)
+        if not gesture:
+            raise AssertionError(
+                f"{name} is offscreen and the sprite controls pane has no usable scroll bounds"
+            )
+        helper.adb(
+            "shell", "input", "swipe", *(str(point) for point in gesture), "450"
+        )
+        nodes = helper.dump_ui(evidence, f"sprite-{name.lower().replace(' ', '-')}-scroll-{attempt + 1}")
+    if not locate_control(nodes, name):
+        raise AssertionError(f"{name} remained offscreen after scrolling sprite controls {direction}")
+    return nodes
 
 
 def screen_size() -> tuple[int, int]:
@@ -276,6 +304,7 @@ def smoke(package: str, evidence: Path, fixture: Path) -> None:
         nodes = select_safe_copy_mode(nodes, evidence)
         tap_control(nodes, "Select #e64553")
         nodes = helper.dump_ui(evidence, "sprite-editor-color-selected")
+        nodes = ensure_sprite_control_visible(nodes, "Fill (G)", evidence, "up")
         canvas_node = ui_control(nodes, "Sprite canvas")
         if not canvas_node:
             raise AssertionError("Accessible sprite canvas was not present in the UI hierarchy")
@@ -372,12 +401,23 @@ def selftest() -> None:
     ]
     assert save_mode_trigger(observed_hierarchy) is None
     assert sprite_controls_scroll_gesture(observed_hierarchy) == (317, 965, 317, 199)
+    assert sprite_controls_scroll_gesture(observed_hierarchy, "up") == (317, 199, 317, 965)
     assert has_control(observed_hierarchy, "Copy name")
     observed_hierarchy[1]["bounds"] = "[100,200][300,250]"
     assert save_mode_trigger(observed_hierarchy) == (200, 225)
     assert sprite_controls_scroll_gesture([
         {"resource-id": "sprite-editor-controls", "scrollable": "true", "bounds": "[0,0][0,0]"}
     ]) is None
+    fill_offscreen_hierarchy = [
+        {"text": "Fill (G)", "bounds": "[0,0][0,0]"},
+        {
+            "resource-id": "sprite-editor-controls",
+            "scrollable": "true",
+            "bounds": "[0,149][635,1015]",
+        },
+    ]
+    assert locate_control(fill_offscreen_hierarchy, "Fill (G)") is None
+    assert sprite_controls_scroll_gesture(fill_offscreen_hierarchy, "up") == (317, 199, 317, 965)
     opened_options = [
         {"text": "Save as copy (safe default)", "bounds": "[10,20][210,70]"},
         {"text": "Replace original PNG", "bounds": "[10,70][210,120]"},
