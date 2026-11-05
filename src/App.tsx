@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import type { ProjectInfo, MapRenderData, TilesetRenderInfo, MapProperties, RpgEvent, EventInfo } from "./types";
 import { FIRST_REGULAR_TILE } from "./types";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -115,6 +114,9 @@ function AppContent() {
   const [mapIsDirty, setMapIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    console.info(`[save-all] toolbar state saving=${saving}`);
+  }, [saving]);
   // Synchronous lease: fast repeated taps cannot start competing saves or exports.
   const editorOperationRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -251,9 +253,7 @@ function AppContent() {
       console.info("[save-all] operation completed");
     } finally {
       editorOperationRef.current = false;
-      // Commit the idle toolbar state before the save promise settles back to
-      // callers such as export and the Android acceptance flow.
-      flushSync(() => setSaving(false));
+      setSaving(false);
     }
   }, [saveAll]);
 
@@ -462,10 +462,6 @@ function AppContent() {
       await saveAllWithLock();
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
-    } finally {
-      // The toolbar owns the visible busy state; clear it at this boundary too
-      // so its completion does not depend on a nested save callback's render.
-      flushSync(() => setSaving(false));
     }
   }, [saveAllWithLock]);
 
