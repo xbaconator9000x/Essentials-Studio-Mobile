@@ -221,6 +221,32 @@ def remaining_input(current: str, expected: str) -> str:
     return expected[len(current):]
 
 
+def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
+                            previous: str, timeout: int = 5) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-input")
+        field = next((
+            node for node in nodes
+            if "EditText" in node.get("class", "")
+            and node.get("bounds") == input_bounds
+            and usable_bounds(node.get("bounds", ""))
+        ), None)
+        if field:
+            value = field.get("text", "")
+            if value == expected:
+                return value
+            if not previous.startswith(value) and not expected.startswith(value):
+                raise AssertionError(
+                    f"Dialogue input changed unexpectedly: {value!r}, "
+                    f"expected {expected!r}"
+                )
+        time.sleep(0.25)
+    raise AssertionError(
+        f"Dialogue input did not reach {expected!r} from {previous!r}"
+    )
+
+
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
     nodes = helper.dump_ui(evidence, "event-dialogue-before-edit")
     row = next((
@@ -253,38 +279,24 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
     helper.tap(helper.center(editor["bounds"]))
     run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
     run_adb("shell", "input", "keyevent", *("KEYCODE_DEL",) * len(original))
-    run_adb("shell", "input", "text", updated.replace(" ", "%s"))
-
-    deadline = time.monotonic() + 12
-    attempted_value = None
     input_bounds = editor["bounds"]
-    field_text = ""
-    while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "event-dialogue-input")
-        field = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and node.get("bounds") == input_bounds
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
-        if field:
-            field_text = field.get("text", "")
-            if field_text == updated:
-                break
-            if field_text == original and attempted_value is None:
-                time.sleep(0.5)
-                continue
-            try:
-                suffix = remaining_input(field_text, updated)
-            except AssertionError:
-                (evidence / "event-dialogue-input-failure.png").write_bytes(
-                    run_adb("exec-out", "screencap", "-p")
-                )
-                raise
-            if suffix and field_text != attempted_value:
-                attempted_value = field_text
-                run_adb("shell", "input", "text", suffix.replace(" ", "%s"))
-        time.sleep(0.5)
+    field_text = wait_for_dialogue_input(
+        evidence, input_bounds, "", original, timeout=10,
+    )
+    for offset in range(0, len(updated), 2):
+        chunk = updated[offset:offset + 2]
+        run_adb("shell", "input", "text", chunk.replace(" ", "%s"))
+        try:
+            field_text = wait_for_dialogue_input(
+                evidence, input_bounds, updated[:offset + len(chunk)],
+                field_text,
+            )
+        except AssertionError:
+            (evidence / "event-dialogue-input-failure.png").write_bytes(
+                run_adb("exec-out", "screencap", "-p")
+            )
+            raise
+
     run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
