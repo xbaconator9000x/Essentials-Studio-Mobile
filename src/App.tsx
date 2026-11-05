@@ -151,6 +151,34 @@ function AppContent() {
     () => typeof window.matchMedia !== "function" || !window.matchMedia("(max-width: 640px)").matches,
   );
   const [graphicsRevision, setGraphicsRevision] = useState(0);
+  const mobileBackState = useRef({
+    projectOpen: Boolean(project),
+    mobileLayout,
+    mobileSection,
+    showTilesetPalette,
+    editingEvent,
+    showDatabase,
+    showScripts,
+    showPbs,
+    showSprites,
+    propsMapId,
+    createMapParentId,
+    dirtyCount,
+  });
+  mobileBackState.current = {
+    projectOpen: Boolean(project),
+    mobileLayout,
+    mobileSection,
+    showTilesetPalette,
+    editingEvent,
+    showDatabase,
+    showScripts,
+    showPbs,
+    showSprites,
+    propsMapId,
+    createMapParentId,
+    dirtyCount,
+  };
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -160,6 +188,90 @@ function AppContent() {
     };
     narrowViewport.addEventListener("change", updatePaletteVisibility);
     return () => narrowViewport.removeEventListener("change", updatePaletteVisibility);
+  }, []);
+
+  const activeProjectPath = project?.path;
+  useEffect(() => {
+    if (!activeProjectPath || !mobileLayout) return;
+    const sentinel = { essentialsStudioBack: true };
+    const hasBackLayer = () => {
+      const state = mobileBackState.current;
+      return Boolean(
+        state.editingEvent || state.showDatabase || state.showScripts || state.showPbs ||
+        state.showSprites || state.propsMapId !== null || state.createMapParentId !== null ||
+        (state.mobileSection === "maps" && state.showTilesetPalette) ||
+        state.mobileSection !== "projects"
+      );
+    };
+    const handleBack = () => {
+      if (!hasBackLayer()) return;
+      window.history.pushState(sentinel, "", window.location.href);
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }));
+    };
+    window.history.pushState(sentinel, "", window.location.href);
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
+  }, [activeProjectPath, mobileLayout]);
+
+  useEffect(() => {
+    const handleMobileEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const state = mobileBackState.current;
+      if (!state.mobileLayout || !state.projectOpen || state.editingEvent) return;
+
+      const hasOverlay = Boolean(
+        state.showDatabase || state.showScripts || state.showPbs || state.showSprites ||
+        state.propsMapId !== null || state.createMapParentId !== null
+      );
+      if (hasOverlay) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const close = () => {
+          if (state.propsMapId !== null) setPropsMapId(null);
+          else if (state.createMapParentId !== null) setCreateMapParentId(null);
+          else if (state.showSprites) setShowSprites(false);
+          else if (state.showPbs) setShowPbs(false);
+          else if (state.showScripts) setShowScripts(false);
+          else if (state.showDatabase) setShowDatabase(false);
+        };
+        if (state.dirtyCount > 0) {
+          void confirmEditor("Discard unsaved changes and close this editor?").then(discard => {
+            if (discard) close();
+          });
+        } else {
+          close();
+        }
+        return;
+      }
+
+      if (state.mobileSection === "maps" && state.showTilesetPalette) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setShowTilesetPalette(false);
+        return;
+      }
+      if (state.mobileSection !== "projects") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const goToProjects = () => {
+          setMobileSection("projects");
+          setMobileEditEnabled(false);
+        };
+        if (state.dirtyCount > 0) {
+          void confirmEditor("Discard unsaved changes and return to Projects?").then(discard => {
+            if (discard) goToProjects();
+          });
+        } else {
+          goToProjects();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleMobileEscape);
+    return () => window.removeEventListener("keydown", handleMobileEscape);
   }, []);
 
   // Refs let callbacks always read the latest values without stale closures.
@@ -1105,6 +1217,7 @@ function AppContent() {
             autotileImages={autotileImages}
             selectedTileId={selectedTileId}
             onSelectTile={setSelectedTileId}
+            onClose={() => setShowTilesetPalette(false)}
           />
         )}
 

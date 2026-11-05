@@ -10,6 +10,7 @@ interface Props {
   autotileImages: (HTMLImageElement | null)[];
   selectedTileId: number;
   onSelectTile: (tileId: number) => void;
+  onClose: () => void;
 }
 
 type PaletteTab = "tiles" | "autotiles" | "properties";
@@ -27,6 +28,7 @@ export function TilesetPalette({
   autotileImages,
   selectedTileId,
   onSelectTile,
+  onClose,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("tiles");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -140,7 +142,10 @@ export function TilesetPalette({
   if (!tilesetInfo) {
     return (
       <div className="tileset-palette">
-        <div className="palette-header">Tileset</div>
+        <div className="palette-header">
+          <span>Tileset</span>
+          <button className="palette-close" onClick={onClose} aria-label="Close tileset palette">×</button>
+        </div>
         <div className="palette-empty">No tileset loaded</div>
       </div>
     );
@@ -164,7 +169,8 @@ export function TilesetPalette({
   return (
     <div className="tileset-palette">
       <div className="palette-header">
-        {tilesetInfo.name || "Tileset"}
+        <span>{tilesetInfo.name || "Tileset"}</span>
+        <button className="palette-close" onClick={onClose} aria-label="Close tileset palette">×</button>
       </div>
 
       {/* Tab bar */}

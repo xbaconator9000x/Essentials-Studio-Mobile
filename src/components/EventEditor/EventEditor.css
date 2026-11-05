@@ -541,6 +541,83 @@
   background: var(--color-accent-hover);
 }
 
+@media (max-width: 700px) {
+  .event-editor-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .event-editor {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .event-editor-header {
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .event-editor-close {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 28px;
+  }
+
+  .event-editor-pages {
+    min-height: 48px;
+    padding-inline: 8px;
+  }
+
+  .event-page-tab {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+
+  .event-editor-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .event-page-properties {
+    width: auto;
+    max-height: 38vh;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-surface0);
+    padding: 12px;
+  }
+
+  .event-command-panel {
+    flex: 1 0 42vh;
+    min-height: 240px;
+  }
+
+  .event-command-list {
+    font-size: 14px;
+  }
+
+  .event-command-row {
+    min-height: 40px;
+    align-items: center;
+  }
+
+  .event-editor-footer {
+    min-height: 60px;
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .event-editor-btn {
+    min-height: 44px;
+    min-width: 88px;
+  }
+}
+
 /* --- Move Route Editor --- */
 .move-route-editor-overlay {
   position: fixed;
