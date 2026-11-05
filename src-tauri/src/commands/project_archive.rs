@@ -1684,12 +1684,13 @@ mod archive_roundtrip_tests {
     fn discovers_deep_multilevel_project_root_without_losing_source_bytes() {
         let sandbox = Sandbox::new();
         let archive = sandbox.path("multi-wrapper.zip");
-        sample_zip(&archive, "One/Two/Three/Four/Five/Essentials FRLG/", None);
+        let wrapper = "One/Two/Three/Four/Five/Essentials FRLG/";
+        sample_zip(&archive, wrapper, None);
         let original_zip = fs::read(&archive).unwrap();
         let imported = extract_archive(&archive, &sandbox.path("extracted")).unwrap();
         assert_eq!(
             imported,
-            sandbox.path("extracted/One/Two/Three/Four/Five/Essentials FRLG")
+            sandbox.path(format!("extracted/{}", wrapper.trim_end_matches('/')))
         );
         assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
             b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
@@ -1698,9 +1699,9 @@ mod archive_roundtrip_tests {
         let exported = sandbox.path("repacked.zip");
         export_zip(&imported, &exported).unwrap();
         assert_eq!(read_zip_file(&exported, "Data/Scripts.rxdata"),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+            read_zip_file(&archive, &format!("{wrapper}Data/Scripts.rxdata")));
         assert_eq!(read_zip_file(&exported, "PBS/pokemon.txt"),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/PBS/pokemon.txt"));
+            read_zip_file(&archive, &format!("{wrapper}PBS/pokemon.txt")));
 
         // Exercise the actual app-private publication path, not only the ZIP
         // extractor: the returned path must be a direct child of projects/.
@@ -1716,7 +1717,7 @@ mod archive_roundtrip_tests {
         assert_eq!(published, projects.join("import-multi"));
         assert!(published.join("Game.rxproj").is_file());
         assert_eq!(fs::read(published.join("Data/Scripts.rxdata")).unwrap(),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+            read_zip_file(&archive, &format!("{wrapper}Data/Scripts.rxdata")));
         assert!(!imports.join("import-multi-extracted").exists());
         assert_eq!(fs::read(&archive).unwrap(), original_zip);
     }
