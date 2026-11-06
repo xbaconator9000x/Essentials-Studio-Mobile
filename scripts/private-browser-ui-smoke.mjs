@@ -42,6 +42,7 @@ const result = {
 };
 let server, browser, page, root;
 let stage = "start";
+let pbsSubstage = null;
 async function invoke(command, args = {}) {
   const response = await fetch("http://127.0.0.1:5173/api/browser/invoke", {
     method: "POST",
@@ -209,30 +210,41 @@ try {
   await page.screenshot({ path: join(evidence, "private-react-event-saved.png"), fullPage: true });
 
   stage = "React PBS editing and save";
+  pbsSubstage = "read-baseline";
   const pbsBefore = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   const firstName = pbsBefore[0]?.fields?.find(field => field.key === "Name")?.value;
   assert.ok(typeof firstName === "string" && firstName.length > 0, "No first Pokémon Name field");
+  pbsSubstage = "open-editor";
   await page.getByRole("button", { name: "PBS Data", exact: true }).click();
   const editor = page.locator(".pbs-entity-editor");
   await editor.waitFor({ timeout: 90_000 });
-  const inputs = editor.locator(".pbs-entity-panels > div:first-child input");
-  await page.waitForFunction(name =>
-    [...document.querySelectorAll(".pbs-entity-panels > div:first-child input")]
-      .some(input => input.value === name), firstName, { timeout: 90_000 });
-  const index = await inputs.evaluateAll((elements, name) =>
-    elements.findIndex(element => element.value === name), firstName);
-  assert.ok(index >= 0, "React PBS name field is not editable");
+  pbsSubstage = "wait-for-pokemon-name-field";
+  const nameField = editor.getByRole("textbox", { name: "Pokémon name", exact: true });
+  await nameField.waitFor({ state: "visible", timeout: 90_000 });
+  assert.equal(await nameField.inputValue(), firstName, "PBS editor did not select the first Pokémon");
   const replacement = "PrivateUiRoundtripProbe";
   assert.notEqual(firstName, replacement, "PBS probe must change a value");
-  await inputs.nth(index).fill(replacement);
+  pbsSubstage = "edit-pokemon-name";
+  await nameField.fill(replacement);
+  pbsSubstage = "wait-for-dirty-state";
   await editor.getByText("Unsaved changes").waitFor({ timeout: 30_000 });
+  pbsSubstage = "apply-pbs-changes";
+  await page.waitForFunction(() => {
+    const apply = [...document.querySelectorAll(".pbs-entity-editor button")]
+      .find(button => button.textContent?.trim() === "Apply");
+    return apply && !apply.disabled;
+  }, null, { timeout: 30_000 });
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
+  pbsSubstage = "wait-for-save-completion";
   await editor.getByText("Unsaved changes").waitFor({ state: "hidden", timeout: 90_000 });
+  pbsSubstage = "verify-native-write";
   const pbsAfter = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   assert.equal(pbsAfter[0]?.fields?.find(field => field.key === "Name")?.value, replacement,
     "React PBS save did not persist through native backend");
+  pbsSubstage = "close-editor";
   await editor.getByRole("button", { name: "Save & close", exact: true }).click();
   await editor.waitFor({ state: "hidden", timeout: 30_000 });
+  pbsSubstage = null;
   result.stages.reactPbsSave = "passed";
   await page.screenshot({ path: join(evidence, "private-react-pbs-saved.png"), fullPage: true });
 
@@ -273,6 +285,7 @@ try {
   await page.screenshot({ path: join(evidence, "private-react-export-complete.png"), fullPage: true });
 } catch (error) {
   result.failedStage = stage;
+  if (stage === "React PBS editing and save") result.failedSubstage = pbsSubstage;
   // Never persist source paths, dialogue, PBS content or private asset names.
   result.failureCategory = error?.name || "Error";
   process.exitCode = 1;

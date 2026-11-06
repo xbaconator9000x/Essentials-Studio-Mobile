@@ -230,10 +230,37 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.change(textarea, { target: { value: "Edited from Android" } });
     const finishButton = screen.getByRole("button", { name: "Done editing" });
     fireEvent.pointerDown(finishButton);
+    fireEvent.blur(textarea, { relatedTarget: finishButton });
+    expect(screen.getByRole("textbox", { name: "Show Text dialogue lines" })).toBeTruthy();
     fireEvent.click(finishButton);
 
     expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
     await screen.findByText("Edited from Android");
+  });
+
+  it("offers a touch-friendly Done editing action for a single Show Text field", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["Original dialogue"], source_index: 1 },
+      { code: 0, indent: 0, parameters: [], source_index: 2 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByText("Original dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const input = await screen.findByDisplayValue("Original dialogue");
+    fireEvent.change(input, { target: { value: "Edited single-line dialogue" } });
+    const finishButton = screen.getByRole("button", { name: "Done editing" });
+    fireEvent.pointerDown(finishButton);
+    fireEvent.blur(input, { relatedTarget: finishButton });
+    expect(screen.getByDisplayValue("Edited single-line dialogue")).toBeTruthy();
+    fireEvent.click(finishButton);
+
+    await screen.findByText("Edited single-line dialogue");
+    expect(screen.queryByDisplayValue("Edited single-line dialogue")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save & close" }));
+    await screen.findByRole("button", { name: "Open event" });
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited single-line dialogue");
   });
 
   it("saves the edited event immediately with Save & close, leaving nothing for Save All", async () => {

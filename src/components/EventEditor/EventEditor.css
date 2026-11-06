@@ -381,6 +381,21 @@
   margin: 2px 0;
 }
 
+.event-command-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.event-command-done {
+  min-height: 36px;
+  padding: 4px 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 .event-command-edit-input:focus {
   border-color: var(--color-accent-hover);
   box-shadow: 0 0 0 1px rgba(32, 159, 181, 0.3);
@@ -638,6 +653,10 @@
 
   .event-command-edit-textarea {
     min-height: 120px;
+  }
+
+  .event-command-done {
+    min-height: 44px;
   }
 
   .event-editor-footer {
