@@ -377,12 +377,14 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             )
             raise
 
-    # Show Text is a multiline editor; Enter inserts another dialogue line.
-    # Escape is the documented finish action and commits the textarea before
-    # dismissing the Android keyboard.
-    run_adb("shell", "input", "keyevent", "KEYCODE_ESCAPE")
+    # Finish with the visible editor action; Android/IME escape handling differs
+    # across devices and can dismiss the keyboard without reaching the WebView.
+    nodes = helper.dump_ui(evidence, "event-dialogue-before-finish")
+    finish_button = find_button(nodes, "Done editing")
+    if finish_button is None:
+        raise AssertionError("Visible Done editing button was not found")
+    helper.tap(helper.center(finish_button["bounds"]))
     deadline = time.monotonic() + 10
-    field_text = ""
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-input-committed")
         if dialogue_edit_committed(nodes, updated):
@@ -396,7 +398,6 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             f"Dialogue edit did not leave its input field with committed text {updated!r}"
         )
 
-    # Escape commits the React command and may also dismiss Android's keyboard.
     # Do not send Back here: once the IME is gone it closes the event editor.
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
@@ -409,7 +410,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             return
         time.sleep(1)
     raise AssertionError(
-        f"Committed dialogue {updated!r} or visible OK action was lost while dismissing Android keyboard"
+        f"Committed dialogue {updated!r} or visible OK action was lost after finishing the edit"
     )
 
 
@@ -632,6 +633,14 @@ def selftest() -> None:
         {"text": "Edited synthetic dialogue", "class": "android.view.View",
          "bounds": "[735,378][1794,443]"},
     ], "Edited synthetic dialogue")
+    assert find_button([
+        {"text": "Done editing", "class": "android.widget.Button",
+         "clickable": "true", "bounds": "[1464,863][1598,945]"},
+    ], "Done editing") is not None
+    assert find_button([
+        {"text": "Done editing", "class": "android.widget.Button",
+         "clickable": "false", "bounds": "[1464,863][1598,945]"},
+    ], "Done editing") is None
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""

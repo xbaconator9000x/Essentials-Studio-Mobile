@@ -216,6 +216,24 @@ describe("rendered event editor Save All integration", () => {
     ]);
   });
 
+  it("commits multiline Show Text with the explicit Done editing action", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["Dialogue before edit"], source_index: 1 },
+      { code: 0, indent: 0, parameters: [], source_index: 2 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByText("Dialogue before edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(textarea, { target: { value: "Edited from Android" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done editing" }));
+
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+    await screen.findByText("Edited from Android");
+  });
+
   it("saves the edited event and closes it from the explicit OK action", async () => {
     renderProject();
 

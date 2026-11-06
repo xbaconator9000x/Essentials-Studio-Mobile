@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { EventCommand } from "../../../types";
 import { getCommandDef, summarizeCommand } from "../../../services/eventCommands";
 import { CommandParamEditor, hasParamEditor } from "../CommandParamEditor";
@@ -176,6 +177,7 @@ export function MultiLineBlock({
     const lines = value.split("\n");
     onUpdateLines(lines.length > 0 ? lines : [""]);
   };
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -203,6 +205,7 @@ export function MultiLineBlock({
         </div>
         <div style={{ padding: "2px 12px 4px 34px" }}>
           <textarea
+            ref={textareaRef}
             className="event-command-edit-textarea"
             aria-label={`${def.name} dialogue lines`}
             defaultValue={allLines.join("\n")}
@@ -221,8 +224,20 @@ export function MultiLineBlock({
               }
             }}
           />
-          <div style={{ fontSize: 9, color: "#8c8fa1", marginTop: 2 }}>
-            Each line becomes a continuation. Press Escape to finish.
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
+              Each line becomes a continuation.
+            </div>
+            <button
+              type="button"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => {
+                commitLines(textareaRef.current?.value ?? "");
+                onStopEditing();
+              }}
+            >
+              Done editing
+            </button>
           </div>
         </div>
       </div>
