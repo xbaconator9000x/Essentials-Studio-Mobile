@@ -37,6 +37,32 @@ describe("mobile recent project switcher", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("renders without Array.prototype.at for older Android WebViews", () => {
+    const atDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+    let textContent: string | null = null;
+    try {
+      Object.defineProperty(Array.prototype, "at", { configurable: true, writable: true, value: undefined });
+      const { container } = render(
+        <MobileRecentProjects
+          paths={["C:\\private\\one\\Game\\", "/private/two/Game/"]}
+          currentPath=""
+          disabled={false}
+          onSelect={vi.fn()}
+        />,
+      );
+      textContent = container.textContent;
+    } finally {
+      if (atDescriptor) {
+        Object.defineProperty(Array.prototype, "at", atDescriptor);
+      } else {
+        Reflect.deleteProperty(Array.prototype, "at");
+      }
+    }
+
+    expect(textContent).toContain("one/Game");
+    expect(textContent).toContain("two/Game");
+  });
+
   it("does not render a switcher until there is another project to switch to", () => {
     const { container } = render(
       <MobileRecentProjects

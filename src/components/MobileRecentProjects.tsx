@@ -9,7 +9,7 @@ interface Props {
 
 function projectLabel(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
-  return segments.at(-1) || "Project";
+  return segments[segments.length - 1] || "Project";
 }
 
 export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }: Props) {
@@ -26,7 +26,7 @@ export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }:
       {paths.map((path) => {
         const segments = path.split(/[\\/]/).filter(Boolean);
         const name = projectLabel(path);
-        const label = labelCounts.get(name) === 1 ? name : `${segments.at(-2) ?? "…"}/${name}`;
+        const label = labelCounts.get(name) === 1 ? name : `${segments[segments.length - 2] ?? "…"}/${name}`;
         const active = path === currentPath;
         return (
           <button
