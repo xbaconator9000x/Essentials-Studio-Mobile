@@ -40,6 +40,7 @@ import {
   rememberRecentProjectPath,
 } from "./services/recentProject";
 import { installEditorBackHandler } from "./services/editorBackNavigation";
+import { MobileRecentProjects } from "./components/MobileRecentProjects";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -1186,30 +1187,16 @@ function AppContent() {
                 if (file) void handleImportProjectZip(file);
               }} />
           </label>
-          {recentProjectPaths.length > 1 && (
-            <nav className="app-mobile-project-list" aria-label="Recent projects">
-              <strong>Recent projects</strong>
-              {recentProjectPaths.map((path) => {
-                const name = path.split(/[\\/]/).filter(Boolean).at(-1) || "Project";
-                const active = path === project.path;
-                return (
-                  <button
-                    key={path}
-                    type="button"
-                    aria-current={active ? "page" : undefined}
-                    disabled={active || loading || saving}
-                    onClick={() => {
-                      void handleOpenProject(path).catch((cause) => {
-                        setError(`Could not switch project: ${String(cause)}`);
-                      });
-                    }}
-                  >
-                    {name}{active ? " · Current" : ""}
-                  </button>
-                );
-              })}
-            </nav>
-          )}
+          <MobileRecentProjects
+            paths={recentProjectPaths}
+            currentPath={project.path}
+            disabled={loading || saving}
+            onSelect={(path) => {
+              void handleOpenProject(path).catch((cause) => {
+                setError(`Could not switch project: ${String(cause)}`);
+              });
+            }}
+          />
         </section>
         {/* Left: Map tree */}
         <MapTreePanel
