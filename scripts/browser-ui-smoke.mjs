@@ -133,7 +133,7 @@ try {
   await eventEditor.locator(".event-editor-header").click(); // Commit on blur.
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
-  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",

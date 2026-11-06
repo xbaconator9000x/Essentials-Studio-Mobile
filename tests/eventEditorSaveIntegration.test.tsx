@@ -236,7 +236,7 @@ describe("rendered event editor Save All integration", () => {
     await screen.findByText("Edited from Android");
   });
 
-  it("saves the edited event and closes it from the explicit OK action", async () => {
+  it("saves the edited event immediately with Save & close, leaving nothing for Save All", async () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("Original dialogue"));
@@ -246,16 +246,20 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.blur(editor);
     await screen.findByText("Edited dialogue");
 
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & close" }));
     await screen.findByRole("button", { name: "Open event" });
 
     expect(native.saveEvent).toHaveBeenCalledTimes(1);
     expect(diskEvent.pages[0].list[0].parameters).toEqual(["", 0, 0, 2]);
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited dialogue");
-    expect(screen.queryByRole("button", { name: "OK" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save & close" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByRole("status");
+    expect(native.saveEvent).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the editor open when the OK action cannot persist the event", async () => {
+  it("keeps the editor open when Save & close cannot persist the event", async () => {
     native.saveEvent.mockRejectedValueOnce(new Error("synthetic write failure"));
     renderProject();
 
@@ -266,11 +270,11 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.blur(editor);
     await screen.findByText("Edited dialogue");
 
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & close" }));
     await screen.findByText(/Save failed: Error: synthetic write failure/);
 
     expect(native.saveEvent).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "OK" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save & close" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open event" })).toBeNull();
   });
 

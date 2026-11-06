@@ -194,7 +194,7 @@ try {
   await eventEditor.locator(".event-editor-header").click();
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue })
     .first().waitFor({ timeout: 15_000 });
-  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 90_000 });
   const eventAfter = await invoke("load_event", { projectPath: root, mapId, eventId: probe.eventId });
   assert.deepEqual(eventAfter,
@@ -231,7 +231,7 @@ try {
   const pbsAfter = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   assert.equal(pbsAfter[0]?.fields?.find(field => field.key === "Name")?.value, replacement,
     "React PBS save did not persist through native backend");
-  await editor.getByRole("button", { name: "OK", exact: true }).click();
+  await editor.getByRole("button", { name: "Save & close", exact: true }).click();
   await editor.waitFor({ state: "hidden", timeout: 30_000 });
   result.stages.reactPbsSave = "passed";
   await page.screenshot({ path: join(evidence, "private-react-pbs-saved.png"), fullPage: true });

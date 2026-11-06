@@ -307,7 +307,7 @@ def gboard_audio_permission_deny_button(nodes: list[dict[str, str]]) -> dict[str
 
 
 def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
-    return dialogue_edit_committed(nodes, text) and find_button(nodes, "OK") is not None
+    return dialogue_edit_committed(nodes, text) and find_button(nodes, "Save & close") is not None
 
 
 def remaining_input(current: str, expected: str) -> str:
@@ -433,7 +433,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             (evidence / "event-dialogue-edited.png").write_bytes(
                 run_adb("exec-out", "screencap", "-p")
             )
-            tap_named(nodes, "OK")
+            tap_named(nodes, "Save & close")
             return
         time.sleep(1)
     raise AssertionError(
@@ -680,7 +680,7 @@ def selftest() -> None:
     assert dialogue_ready_to_save([
         {"text": "Edited synthetic dialogue", "class": "android.view.View",
          "bounds": "[735,378][1794,443]"},
-        {"text": "OK", "class": "android.widget.Button", "clickable": "true",
+        {"text": "Save & close", "class": "android.widget.Button", "clickable": "true",
          "bounds": "[1464,863][1598,945]"},
     ], "Edited synthetic dialogue")
     assert not dialogue_ready_to_save([

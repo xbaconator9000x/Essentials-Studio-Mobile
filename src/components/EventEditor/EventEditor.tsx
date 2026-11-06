@@ -581,7 +581,7 @@ export function EventEditor({
               onClick={handleOk}
               disabled={saving}
             >
-              {saving ? "Saving..." : "OK"}
+              {saving ? "Saving..." : "Save & close"}
             </button>
             <button className="event-editor-btn" onClick={handleCancel} disabled={saving}>
               Cancel

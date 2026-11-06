@@ -587,7 +587,7 @@ function AppContent() {
         ? "Save completed, but unsaved editor changes remain."
         : hadUnsavedEdits
           ? "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits."
-          : "No unsaved editor changes were registered; nothing to save.");
+          : "No unsaved editor changes were registered; nothing to save. Events saved with Save & close are already in the working project.");
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
     }
