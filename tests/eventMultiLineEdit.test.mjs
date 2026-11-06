@@ -14,6 +14,7 @@ test('editing Show Text preserves header metadata and changes the first XP text 
   const original = commands();
   const expected = structuredClone(original);
   expected[2].parameters[0] = 'Edited';
+  expected.splice(3, 0, { code: 401, indent: 1, parameters: ['Continuation'] });
   assert.deepEqual(replaceMultiLineBlock(original, 1, ['Edited', 'Continuation'], 401), expected);
   assert.deepEqual(original[1].parameters, ['Face', 2, 1, 2]);
   assert.equal(original[2].parameters[0], 'Continuation');
@@ -71,25 +72,35 @@ test('same-code continuation at a different RMXP indent remains independent', ()
   assert.equal(blocks[1].rawIndex, 2);
   assert.equal(getBlockEnd(original, 0), 1);
   const edited = replaceMultiLineBlock(original, 0, ['Edited', 'Continuation'], 401);
-  assert.deepEqual(edited.slice(2), original.slice(2));
+  assert.deepEqual(edited[3], original[2]);
+  assert.deepEqual(edited[4], original[3]);
+  assert.deepEqual(edited[2], { code: 401, indent: 0, parameters: ['Continuation'] });
   assert.deepEqual(edited[0].parameters, ['Face', 0, 0, 2]);
   assert.equal(edited[1].parameters[0], 'Edited');
   assert.deepEqual(edited[0].opaque, original[0].opaque);
-  assert.equal(original[0].parameters[0], 'First');
+  assert.equal(original[0].parameters[0], 'Face');
 });
 
 test('insert/delete block boundaries respect indentation for text, comment and script', () => {
   for (const [parentCode, continuationCode] of [[101, 401], [108, 408], [355, 655]]) {
     const commands = [
-      { code: parentCode, indent: 2, parameters: ['Original'] },
+      { code: parentCode, indent: 2, parameters: parentCode === 101 ? ['Face', 0, 0, 2] : ['Original'] },
       { code: continuationCode, indent: 2, parameters: ['Same level'], metadata: 'retain' },
       { code: continuationCode, indent: 3, parameters: ['Different level'], metadata: 'untouched' },
       { code: 0, indent: 0, parameters: [] },
     ];
     assert.equal(getBlockEnd(commands, 0), 1);
     const edited = replaceMultiLineBlock(commands, 0, ['Updated'], continuationCode);
-    assert.equal(edited.length, 3);
-    assert.deepEqual(edited[1], commands[2]);
-    assert.deepEqual(edited[2], commands[3]);
+    if (parentCode === 101) {
+      assert.equal(edited.length, 4);
+      assert.deepEqual(edited[0].parameters, ['Face', 0, 0, 2]);
+      assert.deepEqual(edited[1], { ...commands[1], parameters: ['Updated'] });
+      assert.deepEqual(edited[2], commands[2]);
+      assert.deepEqual(edited[3], commands[3]);
+    } else {
+      assert.equal(edited.length, 3);
+      assert.deepEqual(edited[1], commands[2]);
+      assert.deepEqual(edited[2], commands[3]);
+    }
   }
 });
