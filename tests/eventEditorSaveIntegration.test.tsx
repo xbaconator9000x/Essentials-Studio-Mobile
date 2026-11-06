@@ -228,7 +228,9 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     fireEvent.change(textarea, { target: { value: "Edited from Android" } });
-    fireEvent.click(screen.getByRole("button", { name: "Done editing" }));
+    const finishButton = screen.getByRole("button", { name: "Done editing" });
+    fireEvent.pointerDown(finishButton);
+    fireEvent.click(finishButton);
 
     expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
     await screen.findByText("Edited from Android");

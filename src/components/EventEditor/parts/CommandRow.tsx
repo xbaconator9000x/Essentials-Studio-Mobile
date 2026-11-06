@@ -230,7 +230,6 @@ export function MultiLineBlock({
             </div>
             <button
               type="button"
-              onPointerDown={(e) => e.preventDefault()}
               onClick={() => {
                 commitLines(textareaRef.current?.value ?? "");
                 onStopEditing();
