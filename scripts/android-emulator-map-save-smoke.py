@@ -280,6 +280,15 @@ def command_text_is_visible(nodes: list[dict[str, str]], text: str) -> bool:
     return any(text in node.get("text", "") for node in nodes)
 
 
+def dialogue_edit_committed(nodes: list[dict[str, str]], text: str) -> bool:
+    return any(
+        text in node.get("text", "")
+        and "EditText" not in node.get("class", "")
+        and usable_bounds(node.get("bounds", "")) is not None
+        for node in nodes
+    )
+
+
 def remaining_input(current: str, expected: str) -> str:
     if not expected.startswith(current):
         raise AssertionError(
@@ -364,27 +373,23 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             )
             raise
 
-    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    # Enter commits CommandRow's inline input through its onKeyDown handler.
+    # Back merely hides/deactivates the Android keyboard and can leave the
+    # React editor focused, so tapping OK may race its onBlur state update.
+    run_adb("shell", "input", "keyevent", "KEYCODE_ENTER")
     deadline = time.monotonic() + 10
+    field_text = ""
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-input-committed")
-        field = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and node.get("bounds") == input_bounds
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
-        if field:
-            field_text = field.get("text", "")
-            if field_text == updated:
-                break
+        if dialogue_edit_committed(nodes, updated):
+            break
         time.sleep(0.5)
-    if field_text != updated:
+    else:
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
         )
         raise AssertionError(
-            f"Dialogue input stopped at {field_text!r}, expected {updated!r}"
+            f"Dialogue edit did not leave its input field with committed text {updated!r}"
         )
 
     deadline = time.monotonic() + 12
@@ -593,6 +598,14 @@ def selftest() -> None:
         "bounds": "[0,0][0,0]",
     }])
     assert not save_all_success_visible([])
+    assert dialogue_edit_committed([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
+    ], "Edited synthetic dialogue")
+    assert not dialogue_edit_committed([
+        {"text": "Edited synthetic dialogue", "class": "android.widget.EditText",
+         "bounds": "[1015,385][1792,441]"},
+    ], "Edited synthetic dialogue")
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
