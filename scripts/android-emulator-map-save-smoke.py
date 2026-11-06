@@ -396,10 +396,8 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             f"Dialogue edit did not leave its input field with committed text {updated!r}"
         )
 
-    # Enter commits the React command but Android may leave the soft keyboard
-    # covering the event footer. Back now dismisses the IME after the input
-    # unmounted; verify the modal and committed command survived before OK.
-    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    # Enter commits the React command and may also dismiss Android's keyboard.
+    # Do not send Back here: once the IME is gone it closes the event editor.
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-edited")
