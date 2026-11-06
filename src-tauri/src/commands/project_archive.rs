@@ -1244,8 +1244,8 @@ mod archive_roundtrip_tests {
     use super::{extract_archive, export_zip, finish_import, unique_id};
     use crate::marshal::types::{RubyObject, RubyString, RubyValue};
     use crate::models::{
-        EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveRoute, RpgEvent,
-        RpgMap,
+        EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveCommand, MoveRoute,
+        RpgEvent, RpgMap,
     };
     use sha2::{Digest, Sha256};
     use std::fs::{self, File};
@@ -1316,7 +1316,8 @@ mod archive_roundtrip_tests {
         let page = event.get("pages")?.as_array()?.first()?.as_object()?;
         page.get("list")?
             .as_array()?
-            .first()?
+            .iter()
+            .find(|command| command.as_object().and_then(|obj| obj.get_int("code")) == Some(401))?
             .as_object()?
             .get("plugin_metadata")
     }
@@ -1404,7 +1405,14 @@ mod archive_roundtrip_tests {
                 y: 1,
                 pages: vec![EventPage {
                     source_index: None,
-                    condition: EventCondition::default(),
+                    condition: EventCondition {
+                        switch1_valid: true,
+                        switch2_valid: false,
+                        variable_valid: false,
+                        self_switch_valid: false,
+                        switch1_id: 2,
+                        ..EventCondition::default()
+                    },
                     graphic: EventGraphic {
                         character_name: "SyntheticGuide".into(),
                         ..EventGraphic::default()
@@ -1412,19 +1420,51 @@ mod archive_roundtrip_tests {
                     move_type: 0,
                     move_speed: 3,
                     move_frequency: 3,
-                    move_route: MoveRoute::default(),
+                    move_route: MoveRoute {
+                        repeat: true,
+                        skippable: false,
+                        list: vec![
+                            MoveCommand {
+                                code: 1,
+                                parameters: vec![],
+                            },
+                            MoveCommand {
+                                code: 0,
+                                parameters: vec![],
+                            },
+                        ],
+                    },
                     walk_anime: true,
                     step_anime: false,
                     direction_fix: false,
                     through: false,
                     always_on_top: false,
                     trigger: 0,
-                    list: vec![EventCommand {
-                        code: 101,
-                        indent: 0,
-                        parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
-                        source_index: None,
-                    }],
+                    list: vec![
+                        EventCommand {
+                            code: 101,
+                            indent: 0,
+                            parameters: vec![
+                                serde_json::Value::String(String::new()),
+                                serde_json::Value::Number(0.into()),
+                                serde_json::Value::Number(0.into()),
+                                serde_json::Value::Number(2.into()),
+                            ],
+                            source_index: None,
+                        },
+                        EventCommand {
+                            code: 401,
+                            indent: 0,
+                            parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
+                            source_index: None,
+                        },
+                        EventCommand {
+                            code: 0,
+                            indent: 0,
+                            parameters: vec![],
+                            source_index: None,
+                        },
+                    ],
                 }],
             },
         );
@@ -1471,7 +1511,7 @@ mod archive_roundtrip_tests {
         else {
             panic!("RPG::Event::Page @list must serialize as an array")
         };
-        let RubyValue::Object(command) = &mut commands[0] else {
+        let RubyValue::Object(command) = &mut commands[1] else {
             panic!("RPG::EventCommand fixture must serialize as an object")
         };
         command.instance_vars.push((
@@ -1838,9 +1878,22 @@ mod archive_roundtrip_tests {
                     .expect("load genuine Marshal event");
             assert_eq!(event.name, "Synthetic Guide");
             assert_eq!(event.pages[0].list[0].code, 101);
+            assert_eq!(event.pages[0].list[0].parameters, vec![
+                serde_json::Value::String(String::new()),
+                serde_json::Value::Number(0.into()),
+                serde_json::Value::Number(0.into()),
+                serde_json::Value::Number(2.into()),
+            ]);
+            assert_eq!(event.pages[0].list[1].code, 401);
             assert_eq!(
-                event.pages[0].list[0].parameters[0],
+                event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Synthetic dialogue".into())
+            );
+            assert!(event.pages[0].condition.switch1_valid);
+            assert_eq!(event.pages[0].condition.switch1_id, 2);
+            assert_eq!(
+                event.pages[0].move_route.list.iter().map(|command| command.code).collect::<Vec<_>>(),
+                vec![1, 0]
             );
 
             // Decode both nonempty zlib-compressed Ruby scripts through the
@@ -1861,7 +1914,7 @@ mod archive_roundtrip_tests {
 
             // Exercise the actual event-save path, not just read-only parsing.
             let mut edited_event = event;
-            edited_event.pages[0].list[0].parameters[0] =
+            edited_event.pages[0].list[1].parameters[0] =
                 serde_json::Value::String("Edited dialogue".into());
             crate::commands::project::save_event(
                 project.path.clone(), 1, edited_event,
@@ -1870,7 +1923,16 @@ mod archive_roundtrip_tests {
                 project.path.clone(), 1, 7,
             ).await.expect("reopen edited event");
             assert_eq!(
-                saved_event.pages[0].list[0].parameters[0],
+                saved_event.pages[0].list[0].parameters,
+                vec![
+                    serde_json::Value::String(String::new()),
+                    serde_json::Value::Number(0.into()),
+                    serde_json::Value::Number(0.into()),
+                    serde_json::Value::Number(2.into()),
+                ]
+            );
+            assert_eq!(
+                saved_event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
 
@@ -1913,8 +1975,10 @@ mod archive_roundtrip_tests {
                     .expect("read untouched event back");
             assert_eq!(event_readback.name, "Synthetic Guide");
             assert_eq!(event_readback.pages[0].list[0].code, 101);
+            assert_eq!(event_readback.pages[0].list[1].code, 401);
+            assert_eq!(event_readback.pages[0].list[0].parameters[0], serde_json::Value::String(String::new()));
             assert_eq!(
-                event_readback.pages[0].list[0].parameters[0],
+                event_readback.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
         });
@@ -2003,7 +2067,7 @@ mod archive_roundtrip_tests {
             .await
             .expect("load edited event from reimported ZIP");
             assert_eq!(
-                reopened_event.pages[0].list[0].parameters[0],
+                reopened_event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
             let reopened_pbs = crate::commands::pbs::load_pbs_file(
@@ -2147,7 +2211,7 @@ mod archive_roundtrip_tests {
             assert_eq!(map.tiles[4], 777);
             let mut event = crate::commands::project::load_event(gen2_path.clone(), 1, 7)
                 .await.unwrap();
-            event.pages[0].list[0].parameters[0] =
+            event.pages[0].list[1].parameters[0] =
                 serde_json::Value::String("Second generation dialogue".into());
             crate::commands::project::save_event(gen2_path.clone(), 1, event).await.unwrap();
             let mut pbs = crate::commands::pbs::load_pbs_file(
@@ -2180,7 +2244,7 @@ mod archive_roundtrip_tests {
             let event = crate::commands::project::load_event(gen3_path.clone(), 1, 7)
                 .await.unwrap();
             assert_eq!(
-                event.pages[0].list[0].parameters[0],
+                event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Second generation dialogue".into())
             );
             let pbs = crate::commands::pbs::load_pbs_file(

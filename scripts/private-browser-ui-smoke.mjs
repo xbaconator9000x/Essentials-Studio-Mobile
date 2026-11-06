@@ -178,7 +178,7 @@ try {
   if (probe.hasContinuation) {
     const originalList = probe.event.pages[probe.pageIndex].list;
     const lines = [updatedDialogue];
-    for (let i = probe.commandIndex + 1; originalList[i]?.code === 401; i++) {
+    for (let i = probe.commandIndex + 2; originalList[i]?.code === 401; i++) {
       lines.push(String(originalList[i].parameters[0] ?? ""));
     }
     await eventEditor.locator(".event-command-block").filter({ hasText: "Show Text" }).first().dblclick();

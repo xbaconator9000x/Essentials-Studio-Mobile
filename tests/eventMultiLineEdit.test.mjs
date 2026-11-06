@@ -5,32 +5,49 @@ import { toVisualBlocks, getBlockEnd } from '../src/components/EventEditor/parts
 
 const commands = () => [
   { code: 111, indent: 0, parameters: [1], unknown: 'before' },
-  { code: 101, indent: 1, parameters: ['Old', 'opaque-parent'], __raw: { retain: true } },
+  { code: 101, indent: 1, parameters: ['Face', 2, 1, 2], __raw: { retain: true } },
   { code: 401, indent: 1, parameters: ['Continuation', 'opaque-child'], __extra: [4, 5] },
   { code: 0, indent: 0, parameters: [], unknown: 'after' },
 ];
 
-test('editing first line preserves every unrelated field and continuation', () => {
+test('editing Show Text preserves header metadata and changes the first XP text continuation', () => {
   const original = commands();
   const expected = structuredClone(original);
-  expected[1].parameters[0] = 'Edited';
+  expected[2].parameters[0] = 'Edited';
   assert.deepEqual(replaceMultiLineBlock(original, 1, ['Edited', 'Continuation'], 401), expected);
-  assert.equal(original[1].parameters[0], 'Old');
+  assert.deepEqual(original[1].parameters, ['Face', 2, 1, 2]);
+  assert.equal(original[2].parameters[0], 'Continuation');
 });
 
 test('appending a continuation preserves existing command metadata', () => {
   const output = replaceMultiLineBlock(commands(), 1, ['Edited', 'Continuation', 'New'], 401);
-  assert.equal(output.length, 5);
+  assert.equal(output.length, 6);
   assert.deepEqual(output[2].__extra, [4, 5]);
-  assert.deepEqual(output[3], { code: 401, indent: 1, parameters: ['New'] });
-  assert.equal(output[4].unknown, 'after');
+  assert.deepEqual(output[4], { code: 401, indent: 1, parameters: ['New'] });
+  assert.equal(output[5].unknown, 'after');
 });
 
 test('removing continuation deletes only that command', () => {
   const output = replaceMultiLineBlock(commands(), 1, ['Edited'], 401);
-  assert.equal(output.length, 3);
+  assert.equal(output.length, 4);
   assert.deepEqual(output[1].__raw, { retain: true });
-  assert.equal(output[2].unknown, 'after');
+  assert.equal(output[2].parameters[0], 'Edited');
+  assert.equal(output[3].unknown, 'after');
+});
+
+test('creating text in an empty Show Text block preserves the four-field XP header', () => {
+  const original = [
+    { code: 101, indent: 0, parameters: ['', 0, 0, 2], source_index: 0 },
+    { code: 0, indent: 0, parameters: [], source_index: 1 },
+  ];
+  const output = replaceMultiLineBlock(original, 0, ['First line', 'Second line'], 401);
+  assert.deepEqual(output, [
+    original[0],
+    { code: 401, indent: 0, parameters: ['First line'] },
+    { code: 401, indent: 0, parameters: ['Second line'] },
+    original[1],
+  ]);
+  assert.deepEqual(toVisualBlocks(original).map(block => block.kind), ['multi', 'single']);
 });
 
 test('invalid edits fail closed', () => {
@@ -42,7 +59,7 @@ test('invalid edits fail closed', () => {
 
 test('same-code continuation at a different RMXP indent remains independent', () => {
   const original = [
-    { code: 101, indent: 0, parameters: ['First'], opaque: { parent: true } },
+    { code: 101, indent: 0, parameters: ['Face', 0, 0, 2], opaque: { parent: true } },
     { code: 401, indent: 0, parameters: ['Continuation'], opaque: { sameDepth: true } },
     { code: 401, indent: 1, parameters: ['Nested or malformed continuation'], opaque: { preserve: true } },
     { code: 111, indent: 1, parameters: [1], opaque: { after: true } },
@@ -55,7 +72,8 @@ test('same-code continuation at a different RMXP indent remains independent', ()
   assert.equal(getBlockEnd(original, 0), 1);
   const edited = replaceMultiLineBlock(original, 0, ['Edited', 'Continuation'], 401);
   assert.deepEqual(edited.slice(2), original.slice(2));
-  assert.equal(edited[0].parameters[0], 'Edited');
+  assert.deepEqual(edited[0].parameters, ['Face', 0, 0, 2]);
+  assert.equal(edited[1].parameters[0], 'Edited');
   assert.deepEqual(edited[0].opaque, original[0].opaque);
   assert.equal(original[0].parameters[0], 'First');
 });

@@ -166,10 +166,12 @@ export function MultiLineBlock({
 }) {
   const def = getCommandDef(block.cmd.code);
   const icon = getCommandIcon(block.cmd.code);
-  const allLines = [
-    String(block.cmd.parameters[0] ?? ""),
-    ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
-  ];
+  const allLines = block.cmd.code === 101
+    ? block.contCmds.map((c) => String(c.parameters[0] ?? ""))
+    : [
+        String(block.cmd.parameters[0] ?? ""),
+        ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
+      ];
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;

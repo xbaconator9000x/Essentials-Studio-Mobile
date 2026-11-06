@@ -114,7 +114,10 @@ try {
   assert.ok(eventInfo && Number.isInteger(eventInfo.x) && Number.isInteger(eventInfo.y),
     "Synthetic map must expose event 7 with integer coordinates");
   const dialogueBefore = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueBefore.pages[0].list[0].parameters[0], "Synthetic dialogue");
+  assert.equal(dialogueBefore.pages[0].list[0].code, 101);
+  assert.deepEqual(dialogueBefore.pages[0].list[0].parameters, ["", 0, 0, 2]);
+  assert.equal(dialogueBefore.pages[0].list[1].code, 401);
+  assert.equal(dialogueBefore.pages[0].list[1].parameters[0], "Synthetic dialogue");
   await page.getByRole("button", { name: "Ev", exact: true }).click();
   await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
@@ -133,7 +136,9 @@ try {
   await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], updatedDialogue,
+  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
+    "Show Text face graphic must remain unchanged");
+  assert.equal(dialogueAfter.pages[0].list[1].parameters[0], updatedDialogue,
     "Dialogue edited through React must persist in native RMXP event commands");
   // Saving the event must not undo the tile edit saved earlier.
   const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
@@ -174,7 +179,8 @@ try {
   const mapAfterPbs = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(mapAfterPbs.tiles[differences[0].index], differences[0].tile);
   const eventAfterPbs = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], updatedDialogue);
+  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], "");
+  assert.equal(eventAfterPbs.pages[0].list[1].parameters[0], updatedDialogue);
   await page.screenshot({ path: join(evidence, "browser-pbs-saved.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Export ZIP..." }).click();

@@ -59,8 +59,9 @@ function importedEvent(): RpgEvent {
       always_on_top: false,
       trigger: 0,
       list: [
-        { code: 101, indent: 0, parameters: ["Original dialogue"], source_index: 0 },
-        { code: 0, indent: 0, parameters: [], source_index: 1 },
+        { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
+        { code: 401, indent: 0, parameters: ["Original dialogue"], source_index: 1 },
+        { code: 0, indent: 0, parameters: [], source_index: 2 },
       ],
     }],
   };
@@ -124,8 +125,8 @@ beforeEach(() => {
   diskEvent = importedEvent();
   native.loadEvent.mockImplementation(async () => structuredClone(diskEvent));
   native.saveEvent.mockImplementation(async (_path: string, _mapId: number, event: RpgEvent) => {
-    const textCommand = event.pages[0]?.list.find((command) => command.code === 101);
-    if (!textCommand || textCommand.source_index !== 0) {
+    const textCommand = event.pages[0]?.list.find((command) => command.code === 401);
+    if (!textCommand || textCommand.source_index !== 1) {
       throw new Error("Ambiguous same-code replacement; save aborted");
     }
     diskEvent = structuredClone(event);
@@ -160,8 +161,10 @@ describe("rendered event editor Save All integration", () => {
 
     expect(native.saveEvent).toHaveBeenCalledTimes(1);
     const submitted = native.saveEvent.mock.calls[0][2] as RpgEvent;
-    expect(submitted.pages[0].list[0].parameters[0]).toBe("Edited dialogue");
+    expect(submitted.pages[0].list[0].parameters).toEqual(["", 0, 0, 2]);
     expect(submitted.pages[0].list[0].source_index).toBe(0);
+    expect(submitted.pages[0].list[1].parameters[0]).toBe("Edited dialogue");
+    expect(submitted.pages[0].list[1].source_index).toBe(1);
     expect(native.loadEvent).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "×" }));
@@ -169,16 +172,19 @@ describe("rendered event editor Save All integration", () => {
     await screen.findByText("Edited dialogue");
 
     expect(native.loadEvent).toHaveBeenCalledTimes(2);
-    expect(diskEvent.pages[0].list[0].parameters[0]).toBe("Edited dialogue");
+    expect(diskEvent.pages[0].list[0].parameters).toEqual(["", 0, 0, 2]);
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited dialogue");
     expect(diskEvent.pages[0].list[0].source_index).toBe(0);
+    expect(diskEvent.pages[0].list[1].source_index).toBe(1);
   });
 
   it("shows and edits every line in a multi-step Show Text command", async () => {
     diskEvent.pages[0].list = [
-      { code: 101, indent: 0, parameters: ["A long opening dialogue line for a narrow phone screen"], source_index: 0 },
-      { code: 401, indent: 0, parameters: ["A second dialogue line that must remain visible"], source_index: 1 },
-      { code: 401, indent: 0, parameters: ["The final dialogue line is preserved too"], source_index: 2 },
-      { code: 0, indent: 0, parameters: [], source_index: 3 },
+      { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["A long opening dialogue line for a narrow phone screen"], source_index: 1 },
+      { code: 401, indent: 0, parameters: ["A second dialogue line that must remain visible"], source_index: 2 },
+      { code: 401, indent: 0, parameters: ["The final dialogue line is preserved too"], source_index: 3 },
+      { code: 0, indent: 0, parameters: [], source_index: 4 },
     ];
     renderProject();
 
@@ -200,8 +206,9 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save All" }));
     await screen.findByRole("status");
 
-    expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual([101, 401, 401, 0]);
-    expect(diskEvent.pages[0].list.slice(0, 3).map((command) => command.parameters[0])).toEqual([
+    expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual([101, 401, 401, 401, 0]);
+    expect(diskEvent.pages[0].list[0].parameters).toEqual(["Face", 1, 0, 2]);
+    expect(diskEvent.pages[0].list.slice(1, 4).map((command) => command.parameters[0])).toEqual([
       "Edited opening line",
       "Edited middle line",
       "Edited final line",
@@ -222,7 +229,8 @@ describe("rendered event editor Save All integration", () => {
     await screen.findByRole("button", { name: "Open event" });
 
     expect(native.saveEvent).toHaveBeenCalledTimes(1);
-    expect(diskEvent.pages[0].list[0].parameters[0]).toBe("Edited dialogue");
+    expect(diskEvent.pages[0].list[0].parameters).toEqual(["", 0, 0, 2]);
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited dialogue");
     expect(screen.queryByRole("button", { name: "OK" })).toBeNull();
   });
 
