@@ -377,10 +377,10 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             )
             raise
 
-    # Enter commits CommandRow's inline input through its onKeyDown handler.
-    # Back merely hides/deactivates the Android keyboard and can leave the
-    # React editor focused, so tapping OK may race its onBlur state update.
-    run_adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+    # Show Text is a multiline editor; Enter inserts another dialogue line.
+    # Escape is the documented finish action and commits the textarea before
+    # dismissing the Android keyboard.
+    run_adb("shell", "input", "keyevent", "KEYCODE_ESCAPE")
     deadline = time.monotonic() + 10
     field_text = ""
     while time.monotonic() < deadline:
@@ -396,7 +396,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             f"Dialogue edit did not leave its input field with committed text {updated!r}"
         )
 
-    # Enter commits the React command and may also dismiss Android's keyboard.
+    # Escape commits the React command and may also dismiss Android's keyboard.
     # Do not send Back here: once the IME is gone it closes the event editor.
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:

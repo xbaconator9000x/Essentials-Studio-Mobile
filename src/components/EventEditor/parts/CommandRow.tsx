@@ -172,6 +172,10 @@ export function MultiLineBlock({
         String(block.cmd.parameters[0] ?? ""),
         ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
       ];
+  const commitLines = (value: string) => {
+    const lines = value.split("\n");
+    onUpdateLines(lines.length > 0 ? lines : [""]);
+  };
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -205,12 +209,16 @@ export function MultiLineBlock({
             autoFocus
             rows={Math.max(2, allLines.length + 1)}
             onBlur={(e) => {
-              const lines = e.target.value.split("\n").filter((_, idx, arr) => idx < arr.length || arr[idx] !== "");
-              onUpdateLines(lines.length > 0 ? lines : [""]);
+              commitLines(e.target.value);
               onStopEditing();
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") { onStopEditing(); e.preventDefault(); e.stopPropagation(); }
+              if (e.key === "Escape") {
+                commitLines(e.currentTarget.value);
+                onStopEditing();
+                e.preventDefault();
+                e.stopPropagation();
+              }
             }}
           />
           <div style={{ fontSize: 9, color: "#8c8fa1", marginTop: 2 }}>

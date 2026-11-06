@@ -178,7 +178,7 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].source_index).toBe(1);
   });
 
-  it("shows and edits every line in a multi-step Show Text command", async () => {
+  it("shows and edits every line in a multi-step Show Text command and commits with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
       { code: 401, indent: 0, parameters: ["A long opening dialogue line for a narrow phone screen"], source_index: 1 },
@@ -200,7 +200,8 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.change(textarea, {
       target: { value: "Edited opening line\nEdited middle line\nEdited final line" },
     });
-    fireEvent.blur(textarea);
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
     await screen.findByText("Edited middle line");
     await screen.findByText("Edited final line");
     fireEvent.click(screen.getByRole("button", { name: "Save All" }));
