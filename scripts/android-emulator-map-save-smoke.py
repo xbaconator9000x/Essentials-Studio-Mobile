@@ -289,6 +289,23 @@ def dialogue_edit_committed(nodes: list[dict[str, str]], text: str) -> bool:
     )
 
 
+def is_gboard_audio_permission_prompt(nodes: list[dict[str, str]]) -> bool:
+    return any(
+        node.get("package") == "com.google.android.permissioncontroller"
+        and node.get("text", "").strip() == "Allow Gboard to record audio?"
+        for node in nodes
+    )
+
+
+def gboard_audio_permission_deny_button(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+    if not is_gboard_audio_permission_prompt(nodes):
+        return None
+    button = find_button(nodes, "Deny")
+    if button is None:
+        raise AssertionError("Gboard audio permission prompt has no visible Deny button")
+    return button
+
+
 def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
     return dialogue_edit_committed(nodes, text) and find_button(nodes, "OK") is not None
 
@@ -379,23 +396,33 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
 
     # Finish with the visible editor action; Android/IME escape handling differs
     # across devices and can dismiss the keyboard without reaching the WebView.
-    nodes = helper.dump_ui(evidence, "event-dialogue-before-finish")
-    finish_button = find_button(nodes, "Done editing")
-    if finish_button is None:
-        raise AssertionError("Visible Done editing button was not found")
-    helper.tap(helper.center(finish_button["bounds"]))
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 12
+    finish_taps = 0
     while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "event-dialogue-input-committed")
+        nodes = helper.dump_ui(evidence, "event-dialogue-finishing")
+        permission_deny = gboard_audio_permission_deny_button(nodes)
+        if permission_deny is not None:
+            (evidence / "gboard-audio-permission.png").write_bytes(
+                run_adb("exec-out", "screencap", "-p")
+            )
+            helper.tap(helper.center(permission_deny["bounds"]))
+            finish_taps = 0
+            time.sleep(0.5)
+            continue
         if dialogue_edit_committed(nodes, updated):
             break
+        finish_button = find_button(nodes, "Done editing")
+        if finish_button is not None and finish_taps < 3:
+            helper.tap(helper.center(finish_button["bounds"]))
+            finish_taps += 1
         time.sleep(0.5)
     else:
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
         )
         raise AssertionError(
-            f"Dialogue edit did not leave its input field with committed text {updated!r}"
+            f"Dialogue edit did not leave its input field with committed text {updated!r}; "
+            f"Done editing taps={finish_taps}"
         )
 
     # Do not send Back here: once the IME is gone it closes the event editor.
@@ -623,6 +650,33 @@ def selftest() -> None:
         {"text": "Edited synthetic dialogue", "class": "android.widget.EditText",
          "bounds": "[1015,385][1792,441]"},
     ], "Edited synthetic dialogue")
+    assert is_gboard_audio_permission_prompt([
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.google.android.permissioncontroller"},
+    ])
+    assert gboard_audio_permission_deny_button([
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.google.android.permissioncontroller"},
+        {"text": "Deny", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[356,787][1437,934]"},
+    ]) is not None
+    try:
+        gboard_audio_permission_deny_button([
+            {"text": "Allow Gboard to record audio?",
+             "package": "com.google.android.permissioncontroller"},
+        ])
+    except AssertionError as exc:
+        assert "no visible Deny button" in str(exc)
+    else:
+        raise AssertionError("Gboard permission prompt without Deny action was accepted")
+    unrelated_permission = [
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.android.permissioncontroller"},
+        {"text": "Deny", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[356,787][1437,934]"},
+    ]
+    assert not is_gboard_audio_permission_prompt(unrelated_permission)
+    assert gboard_audio_permission_deny_button(unrelated_permission) is None
     assert dialogue_ready_to_save([
         {"text": "Edited synthetic dialogue", "class": "android.view.View",
          "bounds": "[735,378][1794,443]"},
