@@ -838,10 +838,13 @@ function AppContent() {
   // Close the event editor and reload the current map so any saved changes to the
   // event (graphic, name, position) are reflected on the canvas immediately.
   const handleCloseEventEditor = useCallback(async () => {
+    console.info("[event-save] close callback received");
     setEditingEvent(null);
     const mapId = currentMapIdRef.current;
     if (mapId !== null) {
+      console.info("[event-save] refreshing map after event close", { mapId });
       await handleSelectMap(mapId, true);
+      console.info("[event-save] map refresh after event close completed", { mapId });
     }
   }, [handleSelectMap]);
 

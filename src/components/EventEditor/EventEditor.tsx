@@ -176,40 +176,60 @@ export function EventEditor({
   // not of later page/command edits made while the write is pending.
   const persist = useCallback(async (closeOnSuccess: boolean, propagateErrors = false) => {
     if (savingRef.current) {
+      console.info("[event-save] rejected: write already in progress", { eventId, mapId });
       if (propagateErrors) throw new Error("Event save already in progress");
       return;
     }
     if (!event) {
+      console.info("[event-save] rejected: event data not loaded", { eventId, mapId, dirty });
       if (propagateErrors && dirty) throw new Error("Event data is not loaded");
       return;
     }
     if (revisionRef.current !== renderRevision) {
+      console.info("[event-save] rejected: render revision pending", {
+        eventId, mapId, revision: revisionRef.current, renderRevision,
+      });
       setDirty(true);
       setSaveError("An event edit is still updating. Save again once it appears.");
       if (propagateErrors) throw new Error("Event edit is still updating; save cancelled");
       return;
     }
     if (!dirty) {
-      if (closeOnSuccess) onClose();
+      console.info("[event-save] no dirty edits", { eventId, mapId, closeOnSuccess });
+      if (closeOnSuccess) {
+        console.info("[event-save] requesting close without write", { eventId, mapId });
+        onClose();
+      }
       return;
     }
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    console.info("[event-save] native write started", {
+      eventId, mapId, revision: renderRevision, closeOnSuccess,
+    });
     try {
       const current = await saveEventSnapshot(
         event, renderRevision, () => revisionRef.current,
         (snapshot) => saveEvent(projectPath, mapId, snapshot),
       );
       if (current) {
+        console.info("[event-save] native write completed", { eventId, mapId, revision: renderRevision });
         setDirty(false);
-        if (closeOnSuccess) onClose();
+        if (closeOnSuccess) {
+          console.info("[event-save] requesting close after write", { eventId, mapId });
+          onClose();
+        }
       } else {
+        console.info("[event-save] write completed but newer edits remain", { eventId, mapId });
         setDirty(true);
         setSaveError("Newer event edits remain unsaved. Save again before closing.");
         if (propagateErrors) throw new Error("Newer event edits remain unsaved");
       }
     } catch (err) {
+      console.error("[event-save] native write failed", {
+        eventId, mapId, errorType: err instanceof Error ? err.name : typeof err,
+      });
       setDirty(true);
       setSaveError(`Save failed: ${String(err)}`);
       if (propagateErrors) throw err;
@@ -217,7 +237,7 @@ export function EventEditor({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [event, dirty, renderRevision, projectPath, mapId, onClose]);
+  }, [event, dirty, renderRevision, projectPath, mapId, eventId, onClose]);
 
   // Include open event dialogs in Save All, project switching and ZIP export.
   // Unlike a button save, a global save must propagate failures to its caller.
@@ -227,7 +247,10 @@ export function EventEditor({
   }, [onClose]);
   useEditorRegistration(`event-${projectPath}-${mapId}-${eventId}`, saveForProject, discardForProject, dirty);
 
-  const handleOk = useCallback(() => { void persist(true); }, [persist]);
+  const handleOk = useCallback(() => {
+    console.info("[event-save] OK activated", { eventId, mapId });
+    void persist(true);
+  }, [eventId, mapId, persist]);
   const handleSave = useCallback(() => { void persist(false); }, [persist]);
 
   // Do not discard/close while the native event write is still pending.

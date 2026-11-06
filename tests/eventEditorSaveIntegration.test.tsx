@@ -173,6 +173,43 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[0].source_index).toBe(0);
   });
 
+  it("saves the edited event and closes it from the explicit OK action", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByText("Original dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByDisplayValue("Original dialogue");
+    fireEvent.change(editor, { target: { value: "Edited dialogue" } });
+    fireEvent.blur(editor);
+    await screen.findByText("Edited dialogue");
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByRole("button", { name: "Open event" });
+
+    expect(native.saveEvent).toHaveBeenCalledTimes(1);
+    expect(diskEvent.pages[0].list[0].parameters[0]).toBe("Edited dialogue");
+    expect(screen.queryByRole("button", { name: "OK" })).toBeNull();
+  });
+
+  it("keeps the editor open when the OK action cannot persist the event", async () => {
+    native.saveEvent.mockRejectedValueOnce(new Error("synthetic write failure"));
+    renderProject();
+
+    fireEvent.click(await screen.findByText("Original dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByDisplayValue("Original dialogue");
+    fireEvent.change(editor, { target: { value: "Edited dialogue" } });
+    fireEvent.blur(editor);
+    await screen.findByText("Edited dialogue");
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByText(/Save failed: Error: synthetic write failure/);
+
+    expect(native.saveEvent).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "OK" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open event" })).toBeNull();
+  });
+
   it("rejects a rendered same-code replacement and shows failure without success", async () => {
     renderProject();
 
