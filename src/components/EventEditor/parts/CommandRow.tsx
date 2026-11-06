@@ -33,13 +33,11 @@ export function CommandRow({
   pbsIndex?: PbsIndex;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const finishActionRef = useRef(false);
   const def = getCommandDef(command.code);
   const summary = summarizeCommand(command.code, command.parameters, mapInfos, switchNames, variableNames);
   const finishEditing = () => {
     onParamChange(0, inputRef.current?.value ?? String(command.parameters[0] ?? ""));
     onStopEditing();
-    finishActionRef.current = false;
   };
 
   let rowClass = "event-command-row";
@@ -78,9 +76,6 @@ export function CommandRow({
           defaultValue={String(command.parameters[0] ?? "")}
           autoFocus
           onBlur={(e) => {
-            if (finishActionRef.current ||
-              (e.relatedTarget instanceof HTMLElement &&
-                e.relatedTarget.closest(".event-command-edit-actions"))) return;
             onParamChange(0, e.target.value);
             onStopEditing();
           }}
@@ -90,7 +85,6 @@ export function CommandRow({
               e.preventDefault();
             }
             if (e.key === "Escape") {
-              finishActionRef.current = false;
               onStopEditing();
             }
           }}
@@ -100,7 +94,6 @@ export function CommandRow({
           <button
             type="button"
             className="event-command-done"
-            onPointerDown={() => { finishActionRef.current = true; }}
             onClick={(e) => {
               e.stopPropagation();
               finishEditing();
@@ -203,7 +196,6 @@ export function MultiLineBlock({
     onUpdateLines(lines.length > 0 ? lines : [""]);
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const finishActionRef = useRef(false);
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -238,9 +230,6 @@ export function MultiLineBlock({
             autoFocus
             rows={Math.max(2, allLines.length + 1)}
             onBlur={(e) => {
-              if (finishActionRef.current ||
-                (e.relatedTarget instanceof HTMLElement &&
-                  e.relatedTarget.closest(".event-command-edit-actions"))) return;
               commitLines(e.target.value);
               onStopEditing();
             }}
@@ -260,10 +249,8 @@ export function MultiLineBlock({
             <button
               type="button"
               className="event-command-done"
-              onPointerDown={() => { finishActionRef.current = true; }}
               onClick={() => {
                 commitLines(textareaRef.current?.value ?? "");
-                finishActionRef.current = false;
                 onStopEditing();
               }}
             >

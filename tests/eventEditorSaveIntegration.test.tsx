@@ -216,7 +216,7 @@ describe("rendered event editor Save All integration", () => {
     ]);
   });
 
-  it("commits multiline Show Text with the explicit Done editing action", async () => {
+  it("commits multiline Show Text on touch pointer-down without requiring a click", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
       { code: 401, indent: 0, parameters: ["Dialogue before edit"], source_index: 1 },
@@ -231,14 +231,15 @@ describe("rendered event editor Save All integration", () => {
     const finishButton = screen.getByRole("button", { name: "Done editing" });
     fireEvent.pointerDown(finishButton);
     fireEvent.blur(textarea, { relatedTarget: finishButton });
-    expect(screen.getByRole("textbox", { name: "Show Text dialogue lines" })).toBeTruthy();
-    fireEvent.click(finishButton);
 
     expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
     await screen.findByText("Edited from Android");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByRole("status");
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited from Android");
   });
 
-  it("offers a touch-friendly Done editing action for a single Show Text field", async () => {
+  it("commits a single Show Text field on touch pointer-down without requiring a click", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
       { code: 401, indent: 0, parameters: ["Original dialogue"], source_index: 1 },
@@ -253,8 +254,6 @@ describe("rendered event editor Save All integration", () => {
     const finishButton = screen.getByRole("button", { name: "Done editing" });
     fireEvent.pointerDown(finishButton);
     fireEvent.blur(input, { relatedTarget: finishButton });
-    expect(screen.getByDisplayValue("Edited single-line dialogue")).toBeTruthy();
-    fireEvent.click(finishButton);
 
     await screen.findByText("Edited single-line dialogue");
     expect(screen.queryByDisplayValue("Edited single-line dialogue")).toBeNull();

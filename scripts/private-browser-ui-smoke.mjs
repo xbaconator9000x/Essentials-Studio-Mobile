@@ -242,7 +242,7 @@ try {
   assert.equal(pbsAfter[0]?.fields?.find(field => field.key === "Name")?.value, replacement,
     "React PBS save did not persist through native backend");
   pbsSubstage = "close-editor";
-  await editor.getByRole("button", { name: "Save & close", exact: true }).click();
+  await editor.getByRole("button", { name: "OK", exact: true }).click();
   await editor.waitFor({ state: "hidden", timeout: 30_000 });
   pbsSubstage = null;
   result.stages.reactPbsSave = "passed";
