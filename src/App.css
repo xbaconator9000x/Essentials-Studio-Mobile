@@ -399,6 +399,29 @@ body,
     line-height: 1.45;
   }
 
+  .app-mobile-project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .app-mobile-project-list button {
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface1);
+    border-radius: 8px;
+    background: var(--color-surface0);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .app-mobile-project-list button[aria-current="page"] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
   .app-body--mobile-projects .map-tree-panel {
     width: 100%;
     min-width: 0;

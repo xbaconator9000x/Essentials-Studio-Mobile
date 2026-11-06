@@ -33,7 +33,12 @@ import { importAndOpenProject } from "./services/importOpenGuards";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
-import { getLastProjectPath, rememberLastProjectPath } from "./services/recentProject";
+import { confirmProjectSwitch as confirmProjectSwitchWithSave } from "./services/projectSwitchGuards";
+import {
+  getLastProjectPath,
+  getRecentProjectPaths,
+  rememberRecentProjectPath,
+} from "./services/recentProject";
 import { installEditorBackHandler } from "./services/editorBackNavigation";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
@@ -95,6 +100,7 @@ function AppContent() {
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [lastProjectPath, setLastProjectPath] = useState(getLastProjectPath);
+  const [recentProjectPaths, setRecentProjectPaths] = useState(getRecentProjectPaths);
   // A new Map on every App render invalidates project-scoped PBS loaders and
   // can reload Encounters/World panels while the user has unsaved edits.
   const pbsMapNames = useMemo(
@@ -379,18 +385,12 @@ function AppContent() {
 
   // A project switch must never silently unmount dirty event, map or PBS editors.
   // Cancel keeps the current project active; save failures also abort the switch.
-  const confirmProjectSwitch = useCallback(async (): Promise<boolean> => {
-    if (!projectRef.current || !hasUnsavedEdits()) return true;
-    const saveFirst = await confirmEditor("Save all unsaved changes before switching projects? Cancel keeps the current project open.");
-    if (!saveFirst) return false;
-    await saveAllWithLock();
-    // Allow React's editor registration effects to publish their clean state.
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-    if (hasUnsavedEdits()) {
-      throw new Error("New or unsaved edits remain after saving. Project switch cancelled.");
-    }
-    return true;
-  }, [saveAllWithLock, hasUnsavedEdits]);
+  const confirmProjectSwitch = useCallback(() => confirmProjectSwitchWithSave({
+    hasActiveProject: Boolean(projectRef.current),
+    hasUnsavedEdits,
+    confirm: confirmEditor,
+    saveAll: saveAllWithLock,
+  }), [saveAllWithLock, hasUnsavedEdits]);
 
   const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
     if (!skipSwitchGuard && !(await confirmProjectSwitch())) return;
@@ -428,8 +428,9 @@ function AppContent() {
       }
       projectRef.current = proj;
       setProject(proj);
-      rememberLastProjectPath(proj.path);
+      rememberRecentProjectPath(proj.path);
       setLastProjectPath(proj.path);
+      setRecentProjectPaths(getRecentProjectPaths());
       setMapData(initialMap);
       mapDataRef.current = initialMap;
       setTilesetInfo(initialTileset);
@@ -1185,6 +1186,30 @@ function AppContent() {
                 if (file) void handleImportProjectZip(file);
               }} />
           </label>
+          {recentProjectPaths.length > 1 && (
+            <nav className="app-mobile-project-list" aria-label="Recent projects">
+              <strong>Recent projects</strong>
+              {recentProjectPaths.map((path) => {
+                const name = path.split(/[\\/]/).filter(Boolean).at(-1) || "Project";
+                const active = path === project.path;
+                return (
+                  <button
+                    key={path}
+                    type="button"
+                    aria-current={active ? "page" : undefined}
+                    disabled={active || loading || saving}
+                    onClick={() => {
+                      void handleOpenProject(path).catch((cause) => {
+                        setError(`Could not switch project: ${String(cause)}`);
+                      });
+                    }}
+                  >
+                    {name}{active ? " · Current" : ""}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </section>
         {/* Left: Map tree */}
         <MapTreePanel
