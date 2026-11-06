@@ -34,6 +34,7 @@ import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { getLastProjectPath, rememberLastProjectPath } from "./services/recentProject";
+import { installEditorBackHandler } from "./services/editorBackNavigation";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -216,6 +217,11 @@ function AppContent() {
     window.addEventListener("popstate", handleBack);
     return () => window.removeEventListener("popstate", handleBack);
   }, [activeProjectPath, mobileLayout]);
+
+  useEffect(() => {
+    if (!activeProjectPath || mobileLayout || !editingEvent) return;
+    return installEditorBackHandler(window);
+  }, [activeProjectPath, editingEvent, mobileLayout]);
 
   useEffect(() => {
     const handleMobileEscape = (event: KeyboardEvent) => {

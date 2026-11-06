@@ -210,6 +210,15 @@ describe("rendered event editor Save All integration", () => {
     expect(screen.queryByRole("button", { name: "Open event" })).toBeNull();
   });
 
+  it("closes the reopened event editor when Escape is dispatched", async () => {
+    renderProject();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await screen.findByRole("button", { name: "Open event" });
+    expect(native.saveEvent).not.toHaveBeenCalled();
+  });
+
   it("rejects a rendered same-code replacement and shows failure without success", async () => {
     renderProject();
 
