@@ -289,6 +289,10 @@ def dialogue_edit_committed(nodes: list[dict[str, str]], text: str) -> bool:
     )
 
 
+def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
+    return dialogue_edit_committed(nodes, text) and find_button(nodes, "OK") is not None
+
+
 def remaining_input(current: str, expected: str) -> str:
     if not expected.startswith(current):
         raise AssertionError(
@@ -392,32 +396,46 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             f"Dialogue edit did not leave its input field with committed text {updated!r}"
         )
 
+    # Enter commits the React command but Android may leave the soft keyboard
+    # covering the event footer. Back now dismisses the IME after the input
+    # unmounted; verify the modal and committed command survived before OK.
+    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-edited")
-        if command_text_is_visible(nodes, updated):
+        if dialogue_ready_to_save(nodes, updated):
             (evidence / "event-dialogue-edited.png").write_bytes(
                 run_adb("exec-out", "screencap", "-p")
             )
             tap_named(nodes, "OK")
             return
         time.sleep(1)
-    raise AssertionError(f"Edited dialogue {updated!r} was not visible after input")
+    raise AssertionError(
+        f"Committed dialogue {updated!r} or visible OK action was lost while dismissing Android keyboard"
+    )
 
 
 def wait_for_map_after_event_save(evidence: Path):
     deadline = time.monotonic() + 30
+    last_nodes: list[dict[str, str]] = []
     while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "map-after-event-save")
-        if helper.editor_visible(nodes) and not any(
-            "Event [007] Synthetic Guide" in node.get("text", "") for node in nodes
+        last_nodes = helper.dump_ui(evidence, "map-after-event-save")
+        if helper.editor_visible(last_nodes) and not any(
+            "Event [007] Synthetic Guide" in node.get("text", "") for node in last_nodes
         ):
-            return nodes
-        if any(node.get("text", "").strip() == "Save failed"
-               for node in nodes):
-            raise AssertionError("Native event dialogue save failed")
+            return last_nodes
+        errors = [
+            node.get("text", "").strip() for node in last_nodes
+            if "Save failed" in node.get("text", "")
+            or "event edit" in node.get("text", "").lower()
+        ]
+        if errors:
+            raise AssertionError(f"Native event dialogue save did not complete: {errors!r}")
         time.sleep(1)
-    raise AssertionError("Event editor did not close after saving dialogue")
+    visible = [node.get("text", "").strip() for node in last_nodes if node.get("text")]
+    raise AssertionError(
+        f"Event editor did not close after saving dialogue; visible text={visible[-12:]!r}"
+    )
 
 
 def run(package: str, evidence: Path) -> None:
@@ -605,6 +623,16 @@ def selftest() -> None:
     assert not dialogue_edit_committed([
         {"text": "Edited synthetic dialogue", "class": "android.widget.EditText",
          "bounds": "[1015,385][1792,441]"},
+    ], "Edited synthetic dialogue")
+    assert dialogue_ready_to_save([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
+        {"text": "OK", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[1464,863][1598,945]"},
+    ], "Edited synthetic dialogue")
+    assert not dialogue_ready_to_save([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
     ], "Edited synthetic dialogue")
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
