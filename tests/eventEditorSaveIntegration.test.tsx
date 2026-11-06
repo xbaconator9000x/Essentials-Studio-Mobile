@@ -173,6 +173,41 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[0].source_index).toBe(0);
   });
 
+  it("shows and edits every line in a multi-step Show Text command", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["A long opening dialogue line for a narrow phone screen"], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["A second dialogue line that must remain visible"], source_index: 1 },
+      { code: 401, indent: 0, parameters: ["The final dialogue line is preserved too"], source_index: 2 },
+      { code: 0, indent: 0, parameters: [], source_index: 3 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByText("A long opening dialogue line for a narrow phone screen"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    expect((textarea as HTMLTextAreaElement).value).toBe([
+      "A long opening dialogue line for a narrow phone screen",
+      "A second dialogue line that must remain visible",
+      "The final dialogue line is preserved too",
+    ].join("\n"));
+
+    fireEvent.change(textarea, {
+      target: { value: "Edited opening line\nEdited middle line\nEdited final line" },
+    });
+    fireEvent.blur(textarea);
+    await screen.findByText("Edited middle line");
+    await screen.findByText("Edited final line");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByRole("status");
+
+    expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual([101, 401, 401, 0]);
+    expect(diskEvent.pages[0].list.slice(0, 3).map((command) => command.parameters[0])).toEqual([
+      "Edited opening line",
+      "Edited middle line",
+      "Edited final line",
+    ]);
+  });
+
   it("saves the edited event and closes it from the explicit OK action", async () => {
     renderProject();
 

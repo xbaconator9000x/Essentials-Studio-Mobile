@@ -603,8 +603,37 @@
   }
 
   .event-command-row {
-    min-height: 40px;
+    min-height: 44px;
     align-items: center;
+  }
+
+  .event-command-params {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  .event-command-cont-line {
+    padding-right: 8px;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
+  .event-command-edit-input,
+  .event-command-edit-textarea {
+    font-size: 16px;
+  }
+
+  .event-command-edit-input {
+    min-height: 44px;
+  }
+
+  .event-command-edit-textarea {
+    min-height: 120px;
   }
 
   .event-editor-footer {

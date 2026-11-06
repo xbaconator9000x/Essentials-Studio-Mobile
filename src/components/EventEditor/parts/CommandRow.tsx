@@ -198,6 +198,7 @@ export function MultiLineBlock({
         <div style={{ padding: "2px 12px 4px 34px" }}>
           <textarea
             className="event-command-edit-textarea"
+            aria-label={`${def.name} dialogue lines`}
             defaultValue={allLines.join("\n")}
             autoFocus
             rows={Math.max(2, allLines.length + 1)}
