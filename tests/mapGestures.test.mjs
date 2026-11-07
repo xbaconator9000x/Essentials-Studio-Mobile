@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clampMapViewport,
+  rasterizeTileLine,
   resolveMapTapTarget,
   TouchGestureMachine,
 } from "../src/services/mapGestures.ts";
@@ -20,6 +21,15 @@ test("tap stays a tap below the movement threshold; dragging pans without tappin
     type: "pan",
     deltaX: 15,
     deltaY: 0,
+    from: { x: 20, y: 20 },
+    point: { x: 35, y: 20 },
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 41, y: 24 }), {
+    type: "pan",
+    deltaX: 6,
+    deltaY: 4,
+    from: { x: 35, y: 20 },
+    point: { x: 41, y: 24 },
   });
   assert.equal(gestures.pointerUp(2, { x: 35, y: 20 }, 300), null);
 });
@@ -85,4 +95,23 @@ test("map viewport clamps at each edge and keeps small maps anchored at origin",
   assert.deepEqual(clampMapViewport(-4, 90, 20, 10, 320, 160, 1), { x: 0, y: 5 });
   assert.deepEqual(clampMapViewport(90, 90, 4, 3, 320, 160, 1), { x: 0, y: 0 });
   assert.deepEqual(clampMapViewport(2, 2, 20, 10, 320, 160, 0), { x: 0, y: 0 });
+});
+
+test("touch paint interpolation includes every tile between fast diagonal samples", () => {
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 3, y: 2 }), [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 3, y: 2 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: 3, y: 2 }, { x: 0, y: 0 }), [
+    { x: 3, y: 2 },
+    { x: 2, y: 1 },
+    { x: 1, y: 1 },
+    { x: 0, y: 0 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: 1, y: 1 }, { x: 1, y: 1 }), [
+    { x: 1, y: 1 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: Number.NaN, y: 1 }, { x: 1, y: 1 }), []);
 });

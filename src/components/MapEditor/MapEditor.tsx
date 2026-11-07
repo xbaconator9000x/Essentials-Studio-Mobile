@@ -17,6 +17,7 @@ import {
   resolveMapTapTarget,
   TouchGestureMachine,
   clampMapViewport,
+  rasterizeTileLine,
   type TouchGestureAction,
 } from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
@@ -109,6 +110,7 @@ export function MapEditor({
 
   // Painting state
   const isPainting = useRef(false);
+  const isTouchPainting = useRef(false);
   const paintChanges = useRef<MapAction["changes"]>([]);
   const rectStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -478,6 +480,19 @@ export function MapEditor({
     [mapData, paintTool, selectedLayer, selectedTileId, onMapDirty, readOnly]
   );
 
+  const finishTouchStroke = useCallback(() => {
+    if (!isTouchPainting.current) return;
+    isTouchPainting.current = false;
+    if (paintChanges.current.length > 0) {
+      undoStackRef.current.push({
+        type: paintTool === "eraser" ? "erase" : "paint",
+        changes: [...paintChanges.current],
+        timestamp: Date.now(),
+      });
+      paintChanges.current = [];
+    }
+  }, [paintTool]);
+
   // Mouse wheel: scroll to pan, Ctrl+scroll (pinch-to-zoom) to zoom
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -781,6 +796,18 @@ export function MapEditor({
         return;
       }
       if (action.type === "pan") {
+        if (!readOnly && selectedLayer >= 0 && selectedLayer <= 2 &&
+            (paintTool === "pencil" || paintTool === "eraser")) {
+          const from = screenToTile(action.from.x, action.from.y);
+          const to = screenToTile(action.point.x, action.point.y);
+          if (from && to) {
+            isTouchPainting.current = true;
+            for (const tile of rasterizeTileLine(from, to)) {
+              doPaint(tile.x, tile.y);
+            }
+          }
+          return;
+        }
         setClampedViewport(
           viewportX - action.deltaX / (TILE_SIZE * zoom),
           viewportY - action.deltaY / (TILE_SIZE * zoom),
@@ -812,7 +839,7 @@ export function MapEditor({
         nextZoom,
       );
     },
-    [handleTouchTap, mapData, onOpenEvent, screenToTile, viewportX, viewportY, zoom, setClampedViewport],
+    [doPaint, handleTouchTap, mapData, onOpenEvent, paintTool, readOnly, screenToTile, selectedLayer, viewportX, viewportY, zoom, setClampedViewport],
   );
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -855,16 +882,18 @@ export function MapEditor({
           e.timeStamp,
         ),
       );
+      finishTouchStroke();
     },
-    [handleTouchGesture],
+    [finishTouchStroke, handleTouchGesture],
   );
 
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.pointerType !== "touch") return;
     e.preventDefault();
     e.stopPropagation();
+    finishTouchStroke();
     touchGesturesRef.current.cancel();
-  }, []);
+  }, [finishTouchStroke]);
 
   const handleTouchStartFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     if ("PointerEvent" in window) return;
@@ -909,17 +938,19 @@ export function MapEditor({
             e.timeStamp,
           ),
         );
+        finishTouchStroke();
       }
     },
-    [handleTouchGesture],
+    [finishTouchStroke, handleTouchGesture],
   );
 
   const handleTouchCancelFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     if ("PointerEvent" in window) return;
     e.preventDefault();
     e.stopPropagation();
+    finishTouchStroke();
     touchGesturesRef.current.cancel();
-  }, []);
+  }, [finishTouchStroke]);
 
   // ALWAYS render the full layout — the canvas must exist at mount time
   // for the renderer creation and ResizeObserver effects to work.

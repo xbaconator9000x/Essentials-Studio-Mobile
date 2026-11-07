@@ -32,10 +32,44 @@ export function clampMapViewport(
   };
 }
 
+export function rasterizeTileLine(start: GesturePoint, end: GesturePoint): GesturePoint[] {
+  if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return [];
+  let x = Math.floor(start.x);
+  let y = Math.floor(start.y);
+  const endX = Math.floor(end.x);
+  const endY = Math.floor(end.y);
+  const dx = Math.abs(endX - x);
+  const sx = x < endX ? 1 : -1;
+  const dy = -Math.abs(endY - y);
+  const sy = y < endY ? 1 : -1;
+  let error = dx + dy;
+  const cells: GesturePoint[] = [];
+
+  while (true) {
+    cells.push({ x, y });
+    if (x === endX && y === endY) return cells;
+    const doubledError = 2 * error;
+    if (doubledError >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubledError <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+}
+
 export type TouchGestureAction =
   | { type: "tap"; point: GesturePoint }
   | { type: "long-press"; point: GesturePoint }
-  | { type: "pan"; deltaX: number; deltaY: number }
+  | {
+      type: "pan";
+      deltaX: number;
+      deltaY: number;
+      from: GesturePoint;
+      point: GesturePoint;
+    }
   | {
       type: "pinch";
       scale: number;
@@ -135,21 +169,25 @@ export class TouchGestureMachine {
         return null;
       }
       this.mode = "pan";
+      const from = { x: pointer.lastX, y: pointer.lastY };
       pointer.lastX = point.x;
       pointer.lastY = point.y;
       return {
         type: "pan",
         deltaX: point.x - pointer.startX,
         deltaY: point.y - pointer.startY,
+        from,
+        point,
       };
     }
 
     if (this.mode === "pan") {
+      const from = { x: pointer.lastX, y: pointer.lastY };
       const deltaX = point.x - pointer.lastX;
       const deltaY = point.y - pointer.lastY;
       pointer.lastX = point.x;
       pointer.lastY = point.y;
-      return { type: "pan", deltaX, deltaY };
+      return { type: "pan", deltaX, deltaY, from, point };
     }
 
     if (this.mode !== "pinch" || this.pointers.size !== 2) return null;
