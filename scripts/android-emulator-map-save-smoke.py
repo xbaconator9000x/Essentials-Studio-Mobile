@@ -28,8 +28,12 @@ spec.loader.exec_module(helper)
 def run_adb(*args: str, timeout: int = 45) -> bytes:
     completed = subprocess.run(["adb", *args], capture_output=True, timeout=timeout)
     if completed.returncode:
+        detail = (completed.stdout + b"\n" + completed.stderr).decode(
+            errors="replace"
+        ).strip()
         raise RuntimeError(
-            f"adb {args[:3]!r} failed: {completed.stderr.decode(errors='replace')[-500:]}"
+            f"adb {args[:3]!r} failed with exit code {completed.returncode}: "
+            f"{detail[-500:]}"
         )
     return completed.stdout
 
@@ -365,11 +369,17 @@ def set_focused_dialogue_text(evidence: Path, updated: str) -> None:
     if not jar_path:
         raise AssertionError("Android accessibility dialogue input helper is unavailable")
     remote_jar = "/data/local/tmp/essentials-dialogue-input-test.jar"
-    pushed = run_adb("push", jar_path, remote_jar)
-    result = run_adb(
-        "shell", "uiautomator", "runtest", remote_jar,
-        "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest",
-    )
+    try:
+        pushed = run_adb("push", jar_path, remote_jar)
+        result = run_adb(
+            "shell", "uiautomator", "runtest", remote_jar,
+            "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest",
+        )
+    except RuntimeError as exc:
+        (evidence / "dialogue-accessibility-input.txt").write_text(
+            str(exc), encoding="utf-8"
+        )
+        raise
     (evidence / "dialogue-accessibility-input.txt").write_bytes(pushed + result)
     if b"OK (1 test)" not in result:
         raise AssertionError("Android accessibility dialogue input test did not report one passing test")
@@ -411,7 +421,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         set_focused_dialogue_text(evidence, updated)
         field = wait_for_focused_dialogue_field(evidence)
         wait_for_dialogue_input(evidence, field["bounds"], updated, field_text)
-    except AssertionError:
+    except (AssertionError, RuntimeError):
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
         )

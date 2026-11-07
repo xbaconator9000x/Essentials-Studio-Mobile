@@ -209,17 +209,30 @@ jobs:
             -printf '%h\n' | sort -V | tail -n 1)"
           test -s "$platform/android.jar"
           classes="$RUNNER_TEMP/dialogue-input-classes"
-          mkdir -p "$classes" "$RUNNER_TEMP/dialogue-input-compile-stub/junit/framework"
+          compile_stub="$RUNNER_TEMP/dialogue-input-compile-stub"
+          dex="$RUNNER_TEMP/dialogue-input-dex"
+          d8="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -type f -name d8 \
+            -printf '%p\n' | sort -V | tail -n 1)"
+          test -x "$d8"
+          mkdir -p "$classes" "$compile_stub/junit/framework" "$dex"
           printf 'package junit.framework; public class TestCase {}\n' \
-            > "$RUNNER_TEMP/dialogue-input-compile-stub/junit/framework/TestCase.java"
+            > "$compile_stub/junit/framework/TestCase.java"
           javac -source 8 -target 8 \
             -classpath "$platform/android.jar:$platform/uiautomator.jar" \
+            -d "$compile_stub" \
+            "$compile_stub/junit/framework/TestCase.java"
+          javac -source 8 -target 8 \
+            -classpath "$platform/android.jar:$platform/uiautomator.jar:$compile_stub" \
             -d "$classes" \
-            "$RUNNER_TEMP/dialogue-input-compile-stub/junit/framework/TestCase.java" \
             scripts/android-dialogue-input-test/DialogueInputTest.java
-          # The device's UiAutomator runner supplies JUnit; do not package the compile-only stub.
-          rm -rf "$classes/junit"
-          jar cf "$RUNNER_TEMP/dialogue-input-test.jar" -C "$classes" .
+          # UiAutomator loads DEX from its test JAR; the device supplies JUnit at runtime.
+          "$d8" --min-api 16 \
+            --lib "$platform/android.jar" \
+            --classpath "$platform/uiautomator.jar" \
+            --classpath "$compile_stub" \
+            --output "$dex" \
+            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest.class"
+          jar cf "$RUNNER_TEMP/dialogue-input-test.jar" -C "$dex" classes.dex
           echo "ANDROID_DIALOGUE_INPUT_TEST_JAR=$RUNNER_TEMP/dialogue-input-test.jar" >> "$GITHUB_ENV"
       - name: Confirm downloaded APK and source identity
         run: |
