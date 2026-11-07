@@ -270,6 +270,14 @@ def select_exported_zip(evidence: Path, filename: str) -> bool:
     )
 
 
+def native_import_control(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    """Use the unrestricted Android SAF importer for generic-MIME exports."""
+    return (
+        picker.locate(nodes, "Use native Android document picker")
+        or picker.locate(nodes, "Import ZIP (native)")
+    )
+
+
 def run(package: str, evidence: Path) -> None:
     imported = json.loads((evidence / "import-receipt.json").read_text())
     painted = json.loads((evidence / "map-edit-receipt.json").read_text())
@@ -293,10 +301,9 @@ def run(package: str, evidence: Path) -> None:
         nodes = picker.dump_ui(evidence, "reimport-editor-before")
         if not picker.editor_visible(nodes):
             raise AssertionError("Editor not open before re-import")
-        target = (picker.locate(nodes, "Import ZIP...")
-                  or picker.locate(nodes, "Choose Essentials Project ZIP"))
+        target = native_import_control(nodes)
         if target is None:
-            raise AssertionError("Loaded editor has no Android ZIP import control")
+            raise AssertionError("Loaded editor has no native Android ZIP import control")
         picker.tap(target)
         picker.wait_for_document_picker(evidence, 20)
         if not select_exported_zip(evidence, export_helper.EXPORT_FILENAME):
@@ -366,6 +373,17 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    native_import_nodes = [{
+        "text": "Import ZIP (native)",
+        "content-desc": "Use native Android document picker",
+        "bounds": "[20,30][120,80]",
+    }]
+    assert native_import_control(native_import_nodes) == (70, 55)
+    assert native_import_control([{
+        "text": "Import ZIP...",
+        "content-desc": "Choose Essentials Project ZIP",
+        "bounds": "[20,30][120,80]",
+    }]) is None
     xml = ('<?xml version="1.0"?><hierarchy>'
            '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
            'text="sdk_gphone_x86_64" />'
