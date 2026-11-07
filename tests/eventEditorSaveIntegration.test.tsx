@@ -152,6 +152,8 @@ describe("rendered event editor Save All integration", () => {
     expect((edit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(edit);
     const editor = await screen.findByDisplayValue("Original dialogue");
+    expect(editor.getAttribute("autocorrect")).toBe("off");
+    expect(editor.getAttribute("spellcheck")).toBe("false");
     fireEvent.change(editor, { target: { value: "Edited dialogue" } });
     fireEvent.blur(editor);
     expect(screen.getByDisplayValue("Edited dialogue")).toBeTruthy();
@@ -196,6 +198,8 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.click(await screen.findByText("A long opening dialogue line for a narrow phone screen"));
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    expect(textarea.getAttribute("autocorrect")).toBe("off");
+    expect(textarea.getAttribute("spellcheck")).toBe("false");
     expect((textarea as HTMLTextAreaElement).value).toBe([
       "A long opening dialogue line for a narrow phone screen",
       "A second dialogue line that must remain visible",

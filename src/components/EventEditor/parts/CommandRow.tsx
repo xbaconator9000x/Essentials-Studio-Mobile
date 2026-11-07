@@ -98,6 +98,8 @@ export function CommandRow({
           className="event-command-edit-input"
           defaultValue={String(command.parameters[0] ?? "")}
           autoFocus
+          autoCorrect="off"
+          spellCheck={false}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               finishEditing();
@@ -259,6 +261,8 @@ export function MultiLineBlock({
             aria-label={`${def.name} dialogue lines`}
             defaultValue={allLines.join("\n")}
             autoFocus
+            autoCorrect="off"
+            spellCheck={false}
             rows={Math.max(2, allLines.length + 1)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
