@@ -199,6 +199,41 @@ describe("sprite editor integration", () => {
     expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
   });
 
+  it("interpolates a fast single-finger touch brush stroke across missed pixels", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    putImageData.mockClear();
+
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 76,
+      clientY: 76,
+    });
+    fireEvent.pointerMove(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 124,
+      clientY: 76,
+    });
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 124,
+      clientY: 76,
+    });
+
+    const pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([0, 1, 2, 3].map((x) => pixels[x * 4 + 3])).toEqual([255, 255, 255, 255]);
+    expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
+  });
+
   it("confirms and saves an edit to the original character graphic", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");

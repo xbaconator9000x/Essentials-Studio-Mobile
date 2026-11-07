@@ -4,6 +4,37 @@ export interface SpriteViewport {
   offsetY: number;
 }
 
+export function rasterizeSpriteLine(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): { x: number; y: number }[] {
+  if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return [];
+  let x = Math.floor(start.x);
+  let y = Math.floor(start.y);
+  const endX = Math.floor(end.x);
+  const endY = Math.floor(end.y);
+  const dx = Math.abs(endX - x);
+  const sx = x < endX ? 1 : -1;
+  const dy = -Math.abs(endY - y);
+  const sy = y < endY ? 1 : -1;
+  let error = dx + dy;
+  const pixels: { x: number; y: number }[] = [];
+
+  while (true) {
+    pixels.push({ x, y });
+    if (x === endX && y === endY) return pixels;
+    const doubledError = 2 * error;
+    if (doubledError >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubledError <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+}
+
 export function spritePixelAt(
   screenX: number,
   screenY: number,

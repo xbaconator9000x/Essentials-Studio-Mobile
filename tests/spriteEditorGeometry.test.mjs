@@ -1,9 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  rasterizeSpriteLine,
   spritePixelAt,
   zoomSpriteViewport,
 } from "../src/services/spriteEditorGeometry.ts";
+
+test("sprite brush interpolation covers fast strokes in either direction", () => {
+  assert.deepEqual(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 4, y: 2 }), [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 3, y: 2 },
+    { x: 4, y: 2 },
+  ]);
+  assert.deepEqual(rasterizeSpriteLine({ x: 4, y: 2 }, { x: 0, y: 0 }), [
+    { x: 4, y: 2 },
+    { x: 3, y: 1 },
+    { x: 2, y: 1 },
+    { x: 1, y: 0 },
+    { x: 0, y: 0 },
+  ]);
+  assert.deepEqual(rasterizeSpriteLine({ x: 2, y: 3 }, { x: 2, y: 3 }), [
+    { x: 2, y: 3 },
+  ]);
+  assert.deepEqual(rasterizeSpriteLine({ x: Number.NaN, y: 0 }, { x: 1, y: 1 }), []);
+});
 
 test("sprite brush coordinates respect zoom, pan, and image bounds", () => {
   const viewport = { zoom: 4, offsetX: 12, offsetY: -8 };

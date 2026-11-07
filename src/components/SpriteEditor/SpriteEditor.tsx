@@ -3,7 +3,11 @@ import { confirmEditor } from "../../services/editorDialog";
 import { clearImageCache, loadCharacterImage } from "../../services/imageLoader";
 import { listAssetFiles, savePrivateProjectSprite } from "../../services/tauriApi";
 import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
-import { spritePixelAt, zoomSpriteViewport } from "../../services/spriteEditorGeometry";
+import {
+  rasterizeSpriteLine,
+  spritePixelAt,
+  zoomSpriteViewport,
+} from "../../services/spriteEditorGeometry";
 import {
   applySpritePixelAction,
   fillSpritePixels,
@@ -61,6 +65,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const pointerPositions = useRef(new Map<number, PointerPoint>());
   const activePaintPointer = useRef<number | null>(null);
   const pendingTouchPaint = useRef<{ id: number; point: PointerPoint } | null>(null);
+  const lastPaintPixel = useRef<PointerPoint | null>(null);
   const activePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const pinchStart = useRef<{
     distance: number;
@@ -208,21 +213,26 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     return () => observer.disconnect();
   }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY]);
 
-  const paintPixel = useCallback((clientX: number, clientY: number) => {
+  const pixelAtClient = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const source = imageCanvasRef.current;
-    const context = source?.getContext("2d");
-    const imageData = imageDataRef.current;
-    if (!canvas || !source || !context || !imageData) return;
+    if (!canvas || !source) return null;
     const rect = canvas.getBoundingClientRect();
-    const pixel = spritePixelAt(
+    return spritePixelAt(
       clientX - rect.left,
       clientY - rect.top,
       { zoom, offsetX, offsetY },
       source.width,
       source.height,
     );
-    if (!pixel) return;
+  }, [offsetX, offsetY, zoom]);
+
+  const paintPixel = useCallback((clientX: number, clientY: number) => {
+    const source = imageCanvasRef.current;
+    const context = source?.getContext("2d");
+    const imageData = imageDataRef.current;
+    const pixel = pixelAtClient(clientX, clientY);
+    if (!source || !context || !imageData || !pixel) return;
     if (tool === "eyedropper") {
       const sampled = spriteColorAt(imageData.data, source.width, source.height, pixel.x, pixel.y);
       if (sampled) setBrushColor(sampled);
@@ -268,7 +278,25 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setDirty(true);
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
-  }, [brushColor, brushSize, offsetX, offsetY, tool, updateDirty, zoom]);
+  }, [brushColor, brushSize, pixelAtClient, tool, updateDirty]);
+
+  const paintStrokeTo = useCallback((clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const current = pixelAtClient(clientX, clientY);
+    if (!canvas || !current) {
+      lastPaintPixel.current = null;
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const previous = lastPaintPixel.current ?? current;
+    for (const pixel of rasterizeSpriteLine(previous, current)) {
+      paintPixel(
+        rect.left + offsetX + (pixel.x + 0.5) * zoom,
+        rect.top + offsetY + (pixel.y + 0.5) * zoom,
+      );
+    }
+    lastPaintPixel.current = current;
+  }, [offsetX, offsetY, paintPixel, pixelAtClient, zoom]);
 
   const undoSprite = useCallback(() => {
     const imageData = imageDataRef.current;
@@ -386,6 +414,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       cancelStroke();
       activePaintPointer.current = null;
       pendingTouchPaint.current = null;
+      lastPaintPixel.current = null;
       activePan.current = null;
       return;
     }
@@ -394,6 +423,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       return;
     }
     if (tool === "pan" || event.button === 1) {
+      lastPaintPixel.current = null;
       activePan.current = { id: event.pointerId, point, x: offsetX, y: offsetY };
     } else {
       dirtyBeforeStroke.current = dirty;
@@ -402,7 +432,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       if (event.pointerType === "touch") {
         pendingTouchPaint.current = { id: event.pointerId, point };
       } else {
-        paintPixel(event.clientX, event.clientY);
+        lastPaintPixel.current = pixelAtClient(event.clientX, event.clientY);
+        paintStrokeTo(event.clientX, event.clientY);
       }
     }
   };
@@ -437,10 +468,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     } else if (pendingTouchPaint.current?.id === event.pointerId) {
       const start = pendingTouchPaint.current.point;
       pendingTouchPaint.current = null;
-      paintPixel(start.x, start.y);
-      if (point.x !== start.x || point.y !== start.y) paintPixel(point.x, point.y);
+      paintStrokeTo(start.x, start.y);
+      if (point.x !== start.x || point.y !== start.y) paintStrokeTo(point.x, point.y);
     } else if (activePaintPointer.current === event.pointerId) {
-      paintPixel(event.clientX, event.clientY);
+      paintStrokeTo(event.clientX, event.clientY);
     }
   };
 
@@ -449,6 +480,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (commitTap && pending?.id === event.pointerId) {
       paintPixel(pending.point.x, pending.point.y);
     }
+    if (commitTap && activePaintPointer.current === event.pointerId && !pending) {
+      paintStrokeTo(event.clientX, event.clientY);
+    }
     if (pending?.id === event.pointerId) pendingTouchPaint.current = null;
     pointerPositions.current.delete(event.pointerId);
     if (activePaintPointer.current === event.pointerId) {
@@ -456,6 +490,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       else cancelStroke();
       activePaintPointer.current = null;
     }
+    lastPaintPixel.current = null;
     if (activePan.current?.id === event.pointerId) activePan.current = null;
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
