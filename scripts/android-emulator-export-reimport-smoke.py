@@ -142,7 +142,17 @@ def current_picker_location(xml: str) -> str:
         for node in root.iter("node")
         if picker.documents_ui_id(node.get("resource-id", ""), "breadcrumb_text")
     ]
-    return names[-1] if names else ""
+    if names:
+        return names[-1]
+    for node in root.iter("node"):
+        if not picker.documents_ui_id(node.get("resource-id", ""), "toolbar"):
+            continue
+        for child in node.iter("node"):
+            if child.get("class") == "android.widget.TextView":
+                location = child.get("text", "").strip()
+                if location:
+                    return location
+    return ""
 
 
 def reimport_picker_snapshot(evidence: Path, label: str):
@@ -353,6 +363,16 @@ def selftest() -> None:
                      'bounds="[189,685][557,742]" /></node></hierarchy>')
     assert current_picker_location(downloads_xml).casefold() in {"download", "downloads"}
     assert picker.picker_file_card(downloads_xml, "Synthetic_RMXP.zip") == (897, 735)
+    toolbar_downloads_xml = ('<?xml version="1.0"?><hierarchy>'
+                             '<node resource-id="com.android.documentsui:id/toolbar">'
+                             '<node class="android.widget.TextView" text="Downloads"/></node>'
+                             '<node resource-id="com.android.documentsui:id/item_root">'
+                             '<node resource-id="android:id/title" text="Synthetic_RMXP.zip" '
+                             'bounds="[50,100][300,150]"/></node></hierarchy>')
+    assert current_picker_location(toolbar_downloads_xml) == "Downloads"
+    assert current_picker_location(toolbar_downloads_xml).casefold() in {
+        "download", "downloads",
+    }
     assert current_picker_location('<hierarchy/>') == ""
     # A neighbouring original ZIP must never be selected instead of the SAF
     # export. In list mode picker_file_card returns the exact matching row.
