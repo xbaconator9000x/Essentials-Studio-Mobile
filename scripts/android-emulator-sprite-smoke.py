@@ -74,9 +74,9 @@ def has_control(nodes: list[dict[str, str]], name: str) -> bool:
 
 def save_mode_trigger(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
     return (
-        locate_control(nodes, "Save mode")
-        or locate_control(nodes, "Save as copy (safe default)")
+        locate_control(nodes, "Save as copy (safe default)")
         or locate_control(nodes, "Replace original PNG")
+        or locate_control(nodes, "Save mode")
     )
 
 
@@ -459,6 +459,11 @@ def selftest() -> None:
     assert has_control(observed_hierarchy, "Copy name")
     observed_hierarchy[1]["bounds"] = "[100,200][300,250]"
     assert save_mode_trigger(observed_hierarchy) == (200, 225)
+    assert save_mode_trigger([
+        {"text": "Save mode", "bounds": "[10,20][210,70]"},
+        {"text": "Save as copy (safe default)", "bounds": "[10,80][210,130]"},
+        {"text": "Replace original PNG", "bounds": "[10,140][210,190]"},
+    ]) == (110, 105)
     assert sprite_controls_scroll_gesture([
         {"resource-id": "sprite-editor-controls", "scrollable": "true", "bounds": "[0,0][0,0]"}
     ]) is None

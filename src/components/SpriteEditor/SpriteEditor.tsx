@@ -638,13 +638,23 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 }}>Remove trace</button>
               </>
             )}
-            <label>
-              Save mode
-              <select value={saveMode} onChange={(event) => setSaveMode(event.target.value as "original" | "copy")}>
-                <option value="copy">Save as copy (safe default)</option>
-                <option value="original">Replace original PNG</option>
-              </select>
-            </label>
+            <div className="sprite-editor-save-mode" role="group" aria-label="Save mode">
+              <span>Save mode</span>
+              <button
+                type="button"
+                aria-pressed={saveMode === "copy"}
+                onClick={() => setSaveMode("copy")}
+              >
+                Save as copy (safe default)
+              </button>
+              <button
+                type="button"
+                aria-pressed={saveMode === "original"}
+                onClick={() => setSaveMode("original")}
+              >
+                Replace original PNG
+              </button>
+            </div>
             {saveMode === "copy" && (
               <label>
                 Copy name

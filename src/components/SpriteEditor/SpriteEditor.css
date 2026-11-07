@@ -91,6 +91,19 @@
   color: var(--color-subtext1);
 }
 
+.sprite-editor-save-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-subtext1);
+  font-size: 12px;
+}
+
+.sprite-editor-save-mode > button[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .sprite-editor-tools select,
 .sprite-editor-tools input {
   width: 100%;

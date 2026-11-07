@@ -212,9 +212,7 @@ describe("sprite editor integration", () => {
       clientX: 100,
       clientY: 100,
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Save mode" }), {
-      target: { value: "original" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Replace original PNG" }));
     fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
 
     await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
@@ -224,9 +222,21 @@ describe("sprite editor integration", () => {
       "original",
       "data:image/png;base64,cGl4ZWxz",
     ));
+    expect(screen.getByRole("button", { name: "Replace original PNG" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Save as copy (safe default)" }).getAttribute("aria-pressed")).toBe("false");
     expect(editorDialogs.confirmEditor).toHaveBeenCalledWith(
       "Replace the original Guide.png character graphic?",
     );
+  });
+
+  it("keeps save-as-copy as the accessible safe default", async () => {
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+
+    expect(screen.getByRole("group", { name: "Save mode" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save as copy (safe default)" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Replace original PNG" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByDisplayValue("Guide_copy")).toBeTruthy();
   });
 
   it("loads and removes a bounded trace overlay", async () => {
