@@ -235,8 +235,7 @@ jobs:
             --classpath "$platform/uiautomator.jar" \
             --classpath "$compile_stub" \
             --output "$dex" \
-            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest.class" \
-            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest\$AccessibilityField.class"
+            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest.class"
           jar cf "$RUNNER_TEMP/dialogue-input-test.jar" -C "$dex" classes.dex
           echo "ANDROID_DIALOGUE_INPUT_TEST_JAR=$RUNNER_TEMP/dialogue-input-test.jar" >> "$GITHUB_ENV"
       - name: Confirm downloaded APK and source identity
