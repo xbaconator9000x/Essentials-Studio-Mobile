@@ -163,6 +163,8 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     for node in root.iter("node"):
         if not documents_ui_id(node.get("resource-id", ""), "item_root"):
             continue
+        if node.get("enabled") == "false":
+            continue
         # On AOSP API30, tapping the *middle of the grid thumbnail* can leave
         # GET_CONTENT open without selecting anything. The recorded failing
         # hierarchy places the actual file name in android:id/title at the

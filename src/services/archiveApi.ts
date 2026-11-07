@@ -118,7 +118,10 @@ export async function exportProjectZip(
       return await exportAndroidDocument(exported.export_id, exported.size, name, {
         pickDestination: (filename) => save({
           defaultPath: filename,
-          filters: [{ name: "ZIP archives", extensions: ["zip"] }],
+          // Android's dialog plugin uses the extension filter to choose the
+          // document MIME type. Pass the canonical type explicitly because
+          // some Android providers do not map ".zip" consistently.
+          filters: [{ name: "ZIP archives", extensions: ["application/zip"] }],
         }),
         writeAndVerify: (exportId, documentUri) =>
           invoke<number>("save_project_archive_to_document", { exportId, documentUri }),

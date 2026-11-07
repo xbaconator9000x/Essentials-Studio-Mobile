@@ -163,6 +163,21 @@ def reimport_picker_snapshot(evidence: Path, label: str):
     return nodes, xml
 
 
+def exact_zip_is_disabled(xml: str, filename: str) -> bool:
+    start = xml.find("<?xml")
+    root = ET.fromstring(xml[start:] if start >= 0 else xml)
+    for node in root.iter("node"):
+        if not picker.documents_ui_id(node.get("resource-id", ""), "item_root"):
+            continue
+        if any(
+            child.get("resource-id") == "android:id/title"
+            and child.get("text", "").casefold() == filename.casefold()
+            for child in node.iter("node")
+        ):
+            return node.get("enabled") == "false"
+    return False
+
+
 def select_exported_zip(evidence: Path, filename: str) -> bool:
     """Select the exact SAF export through the external-storage document provider.
 
@@ -243,6 +258,11 @@ def select_exported_zip(evidence: Path, filename: str) -> bool:
                     return True
             raise AssertionError(
                 f"DocumentsUI did not return after selecting exact ZIP {filename!r}"
+            )
+        if exact_zip_is_disabled(xml, filename):
+            raise AssertionError(
+                f"Exported ZIP {filename!r} is visible but disabled by DocumentsUI; "
+                "the destination document was not exposed as a selectable ZIP"
             )
         time.sleep(2)
     raise AssertionError(
@@ -387,6 +407,12 @@ def selftest() -> None:
                 'bounds="[50,220][320,260]" /></node></hierarchy>')
     assert picker.picker_file_card(list_xml, "Synthetic_RMXP.zip") == (255, 260)
     assert picker.picker_file_card(list_xml, "not-present.zip") is None
+    disabled_xml = ('<?xml version="1.0"?><hierarchy>'
+                    '<node resource-id="com.android.documentsui:id/item_root" '
+                    'enabled="false"><node resource-id="android:id/title" '
+                    'text="Synthetic_RMXP.zip"/></node></hierarchy>')
+    assert exact_zip_is_disabled(disabled_xml, "Synthetic_RMXP.zip")
+    assert not exact_zip_is_disabled(disabled_xml, "Other.zip")
     assert expected_member_paths("./projects/import-1", {
         "Game.rxproj": b"", "Data/Map001.rxdata": b"",
         "PBS/pokemon.txt": b"", "Graphics/Empty": b"",
