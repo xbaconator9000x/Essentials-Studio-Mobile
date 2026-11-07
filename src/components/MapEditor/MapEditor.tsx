@@ -112,6 +112,7 @@ export function MapEditor({
   const isPainting = useRef(false);
   const isTouchPainting = useRef(false);
   const paintChanges = useRef<MapAction["changes"]>([]);
+  const mousePaintLastTile = useRef<{ x: number; y: number } | null>(null);
   const rectStart = useRef<{ x: number; y: number } | null>(null);
 
   // Panning state
@@ -583,6 +584,7 @@ export function MapEditor({
 
         isPainting.current = true;
         paintChanges.current = [];
+        mousePaintLastTile.current = pos;
         doPaint(pos.x, pos.y);
       }
     },
@@ -631,7 +633,20 @@ export function MapEditor({
           isPainting.current &&
           (paintTool === "pencil" || paintTool === "eraser")
         ) {
-          doPaint(pos.x, pos.y);
+          if (
+            pos.x >= 0 &&
+            pos.x < mapData.width &&
+            pos.y >= 0 &&
+            pos.y < mapData.height
+          ) {
+            const previous = mousePaintLastTile.current;
+            const stroke = previous ? rasterizeTileLine(previous, pos) : [pos];
+            for (const tile of stroke) doPaint(tile.x, tile.y);
+            mousePaintLastTile.current = pos;
+          } else {
+            mousePaintLastTile.current = null;
+            doPaint(pos.x, pos.y);
+          }
         }
       }
     },
@@ -653,6 +668,7 @@ export function MapEditor({
 
       if (e.button === 0 && isPainting.current && mapData) {
         isPainting.current = false;
+        mousePaintLastTile.current = null;
 
         if (paintTool === "rectangle" && rectStart.current) {
           const pos = screenToTile(e.clientX, e.clientY);
@@ -1033,9 +1049,10 @@ export function MapEditor({
             isPanning.current = false;
             if (isPainting.current) {
               isPainting.current = false;
+              mousePaintLastTile.current = null;
               if (paintChanges.current.length > 0) {
                 undoStackRef.current.push({
-                  type: "paint",
+                  type: paintTool === "eraser" ? "erase" : "paint",
                   changes: [...paintChanges.current],
                   timestamp: Date.now(),
                 });
