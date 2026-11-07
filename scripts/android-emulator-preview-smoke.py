@@ -30,9 +30,32 @@ def matching_node(nodes: list[dict[str, str]], text: str) -> dict[str, str] | No
 def matching_button(nodes: list[dict[str, str]], text: str) -> dict[str, str] | None:
     return next(
         (node for node in nodes
-         if node.get("text") == text and node.get("class", "").endswith("Button")),
+         if node.get("text") == text
+         and node.get("class", "").endswith("Button")
+         and node.get("clickable") == "true"
+         and node.get("enabled") != "false"
+         and has_touch_bounds(node)),
         None,
     )
+
+
+def matching_tappable_node(nodes: list[dict[str, str]], text: str) -> dict[str, str] | None:
+    return next(
+        (node for node in nodes
+         if text in node.get("text", "")
+         and node.get("clickable") == "true"
+         and node.get("enabled") != "false"
+         and has_touch_bounds(node)),
+        None,
+    )
+
+
+def has_touch_bounds(node: dict[str, str]) -> bool:
+    try:
+        helpers.center(node.get("bounds", ""))
+    except ValueError:
+        return False
+    return True
 
 
 def require_text(nodes: list[dict[str, str]], text: str, stage: str) -> dict[str, str]:
@@ -44,21 +67,17 @@ def require_text(nodes: list[dict[str, str]], text: str, stage: str) -> dict[str
 
 
 def tap_text(nodes: list[dict[str, str]], text: str, stage: str) -> None:
-    node = require_text(nodes, text, stage)
-    bounds = node.get("bounds", "")
-    if not bounds:
-        raise RuntimeError(f"{stage}: '{text}' has no touch bounds")
-    helpers.tap(helpers.center(bounds))
+    node = matching_tappable_node(nodes, text)
+    if node is None:
+        raise RuntimeError(f"{stage}: No visible, clickable target for '{text}'")
+    helpers.tap(helpers.center(node["bounds"]))
 
 
 def tap_button(nodes: list[dict[str, str]], text: str, stage: str) -> None:
     node = matching_button(nodes, text)
     if node is None:
-        raise RuntimeError(f"{stage}: Missing button '{text}'")
-    bounds = node.get("bounds", "")
-    if not bounds:
-        raise RuntimeError(f"{stage}: button '{text}' has no touch bounds")
-    helpers.tap(helpers.center(bounds))
+        raise RuntimeError(f"{stage}: Missing visible, clickable button '{text}'")
+    helpers.tap(helpers.center(node["bounds"]))
 
 
 def wait_for_text(evidence: Path, text: str, stage: str, seconds: int = 20) -> list[dict[str, str]]:
@@ -93,13 +112,30 @@ def main() -> int:
                   for name in ("Projects", "Maps", "Sprites", "Settings",
                                "Read-only preview", "Map [001] 2x2 Layer 1/3")]
         sample.insert(0, {"text": "Maps", "class": "android.widget.TextView",
-                          "bounds": "[0,0][50,50]"})
+                          "clickable": "false", "bounds": "[0,0][50,50]"})
         sample.append({"text": "Maps", "class": "android.widget.Button",
+                       "clickable": "true", "enabled": "true",
                        "bounds": "[100,100][200,200]"})
+        sample.insert(1, {"text": "Maps", "class": "android.widget.Button",
+                           "clickable": "true", "enabled": "true",
+                           "bounds": "[0,0][0,0]"})
         verify_navigation(sample)
         require_text(sample, "Maps", "self-test")
         if matching_button(sample, "Maps") is not sample[-1]:
-            raise AssertionError("Maps navigation must select the button, not the heading")
+            raise AssertionError("Maps selection must skip a hidden button")
+        tappable_map = {"text": "🗺 [001] Synthetic Map",
+                        "clickable": "true", "enabled": "true",
+                        "bounds": "[7,735][1073,863]"}
+        sample.append(tappable_map)
+        if matching_tappable_node(sample, "Synthetic Map") is not tappable_map:
+            raise AssertionError("Map selection must use the visible clickable map row")
+        if matching_tappable_node(sample, "Read-only preview") is not None:
+            raise AssertionError("A non-clickable text label must not be used as a tap target")
+        hidden_button = {"text": "Hidden", "class": "android.widget.Button",
+                         "clickable": "true", "enabled": "true",
+                         "bounds": "[0,0][0,0]"}
+        if matching_button([hidden_button], "Hidden") is not None:
+            raise AssertionError("A zero-sized hidden button must not be selected")
         require_text(sample, "Read-only preview", "self-test")
         require_text(sample, "Map [001]", "self-test map content")
         print("Android preview smoke self-test passed")
@@ -128,7 +164,7 @@ def main() -> int:
     # Confirm that the Projects view contains the imported map and the preview
     # is explicitly read-only before exercising any editor controls.
     require_text(nodes, "Synthetic Map", "project map list")
-    tap_button(nodes, "Maps", "open Maps section")
+    tap_text(nodes, "Synthetic Map", "open imported map")
     nodes = wait_for_text(evidence, "Read-only preview", "preview-map")
     require_text(nodes, "Map [001]", "visible map content")
     tap_text(nodes, "Tools ▸", "open mobile tools")
