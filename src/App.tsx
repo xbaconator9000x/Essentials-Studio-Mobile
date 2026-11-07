@@ -59,6 +59,10 @@ import {
 } from "./context/ProjectSaveContext";
 import "./App.css";
 
+// Android's SAF save picker can expose a ZIP as generic octet-stream.
+const PROJECT_ARCHIVE_ACCEPT =
+  ".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed,application/octet-stream";
+
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
   const browserRoot = await getBrowserProjectRoot();
@@ -1047,7 +1051,7 @@ function AppContent() {
             ) : (
             <label className="app-welcome-btn app-archive-picker">
               Import Essentials Project ZIP
-              <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed" className="app-archive-picker-input"
+              <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
                 aria-label="Choose Essentials Project ZIP" disabled={loading}
                 onChange={event => {
                   const file = event.target.files?.[0];
@@ -1124,7 +1128,7 @@ function AppContent() {
           ) : (
           <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
-            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed" className="app-archive-picker-input"
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
               aria-label="Choose Essentials Project ZIP" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
@@ -1179,7 +1183,7 @@ function AppContent() {
           <p>Choose a map below to inspect its layers and events. The imported archive remains untouched.</p>
           <label className="app-mobile-import-btn">
             Import disposable ZIP
-            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed"
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
               aria-label="Import disposable project ZIP" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
@@ -1259,7 +1263,7 @@ function AppContent() {
           <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
           <label className="app-mobile-import-btn">
             Import disposable ZIP
-            <input type="file" accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed"
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
               aria-label="Import disposable project ZIP from Settings" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
