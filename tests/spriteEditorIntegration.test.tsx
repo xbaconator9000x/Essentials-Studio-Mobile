@@ -221,6 +221,7 @@ describe("sprite editor integration", () => {
       clientX: 124,
       clientY: 76,
     });
+    expect(putImageData).toHaveBeenCalledTimes(1);
     fireEvent.pointerUp(editorCanvas!, {
       pointerId: 1,
       pointerType: "touch",

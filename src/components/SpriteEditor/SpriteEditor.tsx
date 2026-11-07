@@ -227,16 +227,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     );
   }, [offsetX, offsetY, zoom]);
 
-  const paintPixel = useCallback((clientX: number, clientY: number) => {
+  const paintPixel = useCallback((clientX: number, clientY: number, deferRender = false) => {
     const source = imageCanvasRef.current;
     const context = source?.getContext("2d");
     const imageData = imageDataRef.current;
     const pixel = pixelAtClient(clientX, clientY);
-    if (!source || !context || !imageData || !pixel) return;
+    if (!source || !context || !imageData || !pixel) return false;
     if (tool === "eyedropper") {
       const sampled = spriteColorAt(imageData.data, source.width, source.height, pixel.x, pixel.y);
       if (sampled) setBrushColor(sampled);
-      return;
+      return false;
     }
 
     let action: SpritePixelAction | null = null;
@@ -248,7 +248,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           if (!historyRef.current.push(action)) {
             applySpritePixelAction(imageData.data, action, "before");
             setError("This fill exceeds the one-million-pixel undo limit");
-            return;
+            return false;
           }
         }
       } else if (tool === "brush" || tool === "eraser") {
@@ -265,19 +265,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (action && !historyRef.current.record(action)) {
           applySpritePixelAction(imageData.data, action, "before");
           setError("This stroke exceeds the one-million-pixel undo limit");
-          return;
+          return false;
         }
       }
     } catch (cause) {
       setError(String(cause));
-      return;
+      return false;
     }
-    if (!action) return;
+    if (!action) return false;
 
-    context.putImageData(imageData, 0, 0);
-    setDirty(true);
-    updateDirty("sprite-editor", true);
-    setImageRevision((value) => value + 1);
+    if (!deferRender) {
+      context.putImageData(imageData, 0, 0);
+      setDirty(true);
+      updateDirty("sprite-editor", true);
+      setImageRevision((value) => value + 1);
+    }
+    return true;
   }, [brushColor, brushSize, pixelAtClient, tool, updateDirty]);
 
   const paintStrokeTo = useCallback((clientX: number, clientY: number) => {
@@ -287,16 +290,28 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       lastPaintPixel.current = null;
       return;
     }
+    const source = imageCanvasRef.current;
+    const imageData = imageDataRef.current;
+    const context = source?.getContext("2d");
+    if (!source || !imageData || !context) return;
     const rect = canvas.getBoundingClientRect();
     const previous = lastPaintPixel.current ?? current;
+    let changed = false;
     for (const pixel of rasterizeSpriteLine(previous, current)) {
-      paintPixel(
+      changed = paintPixel(
         rect.left + offsetX + (pixel.x + 0.5) * zoom,
         rect.top + offsetY + (pixel.y + 0.5) * zoom,
-      );
+        true,
+      ) || changed;
+    }
+    if (changed) {
+      context.putImageData(imageData, 0, 0);
+      setDirty(true);
+      updateDirty("sprite-editor", true);
+      setImageRevision((value) => value + 1);
     }
     lastPaintPixel.current = current;
-  }, [offsetX, offsetY, paintPixel, pixelAtClient, zoom]);
+  }, [offsetX, offsetY, paintPixel, pixelAtClient, updateDirty, zoom]);
 
   const undoSprite = useCallback(() => {
     const imageData = imageDataRef.current;
@@ -468,8 +483,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     } else if (pendingTouchPaint.current?.id === event.pointerId) {
       const start = pendingTouchPaint.current.point;
       pendingTouchPaint.current = null;
-      paintStrokeTo(start.x, start.y);
-      if (point.x !== start.x || point.y !== start.y) paintStrokeTo(point.x, point.y);
+      lastPaintPixel.current = pixelAtClient(start.x, start.y);
+      paintStrokeTo(point.x, point.y);
     } else if (activePaintPointer.current === event.pointerId) {
       paintStrokeTo(event.clientX, event.clientY);
     }
