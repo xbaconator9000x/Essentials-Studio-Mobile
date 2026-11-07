@@ -387,8 +387,20 @@ def set_focused_dialogue_text(evidence: Path, updated: str) -> None:
         )
         raise
     (evidence / "dialogue-accessibility-input.txt").write_bytes(pushed + result)
-    if b"OK (1 test)" not in result:
-        raise AssertionError("Android accessibility dialogue input test did not report one passing test")
+    if not dialogue_input_test_succeeded(result):
+        raise AssertionError(
+            "Android accessibility dialogue input test did not complete successfully: "
+            f"{result.decode(errors='replace')[-2000:]}"
+        )
+
+
+def dialogue_input_test_succeeded(output: bytes) -> bool:
+    return (
+        b"DIALOGUE_INPUT_TEST_PASS" in output
+        and b"INSTRUMENTATION_STATUS_CODE: -1" not in output
+        and b"Test run aborted" not in output
+        and b"NoClassDefFoundError" not in output
+    )
 
 
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
@@ -760,11 +772,14 @@ def selftest() -> None:
             os.environ["ANDROID_DIALOGUE_INPUT_TEST_JAR"] = "/tmp/dialogue-test.jar"
             globals()["run_adb"] = lambda *args, timeout=45: (
                 observed_commands.append(args)
-                or (b"OK (1 test)" if "runtest" in args else b"1 file pushed")
+                or (
+                    b"DIALOGUE_INPUT_TEST_PASS\nOK (1 test)"
+                    if "runtest" in args else b"1 file pushed"
+                )
             )
             set_focused_dialogue_text(Path(temp_dir), "Edited synthetic dialogue")
             assert (Path(temp_dir) / "dialogue-accessibility-input.txt").read_bytes() == (
-                b"1 file pushedOK (1 test)"
+                b"1 file pushedDIALOGUE_INPUT_TEST_PASS\nOK (1 test)"
             )
         finally:
             globals()["run_adb"] = original_run_adb
@@ -777,6 +792,12 @@ def selftest() -> None:
         ("shell", "uiautomator", "runtest", "/data/local/tmp/essentials-dialogue-input-test.jar",
          "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest"),
     ]
+    assert dialogue_input_test_succeeded(b"DIALOGUE_INPUT_TEST_PASS\nOK (1 test)")
+    assert not dialogue_input_test_succeeded(b"OK (1 test)")
+    assert not dialogue_input_test_succeeded(
+        b"Test run aborted: NoClassDefFoundError\nOK (1 test)\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
 
     assert bounds("[10,20][100,120]") == (10, 20, 100, 120)
     for bad in ("[0,0][0,10]", "[10,10][1,20]", "nonsense"):

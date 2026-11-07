@@ -18,5 +18,6 @@ public class DialogueInputTest extends UiAutomatorTestCase {
         if (!"Edited synthetic dialogue".equals(field.getText())) {
             throw new AssertionError("Accessibility input did not retain the exact dialogue text");
         }
+        System.out.println("DIALOGUE_INPUT_TEST_PASS");
     }
 }
