@@ -89,10 +89,12 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 10_000 });
   await page.getByRole("button", { name: "Save All" }).click();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(b => b.textContent?.trim() === "Save All");
-    return button?.disabled === true;
-  }, null, { timeout: 20_000 });
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  )
+    .waitFor({ state: "visible", timeout: 20_000 });
+  assert.equal(sha(original), originalHash, "Save All must not modify the imported source ZIP");
   const after = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
@@ -112,7 +114,10 @@ try {
   assert.ok(eventInfo && Number.isInteger(eventInfo.x) && Number.isInteger(eventInfo.y),
     "Synthetic map must expose event 7 with integer coordinates");
   const dialogueBefore = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueBefore.pages[0].list[0].parameters[0], "Synthetic dialogue");
+  assert.equal(dialogueBefore.pages[0].list[0].code, 101);
+  assert.deepEqual(dialogueBefore.pages[0].list[0].parameters, ["", 0, 0, 2]);
+  assert.equal(dialogueBefore.pages[0].list[1].code, 401);
+  assert.equal(dialogueBefore.pages[0].list[1].parameters[0], "Synthetic dialogue");
   await page.getByRole("button", { name: "Ev", exact: true }).click();
   await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
@@ -125,13 +130,15 @@ try {
   await dialogueEditor.waitFor({ timeout: 10_000 });
   const updatedDialogue = "Chromium event dialogue roundtrip";
   await dialogueEditor.fill(updatedDialogue);
-  await eventEditor.locator(".event-editor-header").click(); // Commit on blur.
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
-  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], updatedDialogue,
+  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
+    "Show Text face graphic must remain unchanged");
+  assert.equal(dialogueAfter.pages[0].list[1].parameters[0], updatedDialogue,
     "Dialogue edited through React must persist in native RMXP event commands");
   // Saving the event must not undo the tile edit saved earlier.
   const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
@@ -172,7 +179,8 @@ try {
   const mapAfterPbs = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(mapAfterPbs.tiles[differences[0].index], differences[0].tile);
   const eventAfterPbs = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], updatedDialogue);
+  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], "");
+  assert.equal(eventAfterPbs.pages[0].list[1].parameters[0], updatedDialogue);
   await page.screenshot({ path: join(evidence, "browser-pbs-saved.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Export ZIP..." }).click();

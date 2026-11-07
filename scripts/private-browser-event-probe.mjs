@@ -15,12 +15,14 @@ export async function findEditableShowText(eventInfos, loadEvent, maxEvents = 25
     for (let pageIndex = 0; pageIndex < event.pages.length; pageIndex++) {
       const list = event.pages[pageIndex]?.list;
       if (!Array.isArray(list)) continue;
-      const commandIndex = list.findIndex(command => command?.code === 101 &&
-        typeof command.parameters?.[0] === 'string');
+      const commandIndex = list.findIndex((command, index) => command?.code === 101 &&
+        Array.isArray(command.parameters) && list[index + 1]?.code === 401 &&
+        list[index + 1]?.indent === command.indent &&
+        typeof list[index + 1]?.parameters?.[0] === 'string');
       if (commandIndex >= 0) {
         return {
           eventId: info.id, x: info.x, y: info.y, pageIndex, commandIndex,
-          hasContinuation: list[commandIndex + 1]?.code === 401,
+          hasContinuation: true,
           event,
         };
       }
@@ -88,10 +90,13 @@ export function expectedDialogueEdit(event, pageIndex, commandIndex, replacement
     throw new TypeError('Replacement must be one nonempty dialogue line');
   }
   const copy = structuredClone(event);
-  const command = copy?.pages?.[pageIndex]?.list?.[commandIndex];
-  if (command?.code !== 101 || typeof command.parameters?.[0] !== 'string') {
+  const list = copy?.pages?.[pageIndex]?.list;
+  const command = list?.[commandIndex];
+  const text = list?.[commandIndex + 1];
+  if (command?.code !== 101 || text?.code !== 401 || text.indent !== command.indent ||
+      typeof text.parameters?.[0] !== 'string') {
     throw new TypeError('Selected command is not an editable Show Text line');
   }
-  command.parameters[0] = replacement;
+  text.parameters[0] = replacement;
   return copy;
 }

@@ -240,7 +240,20 @@ fn validate_zip_manifest(zip: &mut ZipArchive<File>) -> Result<(), String> {
 }
 
 fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, String> {
-    let src = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut src = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut signature = [0; 6];
+    let is_rar = match src.read_exact(&mut signature) {
+        Ok(()) => signature == *b"Rar!\x1a\x07",
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => false,
+        Err(error) => return Err(error.to_string()),
+    };
+    if is_rar {
+        return Err(
+            "RAR archives are not supported. Extract the archive locally, then create a ZIP containing the project folder with Game.rxproj. Renaming .rar to .zip will not convert it."
+                .into(),
+        );
+    }
+    src.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(src).map_err(|e| format!("Not a valid ZIP: {e}"))?;
     // A duplicate filename may disappear from the ZIP reader's name index.
     // Refuse the archive rather than silently losing one of its entries.
@@ -299,18 +312,14 @@ fn extract_archive(archive_path: &Path, extracted: &Path) -> Result<PathBuf, Str
 }
 
 /// ZIPs created by GitHub or project backup tools may wrap the actual RMXP
-/// project in more than one directory (e.g. repository/project/Game.rxproj).
-/// Follow only a bounded chain of *single* directories. Never silently discard
-/// sibling files or an additional project when the staging tree is removed.
+/// project in multiple directories. Follow only a chain of *single* directories.
+/// Never silently discard sibling files or an additional project when the
+/// staging tree is removed.
 fn discover_project_root(extracted: &Path) -> Result<PathBuf, String> {
-    const MAX_WRAPPER_DIRS: usize = 4;
     let mut candidate = extracted.to_path_buf();
-    for depth in 0..=MAX_WRAPPER_DIRS {
+    loop {
         if candidate.join("Game.rxproj").is_file() {
             return Ok(candidate);
-        }
-        if depth == MAX_WRAPPER_DIRS {
-            return Err("ZIP project root exceeds four wrapper directories; repackage with Game.rxproj closer to the ZIP root".into());
         }
         let mut entries = fs::read_dir(&candidate).map_err(|e| e.to_string())?;
         let only = entries
@@ -328,7 +337,6 @@ fn discover_project_root(extracted: &Path) -> Result<PathBuf, String> {
         }
         candidate = only.path();
     }
-    unreachable!("bounded wrapper search returns within the loop")
 }
 
 fn finish_import(archive_path: PathBuf, imports: PathBuf, projects: PathBuf, id: String) -> Result<String, String> {
@@ -868,13 +876,376 @@ pub async fn read_private_project_image(
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
 
+const MAX_SPRITE_PIXELS: u64 = 16_777_216;
+
+fn validate_sprite_stem(name: &str) -> Result<(), String> {
+    crate::commands::util::validate_asset_name(name)?;
+    if name.len() > 128
+        || name.ends_with(' ')
+        || name.ends_with('.')
+        || name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+    {
+        return Err("Invalid character graphic name".into());
+    }
+    let device = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (device.len() == 4
+            && (device.starts_with("COM") || device.starts_with("LPT"))
+            && matches!(device.as_bytes()[3], b'1'..=b'9'))
+    {
+        return Err("Character graphic name is reserved on Windows".into());
+    }
+    Ok(())
+}
+
+fn sprite_png_bytes(data_url: &str) -> Result<Vec<u8>, String> {
+    const PREFIX: &str = "data:image/png;base64,";
+    if !data_url.starts_with(PREFIX)
+        || data_url.len() > (MAX_IMAGE_BYTES as usize * 4 / 3 + PREFIX.len() + 8)
+    {
+        return Err("Sprite edits must be a PNG no larger than 32 MiB".into());
+    }
+    let bytes = STANDARD
+        .decode(&data_url[PREFIX.len()..])
+        .map_err(|_| "Invalid sprite PNG data".to_string())?;
+    if bytes.len() > MAX_IMAGE_BYTES as usize
+        || bytes.get(..8) != Some(b"\x89PNG\r\n\x1a\n")
+        || bytes.get(12..16) != Some(&b"IHDR"[..])
+        || bytes.len() < 24
+    {
+        return Err("Invalid sprite PNG data".into());
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap()) as u64;
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap()) as u64;
+    if width == 0
+        || height == 0
+        || width.checked_mul(height).unwrap_or(u64::MAX) > MAX_SPRITE_PIXELS
+    {
+        return Err("Sprite image dimensions exceed the 16-megapixel edit limit".into());
+    }
+    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .map_err(|_| "Could not decode edited sprite PNG".to_string())?;
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not encode edited sprite PNG: {e}"))?;
+    let bytes = encoded.into_inner();
+    if bytes.len() > MAX_IMAGE_BYTES as usize {
+        return Err("Edited sprite PNG exceeds the 32 MiB limit".into());
+    }
+    Ok(bytes)
+}
+
+fn sprite_project_directory(app: &AppHandle, requested: &Path) -> Result<PathBuf, String> {
+    let project = requested.canonicalize().map_err(|e| e.to_string())?;
+    if !project.is_dir() || !project.join("Game.rxproj").is_file() {
+        return Err("Not an RPG Maker XP project directory".into());
+    }
+    #[cfg(target_os = "android")]
+    {
+        let root = projects_root(app)?
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        if project == root || !project.starts_with(&root) {
+            return Err("Only imported app-private projects can be edited on Android".into());
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    Ok(project)
+}
+
+fn character_graphics_directory(project: &Path) -> Result<PathBuf, String> {
+    let directory = project.join("Graphics/Characters");
+    for path in [project.join("Graphics"), directory.clone()] {
+        let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err("Character graphics directory must not contain links".into());
+        }
+    }
+    let resolved = directory.canonicalize().map_err(|e| e.to_string())?;
+    if !resolved.starts_with(project) || !resolved.is_dir() {
+        return Err("Character graphics directory is outside the project".into());
+    }
+    Ok(resolved)
+}
+
+fn resolve_character_png(directory: &Path, project: &Path, name: &str) -> Result<PathBuf, String> {
+    validate_sprite_stem(name)?;
+    let mut matches = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let is_png = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"));
+        if stem.eq_ignore_ascii_case(name) && is_png {
+            let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("Character graphic must be a regular project file".into());
+            }
+            let resolved = path.canonicalize().map_err(|e| e.to_string())?;
+            if !resolved.starts_with(project) {
+                return Err("Character graphic resolves outside the project".into());
+            }
+            matches.push(resolved);
+        }
+    }
+    if matches.len() != 1 {
+        return Err(if matches.is_empty() {
+            format!("PNG character graphic not found: {name}")
+        } else {
+            format!("Ambiguous character graphic: {name}")
+        });
+    }
+    Ok(matches.remove(0))
+}
+
+fn ensure_new_character_name(directory: &Path, name: &str) -> Result<(), String> {
+    validate_sprite_stem(name)?;
+    let (_, _, extensions) =
+        crate::commands::util::asset_dirs("character").ok_or("Unknown character asset type")?;
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let supported = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| {
+                extensions
+                    .iter()
+                    .any(|candidate| candidate.eq_ignore_ascii_case(ext))
+            });
+        if stem.eq_ignore_ascii_case(name) && supported {
+            return Err(format!("Character graphic already exists: {name}"));
+        }
+    }
+    Ok(())
+}
+
+fn write_new_sprite(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| format!("Could not create sprite copy: {e}"))?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(format!("Could not save sprite copy: {error}"));
+    }
+    Ok(())
+}
+
+fn save_sprite_in_directory(
+    directory: &Path,
+    project: &Path,
+    source_name: &str,
+    target_name: &str,
+    mode: &str,
+    png: &[u8],
+) -> Result<String, String> {
+    match mode {
+        "copy" => {
+            ensure_new_character_name(directory, target_name)?;
+            let target = directory.join(format!("{target_name}.png"));
+            write_new_sprite(&target, png)?;
+            Ok(target_name.to_string())
+        }
+        "original" => {
+            let original = resolve_character_png(directory, project, source_name)?;
+            let temporary = directory.join(format!(".sprite-{}.partial", unique_id()?));
+            write_new_sprite(&temporary, png)?;
+            if let Err(error) = fs::rename(&temporary, &original) {
+                let _ = fs::remove_file(&temporary);
+                return Err(format!("Could not replace the original sprite: {error}"));
+            }
+            Ok(source_name.to_string())
+        }
+        _ => Err("Invalid sprite save mode".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn save_private_project_sprite(
+    app: AppHandle,
+    project_path: String,
+    source_name: String,
+    target_name: String,
+    mode: String,
+    image_data: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = sprite_project_directory(&app, Path::new(&project_path))?;
+        let directory = character_graphics_directory(&project)?;
+        let png = sprite_png_bytes(&image_data)?;
+        save_sprite_in_directory(
+            &directory,
+            &project,
+            &source_name,
+            &target_name,
+            &mode,
+            &png,
+        )
+    })
+    .await
+    .map_err(|e| format!("Sprite save worker failed: {e}"))?
+}
+
+#[cfg(test)]
+mod sprite_edit_tests {
+    use super::{
+        save_sprite_in_directory, sprite_png_bytes, validate_sprite_stem, MAX_IMAGE_BYTES,
+        MAX_SPRITE_PIXELS,
+    };
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use std::fs;
+    use std::io::Cursor;
+    use std::path::PathBuf;
+
+    struct TempProject(PathBuf);
+
+    impl TempProject {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "essentials-sprite-edit-{}",
+                super::unique_id().unwrap(),
+            ));
+            fs::create_dir_all(root.join("Graphics/Characters")).unwrap();
+            Self(root)
+        }
+
+        fn graphics(&self) -> PathBuf {
+            self.0.join("Graphics/Characters")
+        }
+    }
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn png_data_url(width: u32, height: u32) -> String {
+        let image = image::DynamicImage::new_rgba8(width, height);
+        let mut encoded = Cursor::new(Vec::new());
+        image
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(encoded.into_inner())
+        )
+    }
+
+    #[test]
+    fn sprite_name_validation_rejects_paths_and_nonportable_names() {
+        assert!(validate_sprite_stem("Trainer Red").is_ok());
+        for invalid in ["", "../outside", "bad/name", "bad:name", "NUL", "trailing."] {
+            assert!(validate_sprite_stem(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn sprite_png_validation_reencodes_small_images_and_rejects_bad_headers() {
+        let encoded = png_data_url(2, 2);
+        let decoded = sprite_png_bytes(&encoded).unwrap();
+        assert!(decoded.len() < MAX_IMAGE_BYTES as usize);
+        assert!(image::load_from_memory_with_format(&decoded, image::ImageFormat::Png).is_ok());
+        assert!(sprite_png_bytes("data:image/jpeg;base64,AA==").is_err());
+        assert!(sprite_png_bytes("data:image/png;base64,AA==").is_err());
+    }
+
+    #[test]
+    fn sprite_png_validation_rejects_oversized_dimensions_before_decode() {
+        let mut bytes = vec![0u8; 24];
+        bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        bytes[12..16].copy_from_slice(b"IHDR");
+        bytes[16..20].copy_from_slice(&(MAX_SPRITE_PIXELS as u32).to_be_bytes());
+        bytes[20..24].copy_from_slice(&2u32.to_be_bytes());
+        let encoded = format!("data:image/png;base64,{}", STANDARD.encode(bytes));
+        assert!(sprite_png_bytes(&encoded)
+            .unwrap_err()
+            .contains("dimensions"));
+    }
+
+    #[test]
+    fn sprite_copy_preserves_source_and_never_overwrites_a_collision() {
+        let project = TempProject::new();
+        let source = project.graphics().join("Guide.png");
+        fs::write(&source, b"source-bytes").unwrap();
+        let edited = sprite_png_bytes(&png_data_url(2, 2)).unwrap();
+
+        assert_eq!(
+            save_sprite_in_directory(
+                &project.graphics(),
+                &project.0,
+                "Guide",
+                "Guide_copy",
+                "copy",
+                &edited,
+            )
+            .unwrap(),
+            "Guide_copy",
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"source-bytes");
+        assert_eq!(
+            fs::read(project.graphics().join("Guide_copy.png")).unwrap(),
+            edited
+        );
+        assert!(save_sprite_in_directory(
+            &project.graphics(),
+            &project.0,
+            "Guide",
+            "Guide_copy",
+            "copy",
+            b"replacement",
+        )
+        .is_err());
+        assert_eq!(
+            fs::read(project.graphics().join("Guide_copy.png")).unwrap(),
+            edited
+        );
+    }
+
+    #[test]
+    fn explicit_original_mode_replaces_only_the_named_png() {
+        let project = TempProject::new();
+        let source = project.graphics().join("Guide.png");
+        fs::write(&source, b"source-bytes").unwrap();
+        let edited = sprite_png_bytes(&png_data_url(2, 2)).unwrap();
+        assert_eq!(
+            save_sprite_in_directory(
+                &project.graphics(),
+                &project.0,
+                "Guide",
+                "",
+                "original",
+                &edited,
+            )
+            .unwrap(),
+            "Guide",
+        );
+        assert_eq!(fs::read(source).unwrap(), edited);
+    }
+}
+
 #[cfg(test)]
 mod archive_roundtrip_tests {
     use super::{extract_archive, export_zip, finish_import, unique_id};
     use crate::marshal::types::{RubyObject, RubyString, RubyValue};
     use crate::models::{
-        EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveRoute, RpgEvent,
-        RpgMap,
+        EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveCommand, MoveRoute,
+        RpgEvent, RpgMap,
     };
     use sha2::{Digest, Sha256};
     use std::fs::{self, File};
@@ -945,7 +1316,8 @@ mod archive_roundtrip_tests {
         let page = event.get("pages")?.as_array()?.first()?.as_object()?;
         page.get("list")?
             .as_array()?
-            .first()?
+            .iter()
+            .find(|command| command.as_object().and_then(|obj| obj.get_int("code")) == Some(401))?
             .as_object()?
             .get("plugin_metadata")
     }
@@ -1033,7 +1405,14 @@ mod archive_roundtrip_tests {
                 y: 1,
                 pages: vec![EventPage {
                     source_index: None,
-                    condition: EventCondition::default(),
+                    condition: EventCondition {
+                        switch1_valid: true,
+                        switch2_valid: false,
+                        variable_valid: false,
+                        self_switch_valid: false,
+                        switch1_id: 2,
+                        ..EventCondition::default()
+                    },
                     graphic: EventGraphic {
                         character_name: "SyntheticGuide".into(),
                         ..EventGraphic::default()
@@ -1041,19 +1420,51 @@ mod archive_roundtrip_tests {
                     move_type: 0,
                     move_speed: 3,
                     move_frequency: 3,
-                    move_route: MoveRoute::default(),
+                    move_route: MoveRoute {
+                        repeat: true,
+                        skippable: false,
+                        list: vec![
+                            MoveCommand {
+                                code: 1,
+                                parameters: vec![],
+                            },
+                            MoveCommand {
+                                code: 0,
+                                parameters: vec![],
+                            },
+                        ],
+                    },
                     walk_anime: true,
                     step_anime: false,
                     direction_fix: false,
                     through: false,
                     always_on_top: false,
                     trigger: 0,
-                    list: vec![EventCommand {
-                        code: 101,
-                        indent: 0,
-                        parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
-                        source_index: None,
-                    }],
+                    list: vec![
+                        EventCommand {
+                            code: 101,
+                            indent: 0,
+                            parameters: vec![
+                                serde_json::Value::String(String::new()),
+                                serde_json::Value::Number(0.into()),
+                                serde_json::Value::Number(0.into()),
+                                serde_json::Value::Number(2.into()),
+                            ],
+                            source_index: None,
+                        },
+                        EventCommand {
+                            code: 401,
+                            indent: 0,
+                            parameters: vec![serde_json::Value::String("Synthetic dialogue".into())],
+                            source_index: None,
+                        },
+                        EventCommand {
+                            code: 0,
+                            indent: 0,
+                            parameters: vec![],
+                            source_index: None,
+                        },
+                    ],
                 }],
             },
         );
@@ -1100,7 +1511,7 @@ mod archive_roundtrip_tests {
         else {
             panic!("RPG::Event::Page @list must serialize as an array")
         };
-        let RubyValue::Object(command) = &mut commands[0] else {
+        let RubyValue::Object(command) = &mut commands[1] else {
             panic!("RPG::EventCommand fixture must serialize as an object")
         };
         command.instance_vars.push((
@@ -1172,6 +1583,14 @@ mod archive_roundtrip_tests {
             (
                 "PBS/pokemon.txt".into(),
                 b"# synthetic PBS\r\n[TEST]\r\nName = Test\r\n".to_vec(),
+            ),
+            (
+                "PluginData/opaque metadata.bin".into(),
+                vec![0, 255, 0x52, 0x58, 0x44, 0x41, 0x54, 0x41],
+            ),
+            (
+                "Plugins/GeneratedFixture/plugin.rb".into(),
+                b"module GeneratedFixture\nend\n".to_vec(),
             ),
             (
                 "Graphics/Tilesets/Synthetic.png".into(),
@@ -1261,7 +1680,7 @@ mod archive_roundtrip_tests {
         fs::create_dir_all(&imports).unwrap();
         fs::create_dir_all(&projects).unwrap();
         let original = imports.join("import-test.zip");
-        sample_zip(&original, "ExampleProject/", None);
+        sample_zip(&original, "Essentials FRLG/", None);
         let original_zip_bytes = fs::read(&original).unwrap();
         let retained_original = sandbox.path("original-copy.zip");
         fs::copy(&original, &retained_original).unwrap();
@@ -1302,13 +1721,18 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
-    fn discovers_bounded_multilevel_project_root_without_losing_source_bytes() {
+    fn discovers_deep_multilevel_project_root_without_losing_source_bytes() {
         let sandbox = Sandbox::new();
         let archive = sandbox.path("multi-wrapper.zip");
-        sample_zip(&archive, "Repository/Essentials/Shattered/", None);
+        let wrapper = "One/Two/Three/Four/Five/Essentials FRLG/";
+        sample_zip(&archive, wrapper, None);
         let original_zip = fs::read(&archive).unwrap();
         let imported = extract_archive(&archive, &sandbox.path("extracted")).unwrap();
-        assert_eq!(imported, sandbox.path("extracted/Repository/Essentials/Shattered"));
+        let expected_path = format!("extracted/{}", wrapper.trim_end_matches('/'));
+        assert_eq!(
+            imported,
+            sandbox.path(&expected_path)
+        );
         assert_eq!(fs::read(imported.join("PBS/pokemon.txt")).unwrap(),
             b"# keep comment\r\n[TEST]\r\nName = Test\r\n");
         assert_eq!(fs::read(&archive).unwrap(), original_zip);
@@ -1316,9 +1740,9 @@ mod archive_roundtrip_tests {
         let exported = sandbox.path("repacked.zip");
         export_zip(&imported, &exported).unwrap();
         assert_eq!(read_zip_file(&exported, "Data/Scripts.rxdata"),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+            read_zip_file(&archive, &format!("{wrapper}Data/Scripts.rxdata")));
         assert_eq!(read_zip_file(&exported, "PBS/pokemon.txt"),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/PBS/pokemon.txt"));
+            read_zip_file(&archive, &format!("{wrapper}PBS/pokemon.txt")));
 
         // Exercise the actual app-private publication path, not only the ZIP
         // extractor: the returned path must be a direct child of projects/.
@@ -1334,9 +1758,66 @@ mod archive_roundtrip_tests {
         assert_eq!(published, projects.join("import-multi"));
         assert!(published.join("Game.rxproj").is_file());
         assert_eq!(fs::read(published.join("Data/Scripts.rxdata")).unwrap(),
-            read_zip_file(&archive, "Repository/Essentials/Shattered/Data/Scripts.rxdata"));
+            read_zip_file(&archive, &format!("{wrapper}Data/Scripts.rxdata")));
         assert!(!imports.join("import-multi-extracted").exists());
         assert_eq!(fs::read(&archive).unwrap(), original_zip);
+    }
+
+    #[test]
+    fn wrapped_project_with_7674_opaque_members_survives_import_export_and_reimport() {
+        const MEMBER_COUNT: usize = 7_674;
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("large-wrapped-project.zip");
+        let wrapper = "Essentials FRLG V1.1/Essentials FRLG/";
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        let options = SimpleFileOptions::default();
+        let mut member_count = 0;
+        for (name, bytes) in [
+            ("Game.rxproj", b"RPGXP 1.02".as_slice()),
+            ("Game.ini", b"[Game]\r\nTitle=Generated Fixture\r\n"),
+            ("Data/MapInfos.rxdata", b"\x04\x08generated map infos"),
+            ("Data/System.rxdata", b"\x04\x08generated system"),
+            ("Data/Tilesets.rxdata", b"\x04\x08generated tilesets"),
+            ("Data/Map001.rxdata", b"\x04\x08generated binary map"),
+            ("Data/Scripts.rxdata", b"\x04\x08generated scripts"),
+            ("PBS/pokemon.txt", b"# generated fixture\r\n[TEST]\r\n"),
+            (
+                "Plugins/GeneratedFixture/plugin.rb",
+                b"module GeneratedFixture\nend\n",
+            ),
+        ] {
+            writer
+                .start_file(format!("{wrapper}{name}"), options)
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+            member_count += 1;
+        }
+        for index in 0..MEMBER_COUNT - member_count {
+            let name = format!("{wrapper}PluginData/opaque-{index:04}.rxdata");
+            let bytes = [index as u8, (index >> 8) as u8, (index >> 16) as u8, 0xff];
+            writer.start_file(name, options).unwrap();
+            writer.write_all(&bytes).unwrap();
+        }
+        writer.finish().unwrap();
+
+        let input_hashes = member_sha256(&archive, wrapper);
+        assert_eq!(input_hashes.len(), MEMBER_COUNT);
+        let imported = extract_archive(&archive, &sandbox.path("first-extraction")).unwrap();
+        assert!(imported.join("Game.rxproj").is_file());
+        assert_eq!(
+            fs::read(imported.join("Data/Map001.rxdata")).unwrap(),
+            b"\x04\x08generated binary map"
+        );
+
+        let exported = sandbox.path("exported-large-project.zip");
+        export_zip(&imported, &exported).unwrap();
+        assert_eq!(member_sha256(&exported, ""), input_hashes);
+
+        let reimported =
+            extract_archive(&exported, &sandbox.path("reimported-large-project")).unwrap();
+        let reexported = sandbox.path("reexported-large-project.zip");
+        export_zip(&reimported, &reexported).unwrap();
+        assert_eq!(member_sha256(&reexported, ""), input_hashes);
     }
 
     #[test]
@@ -1397,9 +1878,22 @@ mod archive_roundtrip_tests {
                     .expect("load genuine Marshal event");
             assert_eq!(event.name, "Synthetic Guide");
             assert_eq!(event.pages[0].list[0].code, 101);
+            assert_eq!(event.pages[0].list[0].parameters, vec![
+                serde_json::Value::String(String::new()),
+                serde_json::Value::Number(0.into()),
+                serde_json::Value::Number(0.into()),
+                serde_json::Value::Number(2.into()),
+            ]);
+            assert_eq!(event.pages[0].list[1].code, 401);
             assert_eq!(
-                event.pages[0].list[0].parameters[0],
+                event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Synthetic dialogue".into())
+            );
+            assert!(event.pages[0].condition.switch1_valid);
+            assert_eq!(event.pages[0].condition.switch1_id, 2);
+            assert_eq!(
+                event.pages[0].move_route.list.iter().map(|command| command.code).collect::<Vec<_>>(),
+                vec![1, 0]
             );
 
             // Decode both nonempty zlib-compressed Ruby scripts through the
@@ -1420,7 +1914,7 @@ mod archive_roundtrip_tests {
 
             // Exercise the actual event-save path, not just read-only parsing.
             let mut edited_event = event;
-            edited_event.pages[0].list[0].parameters[0] =
+            edited_event.pages[0].list[1].parameters[0] =
                 serde_json::Value::String("Edited dialogue".into());
             crate::commands::project::save_event(
                 project.path.clone(), 1, edited_event,
@@ -1429,7 +1923,16 @@ mod archive_roundtrip_tests {
                 project.path.clone(), 1, 7,
             ).await.expect("reopen edited event");
             assert_eq!(
-                saved_event.pages[0].list[0].parameters[0],
+                saved_event.pages[0].list[0].parameters,
+                vec![
+                    serde_json::Value::String(String::new()),
+                    serde_json::Value::Number(0.into()),
+                    serde_json::Value::Number(0.into()),
+                    serde_json::Value::Number(2.into()),
+                ]
+            );
+            assert_eq!(
+                saved_event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
 
@@ -1472,8 +1975,10 @@ mod archive_roundtrip_tests {
                     .expect("read untouched event back");
             assert_eq!(event_readback.name, "Synthetic Guide");
             assert_eq!(event_readback.pages[0].list[0].code, 101);
+            assert_eq!(event_readback.pages[0].list[1].code, 401);
+            assert_eq!(event_readback.pages[0].list[0].parameters[0], serde_json::Value::String(String::new()));
             assert_eq!(
-                event_readback.pages[0].list[0].parameters[0],
+                event_readback.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
         });
@@ -1562,7 +2067,7 @@ mod archive_roundtrip_tests {
             .await
             .expect("load edited event from reimported ZIP");
             assert_eq!(
-                reopened_event.pages[0].list[0].parameters[0],
+                reopened_event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Edited dialogue".into())
             );
             let reopened_pbs = crate::commands::pbs::load_pbs_file(
@@ -1706,7 +2211,7 @@ mod archive_roundtrip_tests {
             assert_eq!(map.tiles[4], 777);
             let mut event = crate::commands::project::load_event(gen2_path.clone(), 1, 7)
                 .await.unwrap();
-            event.pages[0].list[0].parameters[0] =
+            event.pages[0].list[1].parameters[0] =
                 serde_json::Value::String("Second generation dialogue".into());
             crate::commands::project::save_event(gen2_path.clone(), 1, event).await.unwrap();
             let mut pbs = crate::commands::pbs::load_pbs_file(
@@ -1739,7 +2244,7 @@ mod archive_roundtrip_tests {
             let event = crate::commands::project::load_event(gen3_path.clone(), 1, 7)
                 .await.unwrap();
             assert_eq!(
-                event.pages[0].list[0].parameters[0],
+                event.pages[0].list[1].parameters[0],
                 serde_json::Value::String("Second generation dialogue".into())
             );
             let pbs = crate::commands::pbs::load_pbs_file(
@@ -1799,6 +2304,19 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
+    fn rar_signature_returns_local_conversion_guidance_before_extraction() {
+        let sandbox = Sandbox::new();
+        let archive = sandbox.path("mislabeled.zip");
+        fs::write(&archive, b"Rar!\x1a\x07\x01\x00opaque private archive bytes").unwrap();
+
+        let error = extract_archive(&archive, &sandbox.path("extracted")).unwrap_err();
+        assert!(error.contains("RAR archives are not supported"));
+        assert!(error.contains("Extract the archive locally"));
+        assert!(error.contains("Renaming .rar to .zip will not convert it"));
+        assert!(!sandbox.path("extracted").exists());
+    }
+
+    #[test]
     fn rejects_siblings_at_every_wrapper_level_without_publishing_partial_project() {
         for sibling in ["Repository/README.md", "Repository/Essentials/notes.txt"] {
             let sandbox = Sandbox::new();
@@ -1822,12 +2340,12 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
-    fn rejects_excessive_wrapper_depth_and_multiple_project_roots() {
+    fn accepts_deep_wrapper_and_rejects_multiple_project_roots() {
         let sandbox = Sandbox::new();
-        let deep = sandbox.path("too-deep.zip");
-        sample_zip(&deep, "One/Two/Three/Four/Five/", None);
-        let error = extract_archive(&deep, &sandbox.path("too-deep-extracted")).unwrap_err();
-        assert!(error.contains("four wrapper directories"), "{error}");
+        let deep = sandbox.path("deep.zip");
+        sample_zip(&deep, "One/Two/Three/Four/Five/Six/Seven/", None);
+        let imported = extract_archive(&deep, &sandbox.path("deep-extracted")).unwrap();
+        assert!(imported.join("Game.rxproj").is_file());
 
         let multi = sandbox.path("multiple-projects.zip");
         let mut zip = ZipWriter::new(File::create(&multi).unwrap());

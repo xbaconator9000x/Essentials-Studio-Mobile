@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveMapTapTarget, TouchGestureMachine } from "../src/services/mapGestures.ts";
+import {
+  clampMapViewport,
+  resolveMapTapTarget,
+  TouchGestureMachine,
+} from "../src/services/mapGestures.ts";
 
 test("tap stays a tap below the movement threshold; dragging pans without tapping", () => {
   const gestures = new TouchGestureMachine();
@@ -75,4 +79,10 @@ test("event-layer taps inspect an event, create on empty cells, and reject out-o
   assert.deepEqual(resolveMapTapTarget({ x: 1.5, y: 0 }, 4, 3, 0, events), {
     type: "outside",
   });
+});
+
+test("map viewport clamps at each edge and keeps small maps anchored at origin", () => {
+  assert.deepEqual(clampMapViewport(-4, 90, 20, 10, 320, 160, 1), { x: 0, y: 5 });
+  assert.deepEqual(clampMapViewport(90, 90, 4, 3, 320, 160, 1), { x: 0, y: 0 });
+  assert.deepEqual(clampMapViewport(2, 2, 20, 10, 320, 160, 0), { x: 0, y: 0 });
 });

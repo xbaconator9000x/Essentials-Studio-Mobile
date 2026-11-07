@@ -5,6 +5,8 @@
 import { invoke } from "./tauriApi";
 import { save } from "@tauri-apps/plugin-dialog";
 import { exportAndroidDocument } from "./androidDocumentExport";
+import { getUnsupportedArchiveMessage } from "./archiveFormat";
+import { readBlobArrayBuffer } from "./archiveBlob";
 import {
   ARCHIVE_CHUNK_BYTES,
   decodeArchiveChunk,
@@ -18,6 +20,11 @@ export async function importProjectZip(
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<string> {
+  const unsupportedFormat = getUnsupportedArchiveMessage(file.name);
+  if (unsupportedFormat) throw new Error(unsupportedFormat);
+  const header = new Uint8Array(await readBlobArrayBuffer(file.slice(0, 8)));
+  const signatureFormat = getUnsupportedArchiveMessage(file.name, header);
+  if (signatureFormat) throw new Error(signatureFormat);
   if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Choose a .zip project archive");
   validateArchiveSize(file.size);
   const id = await invoke<string>("begin_project_archive_import");
@@ -25,7 +32,7 @@ export async function importProjectZip(
     let offset = 0;
     while (offset < file.size) {
       const expectedLength = expectedArchiveChunkLength(file.size, offset);
-      const buffer = await file.slice(offset, offset + expectedLength).arrayBuffer();
+      const buffer = await readBlobArrayBuffer(file.slice(offset, offset + expectedLength));
       const bytes = new Uint8Array(buffer);
       if (bytes.length !== expectedLength) {
         throw new Error("Project ZIP source became truncated during import");
@@ -115,6 +122,8 @@ export async function exportProjectZip(
         }),
         writeAndVerify: (exportId, documentUri) =>
           invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
+        discardDestination: (exportId, documentUri) =>
+          invoke<void>("discard_incomplete_project_archive_document", { exportId, documentUri }),
       }, onProgress);
     }
 

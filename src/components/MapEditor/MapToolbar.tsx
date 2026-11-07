@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { PaintTool } from "../../types";
 import type { TileClipboard } from "../../services/mapEditor";
 
@@ -14,6 +15,11 @@ interface MapToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   historyDisabled?: boolean;
+  readOnly?: boolean;
+  showEventPins: boolean;
+  setShowEventPins: (show: boolean) => void;
+  paletteVisible: boolean;
+  onTogglePalette: () => void;
 }
 
 export function MapToolbar({
@@ -29,10 +35,35 @@ export function MapToolbar({
   onUndo,
   onRedo,
   historyDisabled = false,
+  readOnly = false,
+  showEventPins,
+  setShowEventPins,
+  paletteVisible,
+  onTogglePalette,
 }: MapToolbarProps) {
+  const [toolsCollapsed, setToolsCollapsed] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const narrowViewport = window.matchMedia("(max-width: 640px)");
+    const updateCollapsedState = (event: MediaQueryListEvent) => {
+      setToolsCollapsed(event.matches);
+    };
+    narrowViewport.addEventListener("change", updateCollapsedState);
+    return () => narrowViewport.removeEventListener("change", updateCollapsedState);
+  }, []);
+
   return (
     <div className="map-editor-toolbar">
-      <div className="toolbar-group">
+      <button
+        className="toolbar-btn"
+        aria-expanded={!toolsCollapsed}
+        onClick={() => setToolsCollapsed((collapsed) => !collapsed)}
+      >
+        {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
+      </button>
+      {!toolsCollapsed && !readOnly && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
         {(["pencil", "rectangle", "bucket", "eraser", "select"] as PaintTool[]).map(
           (tool) => (
@@ -59,22 +90,22 @@ export function MapToolbar({
             ✓ Copied ({tileClipboard.width}×{tileClipboard.height})
           </span>
         )}
-      </div>
+      </div>}
 
       <div className="toolbar-separator" />
 
       {/* Touch users have no physical Ctrl/Cmd+Z/Y keyboard. Keep map history
           accessible directly and route it through the same dirty-save path. */}
       <div className="toolbar-group" aria-label="Map edit history">
-        <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled}
+        <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled || readOnly}
           title="Undo tile edit" aria-label="Undo tile edit">Undo</button>
-        <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled}
+        <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled || readOnly}
           title="Redo tile edit" aria-label="Redo tile edit">Redo</button>
       </div>
 
       <div className="toolbar-separator" />
 
-      <div className="toolbar-group">
+      {!toolsCollapsed && <div className="toolbar-group">
         <span className="toolbar-label">Layer:</span>
         {[0, 1, 2].map((l) => (
           <button
@@ -100,11 +131,11 @@ export function MapToolbar({
         >
           All
         </button>
-      </div>
+      </div>}
 
       <div className="toolbar-separator" />
 
-      <div className="toolbar-group">
+      {!toolsCollapsed && <div className="toolbar-group">
         <label className="toolbar-check">
           <input
             type="checkbox"
@@ -113,12 +144,30 @@ export function MapToolbar({
           />
           Grid
         </label>
-      </div>
+      </div>}
+
+      <label className="toolbar-check toolbar-pin-toggle">
+        <input
+          type="checkbox"
+          checked={showEventPins}
+          onChange={(e) => setShowEventPins(e.target.checked)}
+        />
+        Pins
+      </label>
+
+      <button
+        className="toolbar-btn"
+        aria-pressed={paletteVisible}
+        onClick={onTogglePalette}
+      >
+        {paletteVisible ? "Hide palette" : "Show palette"}
+      </button>
 
       <div className="toolbar-group toolbar-right">
         <span className="toolbar-label">
           Zoom: {Math.round(zoom * 100)}%
         </span>
+        {readOnly && <span className="toolbar-label">Read-only preview</span>}
         <button
           className="toolbar-btn toolbar-btn-sm"
           onClick={() => setZoom(1)}

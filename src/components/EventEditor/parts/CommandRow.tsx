@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { EventCommand } from "../../../types";
 import { getCommandDef, summarizeCommand } from "../../../services/eventCommands";
 import { CommandParamEditor, hasParamEditor } from "../CommandParamEditor";
@@ -31,8 +32,14 @@ export function CommandRow({
   variableNames?: string[];
   pbsIndex?: PbsIndex;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const def = getCommandDef(command.code);
   const summary = summarizeCommand(command.code, command.parameters, mapInfos, switchNames, variableNames);
+  const finishEditing = () => {
+    onParamChange(0, inputRef.current?.value ?? String(command.parameters[0] ?? ""));
+    onStopEditing();
+  };
+  const cancelEditing = () => onStopEditing();
 
   let rowClass = "event-command-row";
   if (selected) rowClass += " selected";
@@ -64,21 +71,44 @@ export function CommandRow({
         </span>
         <span className="event-command-icon">{icon}</span>
         <span className="event-command-name">{def.name}</span>
+        <div className="event-command-edit-actions" role="group" aria-label="Command edit actions">
+          <button
+            type="button"
+            className="event-command-done event-editor-btn event-editor-btn-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              finishEditing();
+            }}
+          >
+            OK
+          </button>
+          <button
+            type="button"
+            className="event-command-done event-editor-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancelEditing();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
         <input
+          ref={inputRef}
           className="event-command-edit-input"
           defaultValue={String(command.parameters[0] ?? "")}
           autoFocus
-          onBlur={(e) => {
-            onParamChange(0, e.target.value);
-            onStopEditing();
-          }}
+          autoCorrect="off"
+          spellCheck={false}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              onParamChange(0, (e.target as HTMLInputElement).value);
-              onStopEditing();
+              finishEditing();
+              e.preventDefault();
             }
             if (e.key === "Escape") {
-              onStopEditing();
+              cancelEditing();
+              e.preventDefault();
+              e.stopPropagation();
             }
           }}
           onClick={(e) => e.stopPropagation()}
@@ -166,10 +196,17 @@ export function MultiLineBlock({
 }) {
   const def = getCommandDef(block.cmd.code);
   const icon = getCommandIcon(block.cmd.code);
-  const allLines = [
-    String(block.cmd.parameters[0] ?? ""),
-    ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
-  ];
+  const allLines = block.cmd.code === 101
+    ? block.contCmds.map((c) => String(c.parameters[0] ?? ""))
+    : [
+        String(block.cmd.parameters[0] ?? ""),
+        ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
+      ];
+  const commitLines = (value: string) => {
+    const lines = value.split("\n");
+    onUpdateLines(lines.length > 0 ? lines : [""]);
+  };
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -196,23 +233,45 @@ export function MultiLineBlock({
           <span className="event-command-name">{def.name}</span>
         </div>
         <div style={{ padding: "2px 12px 4px 34px" }}>
+          <div className="event-command-edit-actions" role="group" aria-label="Dialogue edit actions">
+            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
+              Each line becomes a continuation.
+            </div>
+            <button
+              type="button"
+              className="event-command-done event-editor-btn event-editor-btn-primary"
+              onClick={() => {
+                commitLines(textareaRef.current?.value ?? "");
+                onStopEditing();
+              }}
+            >
+              OK
+            </button>
+            <button
+              type="button"
+              className="event-command-done event-editor-btn"
+              onClick={onStopEditing}
+            >
+              Cancel
+            </button>
+          </div>
           <textarea
+            ref={textareaRef}
             className="event-command-edit-textarea"
+            aria-label={`${def.name} dialogue lines`}
             defaultValue={allLines.join("\n")}
             autoFocus
+            autoCorrect="off"
+            spellCheck={false}
             rows={Math.max(2, allLines.length + 1)}
-            onBlur={(e) => {
-              const lines = e.target.value.split("\n").filter((_, idx, arr) => idx < arr.length || arr[idx] !== "");
-              onUpdateLines(lines.length > 0 ? lines : [""]);
-              onStopEditing();
-            }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") { onStopEditing(); e.preventDefault(); e.stopPropagation(); }
+              if (e.key === "Escape") {
+                onStopEditing();
+                e.preventDefault();
+                e.stopPropagation();
+              }
             }}
           />
-          <div style={{ fontSize: 9, color: "#8c8fa1", marginTop: 2 }}>
-            Each line becomes a continuation. Press Escape to finish.
-          </div>
         </div>
       </div>
     );

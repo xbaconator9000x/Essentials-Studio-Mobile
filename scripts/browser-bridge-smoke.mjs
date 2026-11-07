@@ -112,11 +112,15 @@ try {
   assert.deepEqual(savedMap.tiles, tiles);
 
   const event = await call("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(event.pages[0].list[0].parameters[0], "Synthetic dialogue");
-  event.pages[0].list[0].parameters[0] = "Browser bridge dialogue";
+  assert.equal(event.pages[0].list[0].code, 101);
+  assert.deepEqual(event.pages[0].list[0].parameters, ["", 0, 0, 2]);
+  assert.equal(event.pages[0].list[1].code, 401);
+  assert.equal(event.pages[0].list[1].parameters[0], "Synthetic dialogue");
+  event.pages[0].list[1].parameters[0] = "Browser bridge dialogue";
   await call("save_event", { projectPath: root, mapId: 1, event });
   const savedEvent = await call("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(savedEvent.pages[0].list[0].parameters[0], "Browser bridge dialogue");
+  assert.equal(savedEvent.pages[0].list[0].parameters[0], "");
+  assert.equal(savedEvent.pages[0].list[1].parameters[0], "Browser bridge dialogue");
 
   const pbs = await call("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   const name = pbs[0].fields.find(field => field.key === "Name");

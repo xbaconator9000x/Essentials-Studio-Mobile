@@ -381,6 +381,21 @@
   margin: 2px 0;
 }
 
+.event-command-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.event-command-done {
+  min-height: 36px;
+  padding: 4px 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 .event-command-edit-input:focus {
   border-color: var(--color-accent-hover);
   box-shadow: 0 0 0 1px rgba(32, 159, 181, 0.3);
@@ -539,6 +554,120 @@
 
 .event-editor-btn-primary:hover {
   background: var(--color-accent-hover);
+}
+
+@media (max-width: 700px) {
+  .event-editor-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .event-editor {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .event-editor-header {
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .event-editor-close {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 28px;
+  }
+
+  .event-editor-pages {
+    min-height: 48px;
+    padding-inline: 8px;
+  }
+
+  .event-page-tab {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+
+  .event-editor-body {
+    flex: 1 1 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .event-page-properties {
+    width: auto;
+    max-height: min(32vh, 280px);
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-surface0);
+    padding: 12px;
+  }
+
+  .event-command-panel {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .event-command-list {
+    font-size: 14px;
+  }
+
+  .event-command-row {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .event-command-params {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  .event-command-cont-line {
+    padding-right: 8px;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
+  .event-command-edit-input,
+  .event-command-edit-textarea {
+    font-size: 16px;
+  }
+
+  .event-command-edit-input {
+    min-height: 44px;
+  }
+
+  .event-command-edit-textarea {
+    min-height: 120px;
+  }
+
+  .event-command-done {
+    min-height: 44px;
+  }
+
+  .event-editor-footer {
+    min-height: 60px;
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .event-editor-btn {
+    min-height: 44px;
+    min-width: 88px;
+  }
 }
 
 /* --- Move Route Editor --- */

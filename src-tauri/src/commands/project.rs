@@ -937,6 +937,11 @@ pub async fn save_map(
     width: i64,
     height: i64,
 ) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[android-map-save] started map={map_id} tiles={} dimensions={width}x{height}",
+        tiles.len()
+    );
     let path = PathBuf::from(&project_path);
     let map_file = path.join("Data").join(format!("Map{:03}.rxdata", map_id));
     if !map_file.exists() {
@@ -952,6 +957,8 @@ pub async fn save_map(
             && existing.height == height
             && existing.data.data == tiles
         {
+            #[cfg(debug_assertions)]
+            eprintln!("[android-map-save] unchanged map={map_id}");
             return Ok(());
         }
     }
@@ -984,6 +991,8 @@ pub async fn save_map(
     }
     marshal::writer::write_bytes_file_atomic(&map_file, &patched)
         .map_err(|e| format!("Failed to save map: {e}"))?;
+    #[cfg(debug_assertions)]
+    eprintln!("[android-map-save] completed map={map_id}");
     Ok(())
 }
 

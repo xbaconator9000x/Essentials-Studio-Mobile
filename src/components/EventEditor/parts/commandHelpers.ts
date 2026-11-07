@@ -25,7 +25,7 @@ export function toVisualBlocks(list: EventCommand[]): VisualBlock[] {
         contCmds.push(list[j]);
         j++;
       }
-      if (contIndices.length > 0) {
+      if (contIndices.length > 0 || cmd.code === 101) {
         blocks.push({ kind: "multi", rawIndex: i, cmd, contIndices, contCmds });
         i = j;
         continue;
@@ -49,7 +49,7 @@ export function getBlockEnd(list: EventCommand[], index: number): number {
 /** Get default parameters for a new command */
 export function getDefaultParams(code: number): unknown[] {
   switch (code) {
-    case 101: return [""];
+    case 101: return ["", 0, 0, 2];
     case 108: return [""];
     case 111: return [0, 1, 0]; // Conditional: Switch [1] == ON
     case 117: return [1]; // Call Common Event 1

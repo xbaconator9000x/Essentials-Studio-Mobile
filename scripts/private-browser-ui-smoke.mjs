@@ -42,6 +42,7 @@ const result = {
 };
 let server, browser, page, root;
 let stage = "start";
+let pbsSubstage = null;
 async function invoke(command, args = {}) {
   const response = await fetch("http://127.0.0.1:5173/api/browser/invoke", {
     method: "POST",
@@ -134,10 +135,11 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 30_000 });
   await save.click();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(b => b.textContent?.trim() === "Save All");
-    return button?.disabled === true;
-  }, null, { timeout: 60_000 });
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  ).waitFor({ state: "visible", timeout: 60_000 });
+  assert.equal(await sha(input), originalHash, "Save All must not modify the imported source ZIP");
   const after = await invoke("load_map", { projectPath: root, mapId });
   const changes = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
@@ -177,7 +179,7 @@ try {
   if (probe.hasContinuation) {
     const originalList = probe.event.pages[probe.pageIndex].list;
     const lines = [updatedDialogue];
-    for (let i = probe.commandIndex + 1; originalList[i]?.code === 401; i++) {
+    for (let i = probe.commandIndex + 2; originalList[i]?.code === 401; i++) {
       lines.push(String(originalList[i].parameters[0] ?? ""));
     }
     await eventEditor.locator(".event-command-block").filter({ hasText: "Show Text" }).first().dblclick();
@@ -190,10 +192,10 @@ try {
     await field.waitFor({ timeout: 15_000 });
     await field.fill(updatedDialogue);
   }
-  await eventEditor.locator(".event-editor-header").click();
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue })
     .first().waitFor({ timeout: 15_000 });
-  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
+  await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 90_000 });
   const eventAfter = await invoke("load_event", { projectPath: root, mapId, eventId: probe.eventId });
   assert.deepEqual(eventAfter,
@@ -208,30 +210,41 @@ try {
   await page.screenshot({ path: join(evidence, "private-react-event-saved.png"), fullPage: true });
 
   stage = "React PBS editing and save";
+  pbsSubstage = "read-baseline";
   const pbsBefore = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   const firstName = pbsBefore[0]?.fields?.find(field => field.key === "Name")?.value;
   assert.ok(typeof firstName === "string" && firstName.length > 0, "No first Pokémon Name field");
+  pbsSubstage = "open-editor";
   await page.getByRole("button", { name: "PBS Data", exact: true }).click();
   const editor = page.locator(".pbs-entity-editor");
   await editor.waitFor({ timeout: 90_000 });
-  const inputs = editor.locator(".pbs-entity-panels > div:first-child input");
-  await page.waitForFunction(name =>
-    [...document.querySelectorAll(".pbs-entity-panels > div:first-child input")]
-      .some(input => input.value === name), firstName, { timeout: 90_000 });
-  const index = await inputs.evaluateAll((elements, name) =>
-    elements.findIndex(element => element.value === name), firstName);
-  assert.ok(index >= 0, "React PBS name field is not editable");
+  pbsSubstage = "wait-for-pokemon-name-field";
+  const nameField = editor.getByRole("textbox", { name: "Pokémon name", exact: true });
+  await nameField.waitFor({ state: "visible", timeout: 90_000 });
+  assert.equal(await nameField.inputValue(), firstName, "PBS editor did not select the first Pokémon");
   const replacement = "PrivateUiRoundtripProbe";
   assert.notEqual(firstName, replacement, "PBS probe must change a value");
-  await inputs.nth(index).fill(replacement);
+  pbsSubstage = "edit-pokemon-name";
+  await nameField.fill(replacement);
+  pbsSubstage = "wait-for-dirty-state";
   await editor.getByText("Unsaved changes").waitFor({ timeout: 30_000 });
+  pbsSubstage = "apply-pbs-changes";
+  await page.waitForFunction(() => {
+    const apply = [...document.querySelectorAll(".pbs-entity-editor button")]
+      .find(button => button.textContent?.trim() === "Apply");
+    return apply && !apply.disabled;
+  }, null, { timeout: 30_000 });
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
+  pbsSubstage = "wait-for-save-completion";
   await editor.getByText("Unsaved changes").waitFor({ state: "hidden", timeout: 90_000 });
+  pbsSubstage = "verify-native-write";
   const pbsAfter = await invoke("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   assert.equal(pbsAfter[0]?.fields?.find(field => field.key === "Name")?.value, replacement,
     "React PBS save did not persist through native backend");
+  pbsSubstage = "close-editor";
   await editor.getByRole("button", { name: "OK", exact: true }).click();
   await editor.waitFor({ state: "hidden", timeout: 30_000 });
+  pbsSubstage = null;
   result.stages.reactPbsSave = "passed";
   await page.screenshot({ path: join(evidence, "private-react-pbs-saved.png"), fullPage: true });
 
@@ -272,6 +285,7 @@ try {
   await page.screenshot({ path: join(evidence, "private-react-export-complete.png"), fullPage: true });
 } catch (error) {
   result.failedStage = stage;
+  if (stage === "React PBS editing and save") result.failedSubstage = pbsSubstage;
   // Never persist source paths, dialogue, PBS content or private asset names.
   result.failureCategory = error?.name || "Error";
   process.exitCode = 1;

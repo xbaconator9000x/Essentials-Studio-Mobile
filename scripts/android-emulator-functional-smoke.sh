@@ -22,12 +22,23 @@ python3 scripts/android-emulator-import-smoke.py \
   --package "$package" \
   --evidence android-runtime-evidence
 
+# Keep the phone preview gate independent of the persistence regression below.
+python3 scripts/android-emulator-preview-smoke.py \
+  --evidence-dir android-runtime-evidence/preview-smoke
+
 # This second gate uses actual Android touch input and Save All, then reads
 # Map001.rxdata from the debug app sandbox and checks the original ZIP hash.
 # Do not confuse this with physical ARM64 SAF export or desktop reopening.
 python3 scripts/android-emulator-map-save-smoke.py \
   --package "$package" \
   --evidence android-runtime-evidence
+
+# Exercise the actual character picker, touch fill/brush, grouped history and
+# safe copy save path; the smoke reads the saved PNG back from app-private data.
+python3 scripts/android-emulator-sprite-smoke.py \
+  --package "$package" \
+  --evidence android-runtime-evidence \
+  --fixture android-synthetic-fixture/original.zip
 
 # Third gate: exercise the actual native SAF CREATE_DOCUMENT picker and verify
 # exported project members against the original synthetic fixture and the

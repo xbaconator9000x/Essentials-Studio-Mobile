@@ -167,7 +167,7 @@ export function PokemonPanel() {
                       <input value={selected.id} onChange={(e) => update(selected.id, { id: e.target.value })} style={inp} />
                     </Field>
                     <Field label="Name">
-                      <input value={selected.name} onChange={(e) => update(selected.id, { name: e.target.value })} style={inp} />
+                      <input aria-label="Pokémon name" value={selected.name} onChange={(e) => update(selected.id, { name: e.target.value })} style={inp} />
                     </Field>
                   </Row2>
                   <Row2>
@@ -352,4 +352,3 @@ export function PokemonPanel() {
     </div>
   );
 }
-

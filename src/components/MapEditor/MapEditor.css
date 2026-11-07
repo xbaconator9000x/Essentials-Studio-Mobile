@@ -77,6 +77,13 @@
   accent-color: var(--color-accent);
 }
 
+.toolbar-pin-toggle {
+  min-height: 40px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-surface0);
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;
