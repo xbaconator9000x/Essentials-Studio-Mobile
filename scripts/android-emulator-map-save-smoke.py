@@ -397,7 +397,8 @@ def set_focused_dialogue_text(evidence: Path, updated: str) -> None:
 def dialogue_input_test_succeeded(output: bytes) -> bool:
     return (
         b"DIALOGUE_INPUT_TEST_PASS" in output
-        and b"INSTRUMENTATION_STATUS_CODE: -1" not in output
+        and b"OK (1 test)" in output
+        and b"FAILURES!!!" not in output
         and b"Test run aborted" not in output
         and b"NoClassDefFoundError" not in output
     )
@@ -792,8 +793,18 @@ def selftest() -> None:
         ("shell", "uiautomator", "runtest", "/data/local/tmp/essentials-dialogue-input-test.jar",
          "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest"),
     ]
-    assert dialogue_input_test_succeeded(b"DIALOGUE_INPUT_TEST_PASS\nOK (1 test)")
+    assert dialogue_input_test_succeeded(
+        b"DIALOGUE_INPUT_TEST_PASS\nOK (1 test)\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
+    assert not dialogue_input_test_succeeded(
+        b"DIALOGUE_INPUT_TEST_PASS\nINSTRUMENTATION_STATUS_CODE: -1"
+    )
     assert not dialogue_input_test_succeeded(b"OK (1 test)")
+    assert not dialogue_input_test_succeeded(
+        b"DIALOGUE_INPUT_TEST_PASS\nFAILURES!!!\nTests run: 1, Failures: 1\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
     assert not dialogue_input_test_succeeded(
         b"Test run aborted: NoClassDefFoundError\nOK (1 test)\n"
         b"INSTRUMENTATION_STATUS_CODE: -1"
