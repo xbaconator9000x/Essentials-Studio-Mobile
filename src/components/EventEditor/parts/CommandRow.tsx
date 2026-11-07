@@ -222,6 +222,21 @@ export function MultiLineBlock({
           <span className="event-command-name">{def.name}</span>
         </div>
         <div style={{ padding: "2px 12px 4px 34px" }}>
+          <div className="event-command-edit-actions">
+            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
+              Each line becomes a continuation.
+            </div>
+            <button
+              type="button"
+              className="event-command-done"
+              onClick={() => {
+                commitLines(textareaRef.current?.value ?? "");
+                onStopEditing();
+              }}
+            >
+              Done editing
+            </button>
+          </div>
           <textarea
             ref={textareaRef}
             className="event-command-edit-textarea"
@@ -242,21 +257,6 @@ export function MultiLineBlock({
               }
             }}
           />
-          <div className="event-command-edit-actions">
-            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
-              Each line becomes a continuation.
-            </div>
-            <button
-              type="button"
-              className="event-command-done"
-              onClick={() => {
-                commitLines(textareaRef.current?.value ?? "");
-                onStopEditing();
-              }}
-            >
-              Done editing
-            </button>
-          </div>
         </div>
       </div>
     );

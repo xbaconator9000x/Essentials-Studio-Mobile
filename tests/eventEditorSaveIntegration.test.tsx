@@ -216,7 +216,7 @@ describe("rendered event editor Save All integration", () => {
     ]);
   });
 
-  it("commits multiline Show Text on touch pointer-down without requiring a click", async () => {
+  it("places Done editing before the multiline field and commits the visible action", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
       { code: 401, indent: 0, parameters: ["Dialogue before edit"], source_index: 1 },
@@ -229,8 +229,8 @@ describe("rendered event editor Save All integration", () => {
     const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     fireEvent.change(textarea, { target: { value: "Edited from Android" } });
     const finishButton = screen.getByRole("button", { name: "Done editing" });
-    fireEvent.pointerDown(finishButton);
-    fireEvent.blur(textarea, { relatedTarget: finishButton });
+    expect(textarea.compareDocumentPosition(finishButton) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    fireEvent.click(finishButton);
 
     expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
     await screen.findByText("Edited from Android");
@@ -239,7 +239,7 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited from Android");
   });
 
-  it("commits a single Show Text field on touch pointer-down without requiring a click", async () => {
+  it("commits a single Show Text field with its Done editing action", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
       { code: 401, indent: 0, parameters: ["Original dialogue"], source_index: 1 },
@@ -252,8 +252,7 @@ describe("rendered event editor Save All integration", () => {
     const input = await screen.findByDisplayValue("Original dialogue");
     fireEvent.change(input, { target: { value: "Edited single-line dialogue" } });
     const finishButton = screen.getByRole("button", { name: "Done editing" });
-    fireEvent.pointerDown(finishButton);
-    fireEvent.blur(input, { relatedTarget: finishButton });
+    fireEvent.click(finishButton);
 
     await screen.findByText("Edited single-line dialogue");
     expect(screen.queryByDisplayValue("Edited single-line dialogue")).toBeNull();
