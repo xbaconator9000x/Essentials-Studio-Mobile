@@ -67,6 +67,15 @@ def find_button(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None
     ), None)
 
 
+def find_select_all(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if node.get("text", "").strip().casefold() == "select all"
+        and node.get("clickable") == "true"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
 def tap_named(nodes: list[dict[str, str]], name: str) -> None:
     helper.tap(helper.center(find_named(nodes, name)["bounds"]))
 
@@ -344,16 +353,21 @@ def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
     )
 
 
-def clear_dialogue_input(evidence: Path, input_bounds: str, original: str) -> str:
-    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    current = original
-    while current:
-        expected = current[:-1]
-        run_adb("shell", "input", "keyevent", "KEYCODE_DEL")
-        current = wait_for_dialogue_input(
-            evidence, input_bounds, expected, current, timeout=2,
-        )
-    return current
+def select_all_dialogue_input(evidence: Path, input_bounds: str) -> None:
+    x, y = helper.center(input_bounds)
+    run_adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "900")
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-select-all")
+        select_all = find_select_all(nodes)
+        if select_all is not None:
+            helper.tap(helper.center(select_all["bounds"]))
+            return
+        time.sleep(0.25)
+    (evidence / "event-dialogue-select-all-failure.png").write_bytes(
+        run_adb("exec-out", "screencap", "-p")
+    )
+    raise AssertionError("Long-pressing dialogue did not expose a clickable Select all action")
 
 
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
@@ -387,7 +401,8 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
 
     helper.tap(helper.center(editor["bounds"]))
     input_bounds = editor["bounds"]
-    field_text = clear_dialogue_input(evidence, input_bounds, original)
+    select_all_dialogue_input(evidence, input_bounds)
+    field_text = original
     for offset in range(0, len(updated), 2):
         chunk = updated[offset:offset + 2]
         run_adb("shell", "input", "text", chunk.replace(" ", "%s"))
@@ -707,6 +722,18 @@ def selftest() -> None:
         {"text": "Done editing", "class": "android.widget.Button",
          "clickable": "true", "bounds": "[1464,863][1598,945]"},
     ], "OK") is None
+    assert find_select_all([
+        {"text": "Select all", "class": "android.widget.TextView",
+         "clickable": "true", "bounds": "[300,200][420,250]"},
+    ]) is not None
+    assert find_select_all([
+        {"text": "Select all", "class": "android.widget.TextView",
+         "clickable": "false", "bounds": "[300,200][420,250]"},
+    ]) is None
+    assert find_select_all([
+        {"text": "Copy", "class": "android.widget.TextView",
+         "clickable": "true", "bounds": "[300,200][420,250]"},
+    ]) is None
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
