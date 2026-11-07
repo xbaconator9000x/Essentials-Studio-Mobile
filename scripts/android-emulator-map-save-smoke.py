@@ -344,6 +344,18 @@ def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
     )
 
 
+def clear_dialogue_input(evidence: Path, input_bounds: str, original: str) -> str:
+    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    current = original
+    while current:
+        expected = current[:-1]
+        run_adb("shell", "input", "keyevent", "KEYCODE_DEL")
+        current = wait_for_dialogue_input(
+            evidence, input_bounds, expected, current, timeout=2,
+        )
+    return current
+
+
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
     nodes = helper.dump_ui(evidence, "event-dialogue-before-edit")
     row = next((
@@ -374,12 +386,8 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError("Double-tap did not expose the visible dialogue text editor")
 
     helper.tap(helper.center(editor["bounds"]))
-    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    run_adb("shell", "input", "keyevent", *("KEYCODE_DEL",) * len(original))
     input_bounds = editor["bounds"]
-    field_text = wait_for_dialogue_input(
-        evidence, input_bounds, "", original, timeout=10,
-    )
+    field_text = clear_dialogue_input(evidence, input_bounds, original)
     for offset in range(0, len(updated), 2):
         chunk = updated[offset:offset + 2]
         run_adb("shell", "input", "text", chunk.replace(" ", "%s"))
@@ -394,10 +402,10 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             )
             raise
 
-    # Finish with the visible editor action; Android/IME escape handling differs
-    # across devices and can dismiss the keyboard without reaching the WebView.
+    # Confirm with the single explicit action; blurring the field or hiding the
+    # IME must not commit an unconfirmed draft.
     deadline = time.monotonic() + 12
-    finish_taps = 0
+    confirm_taps = 0
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-finishing")
         permission_deny = gboard_audio_permission_deny_button(nodes)
@@ -406,15 +414,15 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
                 run_adb("exec-out", "screencap", "-p")
             )
             helper.tap(helper.center(permission_deny["bounds"]))
-            finish_taps = 0
+            confirm_taps = 0
             time.sleep(0.5)
             continue
         if dialogue_edit_committed(nodes, updated):
             break
-        finish_button = find_button(nodes, "Done editing")
-        if finish_button is not None and finish_taps < 3:
-            helper.tap(helper.center(finish_button["bounds"]))
-            finish_taps += 1
+        confirm_button = find_button(nodes, "OK")
+        if confirm_button is not None and confirm_taps < 3:
+            helper.tap(helper.center(confirm_button["bounds"]))
+            confirm_taps += 1
         time.sleep(0.5)
     else:
         (evidence / "event-dialogue-input-failure.png").write_bytes(
@@ -422,7 +430,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         )
         raise AssertionError(
             f"Dialogue edit did not leave its input field with committed text {updated!r}; "
-            f"Done editing taps={finish_taps}"
+            f"OK taps={confirm_taps}"
         )
 
     # Do not send Back here: once the IME is gone it closes the event editor.
@@ -688,13 +696,17 @@ def selftest() -> None:
          "bounds": "[735,378][1794,443]"},
     ], "Edited synthetic dialogue")
     assert find_button([
-        {"text": "Done editing", "class": "android.widget.Button",
+        {"text": "OK", "class": "android.widget.Button",
          "clickable": "true", "bounds": "[1464,863][1598,945]"},
-    ], "Done editing") is not None
+    ], "OK") is not None
+    assert find_button([
+        {"text": "OK", "class": "android.widget.Button",
+         "clickable": "false", "bounds": "[1464,863][1598,945]"},
+    ], "OK") is None
     assert find_button([
         {"text": "Done editing", "class": "android.widget.Button",
-         "clickable": "false", "bounds": "[1464,863][1598,945]"},
-    ], "Done editing") is None
+         "clickable": "true", "bounds": "[1464,863][1598,945]"},
+    ], "OK") is None
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""

@@ -39,6 +39,7 @@ export function CommandRow({
     onParamChange(0, inputRef.current?.value ?? String(command.parameters[0] ?? ""));
     onStopEditing();
   };
+  const cancelEditing = () => onStopEditing();
 
   let rowClass = "event-command-row";
   if (selected) rowClass += " selected";
@@ -70,38 +71,46 @@ export function CommandRow({
         </span>
         <span className="event-command-icon">{icon}</span>
         <span className="event-command-name">{def.name}</span>
+        <div className="event-command-edit-actions" role="group" aria-label="Command edit actions">
+          <button
+            type="button"
+            className="event-command-done event-editor-btn event-editor-btn-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              finishEditing();
+            }}
+          >
+            OK
+          </button>
+          <button
+            type="button"
+            className="event-command-done event-editor-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancelEditing();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
         <input
           ref={inputRef}
           className="event-command-edit-input"
           defaultValue={String(command.parameters[0] ?? "")}
           autoFocus
-          onBlur={(e) => {
-            onParamChange(0, e.target.value);
-            onStopEditing();
-          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               finishEditing();
               e.preventDefault();
             }
             if (e.key === "Escape") {
-              onStopEditing();
+              cancelEditing();
+              e.preventDefault();
+              e.stopPropagation();
             }
           }}
           onClick={(e) => e.stopPropagation()}
         />
-        <div className="event-command-edit-actions">
-          <button
-            type="button"
-            className="event-command-done"
-            onClick={(e) => {
-              e.stopPropagation();
-              finishEditing();
-            }}
-          >
-            Done editing
-          </button>
-        </div>
       </div>
     );
   }
@@ -222,19 +231,26 @@ export function MultiLineBlock({
           <span className="event-command-name">{def.name}</span>
         </div>
         <div style={{ padding: "2px 12px 4px 34px" }}>
-          <div className="event-command-edit-actions">
+          <div className="event-command-edit-actions" role="group" aria-label="Dialogue edit actions">
             <div style={{ fontSize: 9, color: "#8c8fa1" }}>
               Each line becomes a continuation.
             </div>
             <button
               type="button"
-              className="event-command-done"
+              className="event-command-done event-editor-btn event-editor-btn-primary"
               onClick={() => {
                 commitLines(textareaRef.current?.value ?? "");
                 onStopEditing();
               }}
             >
-              Done editing
+              OK
+            </button>
+            <button
+              type="button"
+              className="event-command-done event-editor-btn"
+              onClick={onStopEditing}
+            >
+              Cancel
             </button>
           </div>
           <textarea
@@ -244,13 +260,8 @@ export function MultiLineBlock({
             defaultValue={allLines.join("\n")}
             autoFocus
             rows={Math.max(2, allLines.length + 1)}
-            onBlur={(e) => {
-              commitLines(e.target.value);
-              onStopEditing();
-            }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
-                commitLines(e.currentTarget.value);
                 onStopEditing();
                 e.preventDefault();
                 e.stopPropagation();
