@@ -67,15 +67,6 @@ def find_button(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None
     ), None)
 
 
-def find_select_all(nodes: list[dict[str, str]]) -> dict[str, str] | None:
-    return next((
-        node for node in nodes
-        if node.get("text", "").strip().casefold() == "select all"
-        and node.get("clickable") == "true"
-        and usable_bounds(node.get("bounds", ""))
-    ), None)
-
-
 def focused_dialogue_field(nodes: list[dict[str, str]]) -> dict[str, str] | None:
     return next((
         node for node in nodes
@@ -374,26 +365,15 @@ def wait_for_focused_dialogue_field(evidence: Path, timeout: int = 8) -> dict[st
 
 
 def select_all_dialogue_input(evidence: Path) -> None:
-    # Focusing the input opens the IME and resizes the WebView. Never reuse the
-    # pre-IME bounds: they can point into Gboard's suggestion bar instead.
-    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    # Use a keyboard chord instead of a coordinate-based long-press/context
+    # menu. The menu is not reliably exposed by Android WebView accessibility.
     field = wait_for_focused_dialogue_field(evidence)
     if not field.get("text", ""):
-        raise AssertionError("Focused dialogue field became empty before replacement")
-    x, y = helper.center(field["bounds"])
-    run_adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "900")
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "event-dialogue-select-all")
-        select_all = find_select_all(nodes)
-        if select_all is not None:
-            helper.tap(helper.center(select_all["bounds"]))
-            return
-        time.sleep(0.25)
-    (evidence / "event-dialogue-select-all-failure.png").write_bytes(
-        run_adb("exec-out", "screencap", "-p")
+        raise AssertionError("Focused dialogue field was empty before replacement")
+    run_adb(
+        "shell", "input", "keycombination",
+        "KEYCODE_CTRL_LEFT", "KEYCODE_A",
     )
-    raise AssertionError("Long-pressing dialogue did not expose a clickable Select all action")
 
 
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
@@ -748,18 +728,6 @@ def selftest() -> None:
         {"text": "Done editing", "class": "android.widget.Button",
          "clickable": "true", "bounds": "[1464,863][1598,945]"},
     ], "OK") is None
-    assert find_select_all([
-        {"text": "Select all", "class": "android.widget.TextView",
-         "clickable": "true", "bounds": "[300,200][420,250]"},
-    ]) is not None
-    assert find_select_all([
-        {"text": "Select all", "class": "android.widget.TextView",
-         "clickable": "false", "bounds": "[300,200][420,250]"},
-    ]) is None
-    assert find_select_all([
-        {"text": "Copy", "class": "android.widget.TextView",
-         "clickable": "true", "bounds": "[300,200][420,250]"},
-    ]) is None
     refreshed_field = focused_dialogue_field([
         {"text": "Synthetic dialogue", "class": "android.widget.EditText",
          "focused": "false", "bounds": "[829,556][1792,658]"},
@@ -769,6 +737,25 @@ def selftest() -> None:
     assert refreshed_field is not None
     assert refreshed_field["bounds"] == "[829,451][1792,553]"
     assert refreshed_field["text"] == "Synthetically dialogue"
+
+    original_wait_for_focused = globals()["wait_for_focused_dialogue_field"]
+    original_run_adb = globals()["run_adb"]
+    observed_commands: list[tuple[str, ...]] = []
+    try:
+        globals()["wait_for_focused_dialogue_field"] = lambda _evidence: {
+            "text": "Synthetic dialogue",
+            "bounds": "[829,451][1792,553]",
+        }
+        globals()["run_adb"] = lambda *args, timeout=45: (
+            observed_commands.append(args) or b""
+        )
+        select_all_dialogue_input(Path("."))
+    finally:
+        globals()["wait_for_focused_dialogue_field"] = original_wait_for_focused
+        globals()["run_adb"] = original_run_adb
+    assert observed_commands == [
+        ("shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_A")
+    ]
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
