@@ -325,19 +325,20 @@ def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
     return dialogue_edit_committed(nodes, text) and find_button(nodes, "Save & close") is not None
 
 
-def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
-                            previous: str, timeout: int = 5) -> str:
+def wait_for_dialogue_input(evidence: Path, expected: str, previous: str,
+                            timeout: int = 5) -> str:
     deadline = time.monotonic() + timeout
+    observations: list[dict[str, str]] = []
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-input")
-        field = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and node.get("bounds") == input_bounds
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
+        field = focused_dialogue_field(nodes)
         if field:
             value = field.get("text", "")
+            observations.append({
+                "text": value,
+                "bounds": field.get("bounds", ""),
+                "class": field.get("class", ""),
+            })
             if value == expected:
                 return value
             if not previous.startswith(value) and not expected.startswith(value):
@@ -346,8 +347,13 @@ def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
                     f"expected {expected!r}"
                 )
         time.sleep(0.25)
+    (evidence / "dialogue-input-observations.json").write_text(
+        json.dumps(observations, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     raise AssertionError(
-        f"Dialogue input did not reach {expected!r} from {previous!r}"
+        f"Dialogue input did not reach {expected!r} from {previous!r}; "
+        f"focused field observations={observations!r}"
     )
 
 
@@ -419,8 +425,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
     field_text = field.get("text", "")
     try:
         set_focused_dialogue_text(evidence, updated)
-        field = wait_for_focused_dialogue_field(evidence)
-        wait_for_dialogue_input(evidence, field["bounds"], updated, field_text)
+        wait_for_dialogue_input(evidence, updated, field_text)
     except (AssertionError, RuntimeError):
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
@@ -664,6 +669,21 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    original_dump_ui = helper.dump_ui
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            helper.dump_ui = lambda *_args, **_kwargs: [{
+                "text": "Edited synthetic dialogue",
+                "class": "android.widget.EditText",
+                "focused": "true",
+                "bounds": "[100,200][700,300]",
+            }]
+            assert wait_for_dialogue_input(
+                Path(temp_dir), "Edited synthetic dialogue", "Synthetic dialogue"
+            ) == "Edited synthetic dialogue"
+        finally:
+            helper.dump_ui = original_dump_ui
+
     assert save_all_success_visible([{
         "text": "All registered editor changes were saved to the working project. "
                 "The imported source ZIP is unchanged.",
