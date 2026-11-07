@@ -527,6 +527,14 @@ export function MapEditor({
       if (readOnly) return;
 
       if (e.button === 0 && mapData) {
+        if (paintTool === "pan") {
+          e.preventDefault();
+          isPanning.current = true;
+          panStart.current = { x: e.clientX, y: e.clientY };
+          panViewport.current = { x: viewportX, y: viewportY };
+          return;
+        }
+
         const pos = screenToTile(e.clientX, e.clientY);
         if (!pos) return;
 
@@ -633,7 +641,7 @@ export function MapEditor({
   // Mouse up: finish painting
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
-      if (e.button === 1) {
+      if (e.button === 1 || (e.button === 0 && isPanning.current)) {
         isPanning.current = false;
         return;
       }

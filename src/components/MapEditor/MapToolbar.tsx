@@ -65,7 +65,7 @@ export function MapToolbar({
       </button>
       {!toolsCollapsed && !readOnly && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
-        {(["pencil", "rectangle", "bucket", "eraser", "select"] as PaintTool[]).map(
+        {(["pencil", "rectangle", "bucket", "eraser", "select", "pan"] as PaintTool[]).map(
           (tool) => (
             <button
               key={tool}
@@ -81,6 +81,8 @@ export function MapToolbar({
                 ? "Fill"
                 : tool === "eraser"
                 ? "Erase"
+                : tool === "pan"
+                ? "Pan"
                 : "Sel"}
             </button>
           )

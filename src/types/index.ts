@@ -199,7 +199,7 @@ export const DIRECTIONS: Record<number, string> = {
 
 // --- Editor state ---
 
-export type PaintTool = "pencil" | "rectangle" | "bucket" | "eraser" | "event" | "select";
+export type PaintTool = "pencil" | "rectangle" | "bucket" | "eraser" | "event" | "select" | "pan";
 
 export interface EditorState {
   project: ProjectInfo | null;

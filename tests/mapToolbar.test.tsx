@@ -47,4 +47,42 @@ describe("mobile map toolbar", () => {
 
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
   });
+
+  it("exposes a Pan tool alongside paint tools on compact layouts", () => {
+    let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        onMediaChange = listener;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const setPaintTool = vi.fn();
+
+    render(
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={setPaintTool}
+        tileClipboard={null}
+        selectedLayer={0}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+      />,
+    );
+
+    act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
+    fireEvent.click(screen.getByRole("button", { name: "Pan" }));
+
+    expect(setPaintTool).toHaveBeenCalledWith("pan");
+  });
 });
