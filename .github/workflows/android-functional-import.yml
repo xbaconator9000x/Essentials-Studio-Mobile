@@ -205,8 +205,12 @@ jobs:
       - name: Compile test-only accessibility dialogue input helper
         run: |
           set -euo pipefail
-          platform="$(find "$ANDROID_HOME/platforms" -mindepth 2 -maxdepth 2 -name uiautomator.jar \
-            -printf '%h\n' | sort -V | tail -n 1)"
+          # The legacy `uiautomator runtest` runner requires android.test.base,
+          # which Android 11 removed. Keep this test-only helper on API 29 and
+          # compile against the same platform used by the emulator below.
+          sdkmanager "platforms;android-29"
+          platform="$ANDROID_HOME/platforms/android-29"
+          test -s "$platform/uiautomator.jar"
           test -s "$platform/android.jar"
           classes="$RUNNER_TEMP/dialogue-input-classes"
           compile_stub="$RUNNER_TEMP/dialogue-input-compile-stub"
@@ -242,11 +246,12 @@ jobs:
       - name: Install and launch compiled APK
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          # Retain API30 Google APIs for comparability with the previous
-          # macOS test runs. Linux KVM replaces the CPU-starved macOS Intel
-          # host that intermittently lost ADB/package-manager responsiveness.
-          # Never count picker display or app launch as a successful import.
+          api-level: 29
+          # Legacy UiAutomator 1.x needs android.test.base, present through API
+          # 29 but removed in Android 11. Linux KVM replaces the CPU-starved
+          # macOS Intel host that intermittently lost ADB/package-manager
+          # responsiveness. Never count picker display or app launch as a
+          # successful import.
           target: google_apis
           arch: x86_64
           profile: pixel_2
