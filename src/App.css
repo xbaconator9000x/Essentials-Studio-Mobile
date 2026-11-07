@@ -475,7 +475,8 @@ body,
 
   .app-mobile-nav {
     display: flex;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    min-height: 64px;
     justify-content: space-around;
     gap: 6px;
     padding: 6px 8px max(8px, env(safe-area-inset-bottom));
