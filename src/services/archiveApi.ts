@@ -6,6 +6,7 @@ import { invoke } from "./tauriApi";
 import { save } from "@tauri-apps/plugin-dialog";
 import { exportAndroidDocument } from "./androidDocumentExport";
 import { getUnsupportedArchiveMessage } from "./archiveFormat";
+import { readBlobArrayBuffer } from "./archiveBlob";
 import {
   ARCHIVE_CHUNK_BYTES,
   decodeArchiveChunk,
@@ -21,7 +22,7 @@ export async function importProjectZip(
 ): Promise<string> {
   const unsupportedFormat = getUnsupportedArchiveMessage(file.name);
   if (unsupportedFormat) throw new Error(unsupportedFormat);
-  const header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const header = new Uint8Array(await readBlobArrayBuffer(file.slice(0, 8)));
   const signatureFormat = getUnsupportedArchiveMessage(file.name, header);
   if (signatureFormat) throw new Error(signatureFormat);
   if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Choose a .zip project archive");
@@ -31,7 +32,7 @@ export async function importProjectZip(
     let offset = 0;
     while (offset < file.size) {
       const expectedLength = expectedArchiveChunkLength(file.size, offset);
-      const buffer = await file.slice(offset, offset + expectedLength).arrayBuffer();
+      const buffer = await readBlobArrayBuffer(file.slice(offset, offset + expectedLength));
       const bytes = new Uint8Array(buffer);
       if (bytes.length !== expectedLength) {
         throw new Error("Project ZIP source became truncated during import");
