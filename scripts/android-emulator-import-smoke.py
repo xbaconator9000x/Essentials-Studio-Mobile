@@ -47,7 +47,10 @@ def locate(nodes: list[dict[str, str]], needle: str) -> tuple[int, int] | None:
     for node in nodes:
         text = node.get("text", "") + " " + node.get("content-desc", "")
         if needle.casefold() in text.casefold() and node.get("bounds"):
-            return center(node["bounds"])
+            try:
+                return center(node["bounds"])
+            except ValueError:
+                continue
     return None
 
 
@@ -324,8 +327,14 @@ def editor_visible(nodes: list[dict[str, str]]) -> bool:
     opened = locate(nodes, "Essentials Studio —") is not None
     desktop_actions_visible = locate(nodes, "Export ZIP") is not None
     phone_project_view_visible = locate(nodes, "Projects") is not None
+    project_preview_visible = (
+        locate(nodes, "read-only preview") is not None
+        and locate(nodes, "Choose a map below to inspect its layers and events.") is not None
+    )
     import_failed = any("Project ZIP import failed" in n.get("text", "") for n in nodes)
-    return opened and (desktop_actions_visible or phone_project_view_visible) and not import_failed
+    return opened and (
+        desktop_actions_visible or phone_project_view_visible or project_preview_visible
+    ) and not import_failed
 
 
 def wait_for_editor(evidence: Path, seconds: int) -> bool:
@@ -804,6 +813,23 @@ def selftest() -> None:
     assert documents_ui_visible(entries(picker_visible_xml))
     editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
     assert editor_visible(entries(editor_xml))
+    project_preview_xml = (
+        '<?xml version="1.0"?><hierarchy>'
+        '<node text="Essentials Studio — " bounds="[0,5][357,55]"/>'
+        '<node text="Projects" bounds="[0,0][0,0]"/>'
+        '<node text="1 maps · read-only preview" bounds="[34,301][1047,357]"/>'
+        '<node text="Choose a map below to inspect its layers and events. '
+        'The imported archive remains untouched." bounds="[34,354][1047,464]"/>'
+        '</hierarchy>'
+    )
+    assert locate(entries(project_preview_xml), "Projects") is None
+    assert editor_visible(entries(project_preview_xml))
+    failed_import_xml = project_preview_xml.replace(
+        "</hierarchy>",
+        '<node text="Project ZIP import failed: invalid ZIP" '
+        'bounds="[34,500][1047,580]"/></hierarchy>',
+    )
+    assert not editor_visible(entries(failed_import_xml))
     app_anr = ('<?xml version="1.0"?><hierarchy>'
                '<node text="Essentials Studio Mobile isn\'t responding" bounds="[0,0][80,60]"/>'
                '</hierarchy>')
