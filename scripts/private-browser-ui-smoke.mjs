@@ -192,7 +192,7 @@ try {
     await field.waitFor({ timeout: 15_000 });
     await field.fill(updatedDialogue);
   }
-  await eventEditor.locator(".event-editor-header").click();
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue })
     .first().waitFor({ timeout: 15_000 });
   await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
