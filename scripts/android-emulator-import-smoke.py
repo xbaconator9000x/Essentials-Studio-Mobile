@@ -228,6 +228,14 @@ def picker_breadcrumb(xml_text: str) -> str:
     for node in root.iter("node"):
         if documents_ui_id(node.get("resource-id", ""), "breadcrumb_text"):
             return node.get("text", "").strip()
+    for node in root.iter("node"):
+        if not documents_ui_id(node.get("resource-id", ""), "toolbar"):
+            continue
+        for child in node.iter("node"):
+            if child.get("class") == "android.widget.TextView":
+                location = child.get("text", "").strip()
+                if location:
+                    return location
     return ""
 
 
@@ -764,6 +772,12 @@ def selftest() -> None:
     assert picker_breadcrumb('<?xml version="1.0"?><hierarchy>'
                              '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
                              'text="sdk_gphone_x86_64"/></hierarchy>') == "sdk_gphone_x86_64"
+    toolbar_location = ('<?xml version="1.0"?><hierarchy>'
+                        '<node resource-id="com.android.documentsui:id/toolbar">'
+                        '<node class="android.widget.TextView" text="Downloads"/></node>'
+                        '<node resource-id="com.android.documentsui:id/item_root">'
+                        '<node class="android.widget.TextView" text="Download"/></node></hierarchy>')
+    assert picker_breadcrumb(toolbar_location) == "Downloads"
     focused_xml = ('<?xml version="1.0"?><hierarchy>'
                    '<node resource-id="com.google.android.documentsui:id/item_root" '
                    'focused="true"><node text="Download"/></node></hierarchy>')
