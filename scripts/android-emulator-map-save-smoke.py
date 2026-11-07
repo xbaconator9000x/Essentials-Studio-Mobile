@@ -76,6 +76,15 @@ def find_select_all(nodes: list[dict[str, str]]) -> dict[str, str] | None:
     ), None)
 
 
+def focused_dialogue_field(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if "EditText" in node.get("class", "")
+        and node.get("focused") == "true"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
 def tap_named(nodes: list[dict[str, str]], name: str) -> None:
     helper.tap(helper.center(find_named(nodes, name)["bounds"]))
 
@@ -353,8 +362,30 @@ def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
     )
 
 
-def select_all_dialogue_input(evidence: Path, input_bounds: str) -> None:
-    x, y = helper.center(input_bounds)
+def wait_for_focused_dialogue_field(
+    evidence: Path, expected: str, timeout: int = 8,
+) -> dict[str, str]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-focused-field")
+        field = focused_dialogue_field(nodes)
+        if field is not None:
+            if field.get("text", "") != expected:
+                raise AssertionError(
+                    f"Dialogue changed before selection: {field.get('text')!r}, "
+                    f"expected {expected!r}"
+                )
+            return field
+        time.sleep(0.25)
+    raise AssertionError("Focused dialogue field was not exposed after dismissing the keyboard")
+
+
+def select_all_dialogue_input(evidence: Path, original: str) -> None:
+    # Focusing the input opens the IME and resizes the WebView. Never reuse the
+    # pre-IME bounds: they can point into Gboard's suggestion bar instead.
+    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    field = wait_for_focused_dialogue_field(evidence, original)
+    x, y = helper.center(field["bounds"])
     run_adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "900")
     deadline = time.monotonic() + 8
     while time.monotonic() < deadline:
@@ -400,8 +431,8 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError("Double-tap did not expose the visible dialogue text editor")
 
     helper.tap(helper.center(editor["bounds"]))
-    input_bounds = editor["bounds"]
-    select_all_dialogue_input(evidence, input_bounds)
+    select_all_dialogue_input(evidence, original)
+    input_bounds = wait_for_focused_dialogue_field(evidence, original)["bounds"]
     field_text = original
     for offset in range(0, len(updated), 2):
         chunk = updated[offset:offset + 2]
@@ -734,6 +765,14 @@ def selftest() -> None:
         {"text": "Copy", "class": "android.widget.TextView",
          "clickable": "true", "bounds": "[300,200][420,250]"},
     ]) is None
+    refreshed_field = focused_dialogue_field([
+        {"text": "Synthetic dialogue", "class": "android.widget.EditText",
+         "focused": "false", "bounds": "[829,556][1792,658]"},
+        {"text": "Synthetic dialogue", "class": "android.widget.EditText",
+         "focused": "true", "bounds": "[829,451][1792,553]"},
+    ])
+    assert refreshed_field is not None
+    assert refreshed_field["bounds"] == "[829,451][1792,553]"
 
     assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
     assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
