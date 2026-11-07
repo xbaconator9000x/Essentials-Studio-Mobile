@@ -130,7 +130,7 @@ try {
   await dialogueEditor.waitFor({ timeout: 10_000 });
   const updatedDialogue = "Chromium event dialogue roundtrip";
   await dialogueEditor.fill(updatedDialogue);
-  await eventEditor.locator(".event-editor-header").click(); // Commit on blur.
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
   await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
