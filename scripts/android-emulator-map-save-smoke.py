@@ -435,10 +435,10 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError("Double-tap did not expose the visible dialogue text editor")
 
     field = wait_for_focused_dialogue_field(evidence)
-    field_text = field.get("text", "")
+    if not field.get("text"):
+        raise AssertionError("Focused dialogue field has no accessible initial text")
     try:
         set_focused_dialogue_text(evidence, updated)
-        wait_for_dialogue_input(evidence, updated, field_text)
     except (AssertionError, RuntimeError):
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
