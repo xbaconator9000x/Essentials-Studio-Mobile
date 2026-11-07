@@ -10,9 +10,11 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import struct
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -319,14 +321,6 @@ def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
     return dialogue_edit_committed(nodes, text) and find_button(nodes, "Save & close") is not None
 
 
-def remaining_input(current: str, expected: str) -> str:
-    if not expected.startswith(current):
-        raise AssertionError(
-            f"Dialogue input changed unexpectedly: {current!r} is not a prefix of {expected!r}"
-        )
-    return expected[len(current):]
-
-
 def wait_for_dialogue_input(evidence: Path, input_bounds: str, expected: str,
                             previous: str, timeout: int = 5) -> str:
     deadline = time.monotonic() + timeout
@@ -364,16 +358,21 @@ def wait_for_focused_dialogue_field(evidence: Path, timeout: int = 8) -> dict[st
     raise AssertionError("Focused dialogue field was not exposed after dismissing the keyboard")
 
 
-def select_all_dialogue_input(evidence: Path) -> None:
-    # Use a keyboard chord instead of a coordinate-based long-press/context
-    # menu. The menu is not reliably exposed by Android WebView accessibility.
-    field = wait_for_focused_dialogue_field(evidence)
-    if not field.get("text", ""):
-        raise AssertionError("Focused dialogue field was empty before replacement")
-    run_adb(
-        "shell", "input", "keycombination",
-        "KEYCODE_CTRL_LEFT", "KEYCODE_A",
+def set_focused_dialogue_text(evidence: Path, updated: str) -> None:
+    if updated != "Edited synthetic dialogue":
+        raise AssertionError(f"Unsupported synthetic dialogue replacement: {updated!r}")
+    jar_path = os.environ.get("ANDROID_DIALOGUE_INPUT_TEST_JAR", "")
+    if not jar_path:
+        raise AssertionError("Android accessibility dialogue input helper is unavailable")
+    remote_jar = "/data/local/tmp/essentials-dialogue-input-test.jar"
+    pushed = run_adb("push", jar_path, remote_jar)
+    result = run_adb(
+        "shell", "uiautomator", "runtest", remote_jar,
+        "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest",
     )
+    (evidence / "dialogue-accessibility-input.txt").write_bytes(pushed + result)
+    if b"OK (1 test)" not in result:
+        raise AssertionError("Android accessibility dialogue input test did not report one passing test")
 
 
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
@@ -406,22 +405,17 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError("Double-tap did not expose the visible dialogue text editor")
 
     helper.tap(helper.center(editor["bounds"]))
-    select_all_dialogue_input(evidence)
-    input_bounds = wait_for_focused_dialogue_field(evidence)["bounds"]
-    field_text = original
-    for offset in range(0, len(updated), 2):
-        chunk = updated[offset:offset + 2]
-        run_adb("shell", "input", "text", chunk.replace(" ", "%s"))
-        try:
-            field_text = wait_for_dialogue_input(
-                evidence, input_bounds, updated[:offset + len(chunk)],
-                field_text,
-            )
-        except AssertionError:
-            (evidence / "event-dialogue-input-failure.png").write_bytes(
-                run_adb("exec-out", "screencap", "-p")
-            )
-            raise
+    field = wait_for_focused_dialogue_field(evidence)
+    field_text = field.get("text", "")
+    try:
+        set_focused_dialogue_text(evidence, updated)
+        field = wait_for_focused_dialogue_field(evidence)
+        wait_for_dialogue_input(evidence, field["bounds"], updated, field_text)
+    except AssertionError:
+        (evidence / "event-dialogue-input-failure.png").write_bytes(
+            run_adb("exec-out", "screencap", "-p")
+        )
+        raise
 
     # Confirm with the single explicit action; blurring the field or hiding the
     # IME must not commit an unconfirmed draft.
@@ -728,43 +722,31 @@ def selftest() -> None:
         {"text": "Done editing", "class": "android.widget.Button",
          "clickable": "true", "bounds": "[1464,863][1598,945]"},
     ], "OK") is None
-    refreshed_field = focused_dialogue_field([
-        {"text": "Synthetic dialogue", "class": "android.widget.EditText",
-         "focused": "false", "bounds": "[829,556][1792,658]"},
-        {"text": "Synthetically dialogue", "class": "android.widget.EditText",
-         "focused": "true", "bounds": "[829,451][1792,553]"},
-    ])
-    assert refreshed_field is not None
-    assert refreshed_field["bounds"] == "[829,451][1792,553]"
-    assert refreshed_field["text"] == "Synthetically dialogue"
-
-    original_wait_for_focused = globals()["wait_for_focused_dialogue_field"]
     original_run_adb = globals()["run_adb"]
+    original_jar = os.environ.get("ANDROID_DIALOGUE_INPUT_TEST_JAR")
     observed_commands: list[tuple[str, ...]] = []
-    try:
-        globals()["wait_for_focused_dialogue_field"] = lambda _evidence: {
-            "text": "Synthetic dialogue",
-            "bounds": "[829,451][1792,553]",
-        }
-        globals()["run_adb"] = lambda *args, timeout=45: (
-            observed_commands.append(args) or b""
-        )
-        select_all_dialogue_input(Path("."))
-    finally:
-        globals()["wait_for_focused_dialogue_field"] = original_wait_for_focused
-        globals()["run_adb"] = original_run_adb
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            os.environ["ANDROID_DIALOGUE_INPUT_TEST_JAR"] = "/tmp/dialogue-test.jar"
+            globals()["run_adb"] = lambda *args, timeout=45: (
+                observed_commands.append(args)
+                or (b"OK (1 test)" if "runtest" in args else b"1 file pushed")
+            )
+            set_focused_dialogue_text(Path(temp_dir), "Edited synthetic dialogue")
+            assert (Path(temp_dir) / "dialogue-accessibility-input.txt").read_bytes() == (
+                b"1 file pushedOK (1 test)"
+            )
+        finally:
+            globals()["run_adb"] = original_run_adb
+            if original_jar is None:
+                os.environ.pop("ANDROID_DIALOGUE_INPUT_TEST_JAR", None)
+            else:
+                os.environ["ANDROID_DIALOGUE_INPUT_TEST_JAR"] = original_jar
     assert observed_commands == [
-        ("shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_A")
+        ("push", "/tmp/dialogue-test.jar", "/data/local/tmp/essentials-dialogue-input-test.jar"),
+        ("shell", "uiautomator", "runtest", "/data/local/tmp/essentials-dialogue-input-test.jar",
+         "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest"),
     ]
-
-    assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
-    assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
-    try:
-        remaining_input("Unexpected", "Edited synthetic dialogue")
-    except AssertionError:
-        pass
-    else:
-        raise AssertionError("Unexpected dialogue input was accepted")
 
     assert bounds("[10,20][100,120]") == (10, 20, 100, 120)
     for bad in ("[0,0][0,10]", "[10,10][1,20]", "nonsense"):
