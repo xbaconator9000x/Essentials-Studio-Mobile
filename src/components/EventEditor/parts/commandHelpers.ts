@@ -71,6 +71,68 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
   return endIndex !== -1 ? Math.min(insertionIndex, endIndex) : insertionIndex;
 }
 
+export type CommandMoveDirection = "up" | "down";
+
+function getAdjacentCommandRanges(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { selected: { start: number; end: number }; adjacent: { start: number; end: number } } | null {
+  const selected = getCommandBlockRange(list, index);
+  if (!selected || list[selected.start].code === 0) return null;
+  const blocks = toVisualBlocks(list);
+  const blockIndex = blocks.findIndex((block) => block.rawIndex === selected.start);
+  if (blockIndex < 0) return null;
+  const adjacentBlock = blocks[blockIndex + (direction === "up" ? -1 : 1)];
+  if (!adjacentBlock || adjacentBlock.cmd.code === 0 || adjacentBlock.cmd.indent !== list[selected.start].indent) {
+    return null;
+  }
+  const adjacent = getCommandBlockRange(list, adjacentBlock.rawIndex);
+  return adjacent ? { selected, adjacent } : null;
+}
+
+export function canMoveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): boolean {
+  return getAdjacentCommandRanges(list, index, direction) !== null;
+}
+
+export function moveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  const ranges = getAdjacentCommandRanges(list, index, direction);
+  if (!ranges) return null;
+  const { selected, adjacent } = ranges;
+  const selectedCommands = list.slice(selected.start, selected.end + 1);
+  const adjacentCommands = list.slice(adjacent.start, adjacent.end + 1);
+
+  if (direction === "up") {
+    return {
+      list: [
+        ...list.slice(0, adjacent.start),
+        ...selectedCommands,
+        ...adjacentCommands,
+        ...list.slice(selected.end + 1),
+      ],
+      selectedIndex: adjacent.start,
+    };
+  }
+
+  return {
+    list: [
+      ...list.slice(0, selected.start),
+      ...adjacentCommands,
+      ...selectedCommands,
+      ...list.slice(adjacent.end + 1),
+    ],
+    selectedIndex: adjacent.start,
+  };
+}
+
 export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
   const range = getCommandBlockRange(list, index);
   if (!range || list[range.start].code === 0) return [];

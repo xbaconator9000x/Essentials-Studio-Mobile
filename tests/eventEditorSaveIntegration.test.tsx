@@ -370,6 +370,45 @@ describe("rendered event editor Save All integration", () => {
     expect(native.loadEvent).toHaveBeenCalledTimes(2);
   });
 
+  it("moves complete dialogue blocks with touch controls and persists their source mapping", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["First portrait", 1, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["First dialogue"], source_index: 1 },
+      { code: 101, indent: 0, parameters: ["Second portrait", 1, 0, 2], source_index: 2 },
+      { code: 401, indent: 0, parameters: ["Second dialogue"], source_index: 3 },
+      { code: 0, indent: 0, parameters: [], source_index: 4 },
+    ];
+    native.saveEvent.mockImplementationOnce(async (_path: string, _mapId: number, event: RpgEvent) => {
+      diskEvent = structuredClone(event);
+    });
+    renderProject();
+    fireEvent.click(await screen.findByText("Second dialogue"));
+    const moveUp = screen.getByRole("button", { name: "Move selected command up" });
+    const moveDown = screen.getByRole("button", { name: "Move selected command down" });
+    expect((moveUp as HTMLButtonElement).disabled).toBe(false);
+    expect((moveDown as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(moveUp);
+    expect((screen.getByRole("button", { name: "Move selected command up" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Move selected command down" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+
+    const savedCommands = diskEvent.pages[0].list;
+    expect(savedCommands.map((command) => command.parameters[0])).toEqual([
+      "Second portrait", "Second dialogue",
+      "First portrait", "First dialogue",
+      undefined,
+    ]);
+    expect(savedCommands.map((command) => command.source_index)).toEqual([2, 3, 0, 1, 4]);
+
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    await screen.findByText("Second dialogue");
+    await screen.findByText("First dialogue");
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+  });
+
   it("shows every Show Text line and discards an unconfirmed draft with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },

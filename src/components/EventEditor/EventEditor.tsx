@@ -20,11 +20,13 @@ import { PageProperties } from "./parts/PageProperties";
 import { CommandRow, MultiLineBlock } from "./parts/CommandRow";
 import {
   PARENT_CONT,
+  canMoveCommandBlock,
   cloneCommandBlock,
   getBlockEnd,
   getCommandBlockRange,
   getCommandInsertionIndex,
   getDefaultParams,
+  moveCommandBlock,
   toVisualBlocks,
 } from "./parts/commandHelpers";
 import "./EventEditor.css";
@@ -163,6 +165,14 @@ export function EventEditor({
       return { ...p, list };
     });
     setSelectedCommand(insertAt);
+  }, [page, selectedCommand, updatePage]);
+
+  const moveSelectedCommand = useCallback((direction: "up" | "down") => {
+    if (!page || selectedCommand < 0) return;
+    const moved = moveCommandBlock(page.list, selectedCommand, direction);
+    if (!moved) return;
+    updatePage((p) => ({ ...p, list: moved.list }));
+    setSelectedCommand(moved.selectedIndex);
   }, [page, selectedCommand, updatePage]);
 
   const handleInsertCommand = useCallback(
@@ -544,6 +554,22 @@ export function EventEditor({
                       aria-label="Duplicate selected command block"
                     >
                       Duplicate
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={() => moveSelectedCommand("up")}
+                      disabled={!canMoveCommandBlock(page.list, selectedCommand, "up")}
+                      aria-label="Move selected command up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={() => moveSelectedCommand("down")}
+                      disabled={!canMoveCommandBlock(page.list, selectedCommand, "down")}
+                      aria-label="Move selected command down"
+                    >
+                      ↓
                     </button>
                     <button
                       className="event-editor-btn event-command-action"
