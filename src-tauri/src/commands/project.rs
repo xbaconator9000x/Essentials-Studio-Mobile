@@ -65,12 +65,19 @@ pub async fn open_project(path: String) -> Result<ProjectInfo, String> {
         return Err("Not a valid RMXP project: Game.rxproj not found".to_string());
     }
 
-    // Read Game.ini for project name
+    // Game.ini is only used for display metadata. XP projects may contain
+    // legacy Windows-encoded titles, so a decoding issue must not block opening
+    // the actual Marshal project data.
     let ini_path = project_path.join("Game.ini");
     let name = if ini_path.exists() {
-        let ini_content = std::fs::read_to_string(&ini_path)
-            .map_err(|e| format!("Failed to read Game.ini: {}", e))?;
-        parse_ini_title(&ini_content).unwrap_or_else(|| "Untitled Project".to_string())
+        match std::fs::read(&ini_path) {
+            Ok(ini_content) => parse_ini_title(&ini_content)
+                .unwrap_or_else(|| "Untitled Project".to_string()),
+            Err(error) => {
+                eprintln!("[open_project] Could not read optional Game.ini title: {error}");
+                "Untitled Project".to_string()
+            }
+        }
     } else {
         "Untitled Project".to_string()
     };
@@ -1681,14 +1688,91 @@ fn event_infos(map: &RpgMap) -> Vec<EventInfo> {
         .collect()
 }
 
-fn parse_ini_title(content: &str) -> Option<String> {
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with("Title=") {
-            return Some(line[6..].to_string());
+fn parse_ini_title(content: &[u8]) -> Option<String> {
+    let decoded = String::from_utf8_lossy(content);
+    for line in decoded.lines() {
+        let line = line.trim().trim_start_matches('\u{feff}').trim();
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim().eq_ignore_ascii_case("Title") {
+                return Some(value.trim().to_string());
+            }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod project_metadata_tests {
+    use super::parse_ini_title;
+
+    #[test]
+    fn game_ini_title_accepts_bom_spacing_and_case_insensitive_key() {
+        assert_eq!(
+            parse_ini_title(b"\xef\xbb\xbf[Game]\r\n tItLe =  Essentials Project  \r\n"),
+            Some("Essentials Project".into()),
+        );
+    }
+
+    #[test]
+    fn game_ini_title_tolerates_legacy_non_utf8_bytes() {
+        assert_eq!(
+            parse_ini_title(b"[Game]\r\nTitle=Caf\xe9 Project\r\n"),
+            Some("Caf\u{fffd} Project".into()),
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_game_ini_bytes_do_not_block_opening_rmxp_data() {
+        use crate::marshal::types::{RubyObject, RubyValue};
+        use std::fs;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xp-game-ini-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("Data")).unwrap();
+        fs::write(root.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+        let ini_bytes = b"[Game]\r\nTitle=Caf\xe9 Project\r\n";
+        fs::write(root.join("Game.ini"), ini_bytes).unwrap();
+
+        let map_info = MapInfo {
+            name: "Synthetic Map".into(),
+            parent_id: 0,
+            order: 1,
+            expanded: true,
+            scroll_x: 0,
+            scroll_y: 0,
+        };
+        marshal::dump_file(
+            &root.join("Data/MapInfos.rxdata"),
+            &RubyValue::Hash(vec![(RubyValue::Integer(1), map_info.to_ruby_value())]),
+        )
+        .unwrap();
+        let mut system = RubyObject::new("RPG::System".into());
+        system
+            .instance_vars
+            .push(("@edit_map_id".into(), RubyValue::Integer(1)));
+        marshal::dump_file(&root.join("Data/System.rxdata"), &RubyValue::Object(system))
+            .unwrap();
+        marshal::dump_file(
+            &root.join("Data/Tilesets.rxdata"),
+            &RubyValue::Array(vec![RubyValue::Nil]),
+        )
+        .unwrap();
+
+        let project = super::open_project(root.to_string_lossy().into_owned())
+            .await
+            .expect("legacy INI encoding is optional metadata, not a project-open failure");
+        assert_eq!(project.name, "Caf\u{fffd} Project");
+        assert_eq!(project.map_infos.get(&1).unwrap().name, "Synthetic Map");
+        assert_eq!(fs::read(root.join("Game.ini")).unwrap(), ini_bytes);
+
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn load_map_infos(path: &Path) -> Result<HashMap<i64, MapInfo>, String> {
