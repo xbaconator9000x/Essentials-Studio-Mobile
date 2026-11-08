@@ -477,6 +477,27 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 
+  it("hands a completed pinch to one-finger panning without painting", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    context.drawImage.mockClear();
+    putImageData.mockClear();
+
+    fireEvent.pointerDown(editorCanvas!, { pointerId: 1, pointerType: "touch", clientX: 80, clientY: 100 });
+    fireEvent.pointerDown(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 120, clientY: 100 });
+    fireEvent.pointerMove(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
+    fireEvent.pointerUp(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
+    fireEvent.pointerMove(editorCanvas!, { pointerId: 1, pointerType: "touch", clientX: 90, clientY: 100 });
+
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.some((call) => call[3] === 96 && call[1] === 72)).toBe(true);
+    });
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
   it("zooms around the pointer and centers button zoom without dirtying sprite pixels", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
