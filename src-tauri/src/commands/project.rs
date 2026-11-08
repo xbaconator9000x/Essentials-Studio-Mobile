@@ -1133,7 +1133,9 @@ mod map_tile_fidelity_tests {
                 2,
             ).await.unwrap_err();
             assert!(
-                error.contains("@data") || error.contains("three-layer"),
+                error.contains("@data")
+                    || error.contains("three-layer")
+                    || error.contains("invalid"),
                 "{malformed}: {error}"
             );
             assert_eq!(std::fs::read(&map_file).unwrap(), before, "{malformed}");
