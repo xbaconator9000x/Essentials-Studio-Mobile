@@ -30,6 +30,24 @@ describe("map event browser", () => {
     expect(screen.getByText("(11, 5)")).toBeTruthy();
   });
 
+  it("filters map events by name, padded ID, and tile coordinates", () => {
+    render(<MapEventList events={events} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
+    const search = screen.getByRole("searchbox", { name: "Search map events by name, ID, or location" });
+
+    fireEvent.change(search, { target: { value: "009" } });
+    expect(screen.getByRole("button", { name: /009.*Hidden switch/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /002.*Guide/ })).toBeNull();
+
+    fireEvent.change(search, { target: { value: "8,4" } });
+    expect(screen.getByRole("button", { name: /002.*Guide/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
+
+    fireEvent.change(search, { target: { value: "nobody" } });
+    expect(screen.getByRole("status").textContent).toContain("No map events match");
+    fireEvent.click(screen.getByRole("button", { name: "Clear event search" }));
+    expect(screen.getByRole("button", { name: /002.*Guide/ })).toBeTruthy();
+  });
+
   it("renders a useful empty-map state", () => {
     render(<MapEventList events={[]} onClose={vi.fn()} />);
 
