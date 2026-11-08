@@ -1703,7 +1703,7 @@ fn parse_ini_title(content: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod project_metadata_tests {
-    use super::parse_ini_title;
+    use super::*;
 
     #[test]
     fn game_ini_title_accepts_bom_spacing_and_case_insensitive_key() {
