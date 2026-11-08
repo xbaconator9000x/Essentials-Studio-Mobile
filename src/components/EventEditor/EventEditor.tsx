@@ -395,6 +395,9 @@ export function EventEditor({
               <button
                 key={i}
                 className={`event-page-tab ${activePage === i ? "active" : ""}`}
+                type="button"
+                aria-label={`Event page ${i + 1}`}
+                aria-pressed={activePage === i}
                 onClick={() => {
                   setActivePage(i);
                   setSelectedCommand(-1);
@@ -406,6 +409,7 @@ export function EventEditor({
             ))}
             <button
               className="event-page-tab event-page-tab-add"
+              type="button"
               onClick={() => {
                 if (!event) return;
                 const newPage: EventPage = {
@@ -424,6 +428,7 @@ export function EventEditor({
                 setSaveError(null);
                 setDirty(true);
               }}
+              aria-label="Add event page"
               title="Add a new page"
             >
               +
@@ -431,6 +436,7 @@ export function EventEditor({
             {event.pages.length > 1 && (
               <button
                 className="event-page-tab event-page-tab-remove"
+                type="button"
                 onClick={() => {
                   if (!event || event.pages.length <= 1) return;
                   const pages = event.pages.filter((_, i) => i !== activePage);
@@ -441,6 +447,7 @@ export function EventEditor({
                   setSaveError(null);
                   setDirty(true);
                 }}
+                aria-label="Remove event page"
                 title="Remove current page"
               >
                 −

@@ -615,6 +615,12 @@
     padding-inline: 14px;
   }
 
+  .event-page-tab-add,
+  .event-page-tab-remove {
+    min-width: 44px;
+    padding-inline: 8px;
+  }
+
   .event-editor-body {
     flex: 1 1 0;
     min-height: 0;

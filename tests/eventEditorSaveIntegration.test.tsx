@@ -146,6 +146,42 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("edits dialogue on another event page and persists only that page through Save All", async () => {
+    const firstPage = structuredClone(diskEvent.pages[0]);
+    const secondPage = structuredClone(firstPage);
+    secondPage.list = [
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["Second page dialogue"], source_index: 1 },
+      { code: 0, indent: 0, parameters: [], source_index: 2 },
+    ];
+    diskEvent.pages.push(secondPage);
+    renderProject();
+
+    const secondPageTab = await screen.findByRole("button", { name: "Event page 2" });
+    expect(screen.getByRole("button", { name: "Event page 1" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(secondPageTab);
+    expect(secondPageTab.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(await screen.findByText("Second page dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(editor, { target: { value: "Updated second page dialogue" } });
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByText("Updated second page dialogue");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByRole("status");
+
+    expect(diskEvent.pages[0]).toEqual(firstPage);
+    expect(diskEvent.pages[1].list[1].parameters[0]).toBe("Updated second page dialogue");
+    expect(diskEvent.pages[1].list.map((command) => command.source_index)).toEqual([0, 1, 2]);
+
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Event page 2" }));
+    await screen.findByText("Updated second page dialogue");
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+  });
+
   it("starts event properties collapsed on narrow screens while keeping commands available", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     renderProject();
