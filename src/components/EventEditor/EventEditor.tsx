@@ -48,6 +48,7 @@ export function EventEditor({
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [editingCommand, setEditingCommand] = useState<number | null>(null);
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -459,8 +460,19 @@ export function EventEditor({
           ) : page ? (
             <>
               {/* Left: Page properties */}
-              <div className="event-page-properties">
-                <PageProperties page={page} onUpdatePage={updatePage} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
+              <div className={`event-page-properties${propertiesCollapsed ? " is-collapsed" : ""}`}>
+                <button
+                  type="button"
+                  className="event-page-properties-toggle"
+                  aria-expanded={!propertiesCollapsed}
+                  aria-controls="event-page-properties-content"
+                  onClick={() => setPropertiesCollapsed((collapsed) => !collapsed)}
+                >
+                  {propertiesCollapsed ? "Show event properties" : "Hide event properties"}
+                </button>
+                <div id="event-page-properties-content" className="event-page-properties-content" hidden={propertiesCollapsed}>
+                  <PageProperties page={page} onUpdatePage={updatePage} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
+                </div>
               </div>
 
               {/* Right: Command list */}

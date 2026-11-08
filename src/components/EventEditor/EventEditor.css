@@ -126,6 +126,14 @@
   padding: 12px;
 }
 
+.event-page-properties-toggle {
+  display: none;
+}
+
+.event-page-properties-content[hidden] {
+  display: none;
+}
+
 .prop-section {
   margin-bottom: 16px;
 }
@@ -610,6 +618,23 @@
     border-right: 0;
     border-bottom: 1px solid var(--color-surface0);
     padding: 12px;
+  }
+
+  .event-page-properties-toggle {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface1);
+    border-radius: 4px;
+    background: var(--color-surface0);
+    color: var(--color-text);
+    text-align: left;
+  }
+
+  .event-page-properties.is-collapsed {
+    max-height: none;
+    padding-block: 4px;
   }
 
   .event-command-panel {

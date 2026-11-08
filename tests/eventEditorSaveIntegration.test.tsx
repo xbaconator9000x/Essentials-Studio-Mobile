@@ -253,6 +253,31 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited from Android");
   });
 
+  it("collapses mobile event properties without interrupting dialogue edits or Save All", async () => {
+    renderProject();
+
+    const propertiesToggle = await screen.findByRole("button", { name: "Hide event properties" });
+    const properties = document.getElementById("event-page-properties-content");
+    expect(properties).toBeTruthy();
+    expect(properties?.hidden).toBe(false);
+    fireEvent.click(propertiesToggle);
+    expect(screen.getByRole("button", { name: "Show event properties" }).getAttribute("aria-expanded")).toBe("false");
+    expect(properties?.hidden).toBe(true);
+
+    fireEvent.click(await screen.findByText("Original dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByDisplayValue("Original dialogue"), {
+      target: { value: "Edited while properties collapsed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByText("Edited while properties collapsed");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByRole("status");
+
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited while properties collapsed");
+    expect(screen.getByRole("button", { name: "Show event properties" })).toBeTruthy();
+  });
+
   it("discards a Show Text draft with Cancel without persisting it", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
