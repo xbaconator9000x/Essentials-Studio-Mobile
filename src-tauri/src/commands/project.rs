@@ -92,7 +92,7 @@ pub async fn open_project(path: String) -> Result<ProjectInfo, String> {
 
     // Count tilesets
     let tilesets_path = project_path.join("Data").join("Tilesets.rxdata");
-    let tileset_count = count_tilesets(&tilesets_path).unwrap_or(0);
+    let tileset_count = count_tilesets(&tilesets_path)?;
 
     eprintln!("[open_project] Loaded: '{}', {} maps, {} tilesets, edit_map_id={}",
         name, map_infos.len(), tileset_count, system.edit_map_id);
@@ -1803,10 +1803,58 @@ fn load_system(path: &Path) -> Result<RpgSystem, String> {
         .ok_or_else(|| "Failed to interpret System data".to_string())
 }
 
-fn count_tilesets(path: &Path) -> Option<usize> {
-    let value = marshal::load_file(path).ok()?;
-    let arr = value.as_array()?;
-    Some(arr.len().saturating_sub(1)) // First element is nil
+fn count_tilesets(path: &Path) -> Result<usize, String> {
+    let value = marshal::load_file(path)
+        .map_err(|e| format!("Failed to parse Tilesets.rxdata: {}", e))?;
+    let arr = value
+        .as_array()
+        .ok_or_else(|| "Tilesets.rxdata is not an array".to_string())?;
+    Ok(arr.len().saturating_sub(1)) // First element is nil
+}
+
+#[cfg(test)]
+mod tileset_metadata_tests {
+    use super::count_tilesets;
+    use crate::marshal::types::RubyValue;
+    use std::fs;
+
+    fn temporary_path() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "xp-tilesets-{}-{unique}.rxdata",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn tileset_count_rejects_missing_malformed_and_wrong_shape_metadata() {
+        let path = temporary_path();
+        assert!(count_tilesets(&path)
+            .unwrap_err()
+            .contains("Failed to parse Tilesets.rxdata"));
+
+        fs::write(&path, b"not Ruby Marshal").unwrap();
+        assert!(count_tilesets(&path)
+            .unwrap_err()
+            .contains("Failed to parse Tilesets.rxdata"));
+
+        crate::marshal::dump_file(&path, &RubyValue::Integer(1)).unwrap();
+        assert_eq!(
+            count_tilesets(&path).unwrap_err(),
+            "Tilesets.rxdata is not an array"
+        );
+
+        crate::marshal::dump_file(
+            &path,
+            &RubyValue::Array(vec![RubyValue::Nil, RubyValue::Nil]),
+        )
+        .unwrap();
+        assert_eq!(count_tilesets(&path).unwrap(), 1);
+        fs::remove_file(path).unwrap();
+    }
 }
 
 /// List all tileset names (id → name).
