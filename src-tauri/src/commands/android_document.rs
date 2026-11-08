@@ -324,6 +324,9 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
             env.call_method(&output, "flush", "()V", &[])?;
             Ok(copied)
         })();
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
         let close_result = env.call_method(&output, "close", "()V", &[]);
         let copied = write_result?;
         close_result?;
@@ -367,6 +370,9 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
             }
             Ok(())
         })();
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
         let close_result = env.call_method(&input, "close", "()V", &[]);
         verify_result?;
         close_result?;
