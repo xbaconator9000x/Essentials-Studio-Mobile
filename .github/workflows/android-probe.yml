@@ -89,6 +89,10 @@ jobs:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: npm run tauri android init -- --ci
+      - name: Cache Gradle wrapper distribution and build state
+        uses: gradle/actions/setup-gradle@v6.1.0
+        with:
+          cache-provider: basic
       - name: Compile Android ARM64 debug APK
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}

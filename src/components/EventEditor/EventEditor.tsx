@@ -18,7 +18,14 @@ import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
 import { PageProperties } from "./parts/PageProperties";
 import { CommandRow, MultiLineBlock } from "./parts/CommandRow";
-import { PARENT_CONT, getBlockEnd, getDefaultParams, toVisualBlocks } from "./parts/commandHelpers";
+import {
+  PARENT_CONT,
+  cloneCommandBlock,
+  getBlockEnd,
+  getCommandBlockRange,
+  getDefaultParams,
+  toVisualBlocks,
+} from "./parts/commandHelpers";
 import "./EventEditor.css";
 
 interface Props {
@@ -308,22 +315,19 @@ export function EventEditor({
       }
       // Copy command
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
-        const cmd = page.list[selectedCommand];
-        if (cmd && cmd.code !== 0) {
-          setClipboard([{
-            code: cmd.code,
-            indent: cmd.indent,
-            parameters: [...cmd.parameters],
-          }]);
-        }
+        const block = cloneCommandBlock(page.list, selectedCommand);
+        if (block.length > 0) setClipboard(block);
       }
       // Paste command
       if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard && clipboard.length > 0 && page && editingCommand === null) {
         e.preventDefault();
-        const insertAt = selectedCommand >= 0 ? selectedCommand + 1 : page.list.length - 1;
+        const selectedRange = selectedCommand >= 0
+          ? getCommandBlockRange(page.list, selectedCommand)
+          : null;
+        const insertAt = selectedRange ? selectedRange.end + 1 : page.list.length - 1;
         updatePage((p) => {
           const list = [...p.list];
-          list.splice(insertAt, 0, ...clipboard.map((c) => ({ ...c, parameters: [...c.parameters] })));
+          list.splice(insertAt, 0, ...structuredClone(clipboard));
           return { ...p, list };
         });
         setSelectedCommand(insertAt);
@@ -331,18 +335,17 @@ export function EventEditor({
       // Duplicate command (Ctrl+D)
       if ((e.ctrlKey || e.metaKey) && e.key === "d" && selectedCommand >= 0 && page && editingCommand === null) {
         e.preventDefault();
-        const cmd = page.list[selectedCommand];
-        if (cmd && cmd.code !== 0) {
+        const block = cloneCommandBlock(page.list, selectedCommand);
+        if (block.length > 0) {
+          const range = getCommandBlockRange(page.list, selectedCommand);
+          if (!range) return;
+          const insertAt = range.end + 1;
           updatePage((p) => {
             const list = [...p.list];
-            list.splice(selectedCommand + 1, 0, {
-              code: cmd.code,
-              indent: cmd.indent,
-              parameters: [...cmd.parameters],
-            });
+            list.splice(insertAt, 0, ...block);
             return { ...p, list };
           });
-          setSelectedCommand(selectedCommand + 1);
+          setSelectedCommand(insertAt);
         }
       }
       // Undo (Ctrl+Z)

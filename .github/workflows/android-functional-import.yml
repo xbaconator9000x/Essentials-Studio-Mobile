@@ -1,25 +1,9 @@
 name: Android emulator functional ZIP import
 
 on:
-  # Run the KVM acceptance path on functional PRs and integrated main candidates.
+  # Emulator UI acceptance is deferred to user-operated physical Android phones.
+  # Keep the synthetic KVM diagnostic available only when explicitly requested.
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'scripts/android-emulator-*.py'
-      - 'scripts/android-emulator-*.sh'
-      - 'scripts/android-dialogue-input-test/**'
-      - '.github/workflows/android-functional-import.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'scripts/android-emulator-*.py'
-      - 'scripts/android-emulator-*.sh'
-      - 'scripts/android-dialogue-input-test/**'
-      - '.github/workflows/android-functional-import.yml'
 
 permissions:
   contents: read
@@ -129,6 +113,10 @@ jobs:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: npm run tauri android init -- --ci
+      - name: Cache Gradle wrapper distribution and build state
+        uses: gradle/actions/setup-gradle@v6.1.0
+        with:
+          cache-provider: basic
       - name: Compile x86_64 Android debug APK
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}

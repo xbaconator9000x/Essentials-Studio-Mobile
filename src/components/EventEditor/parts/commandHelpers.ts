@@ -46,6 +46,30 @@ export function getBlockEnd(list: EventCommand[], index: number): number {
   return j - 1;
 }
 
+export function getCommandBlockRange(
+  list: EventCommand[],
+  index: number,
+): { start: number; end: number } | null {
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+  for (const block of toVisualBlocks(list)) {
+    const end = block.kind === "multi" ? block.contIndices.at(-1) ?? block.rawIndex : block.rawIndex;
+    if (index >= block.rawIndex && index <= end) {
+      return { start: block.rawIndex, end };
+    }
+  }
+  return null;
+}
+
+export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
+  const range = getCommandBlockRange(list, index);
+  if (!range || list[range.start].code === 0) return [];
+  return list.slice(range.start, range.end + 1).map((command) => {
+    const copy = { ...command, parameters: structuredClone(command.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
+
 /** Get default parameters for a new command */
 export function getDefaultParams(code: number): unknown[] {
   switch (code) {

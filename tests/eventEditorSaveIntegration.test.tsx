@@ -284,6 +284,47 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual([101, 401, 0]);
   });
 
+  it("copies and duplicates whole Show Text blocks without reusing source indices", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["Portrait", 1, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["First original line"], source_index: 1 },
+      { code: 401, indent: 0, parameters: ["Second original line"], source_index: 2 },
+      { code: 0, indent: 0, parameters: [], source_index: 3 },
+    ];
+    renderProject();
+    await screen.findByText("Second original line");
+
+    const secondLine = screen.getByText("Second original line");
+    fireEvent.click(secondLine);
+    fireEvent.keyDown(secondLine, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(secondLine, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(secondLine, { key: "d", ctrlKey: true });
+
+    expect(screen.getAllByText("First original line")).toHaveLength(3);
+    expect(screen.getAllByText("Second original line")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+
+    const commands = diskEvent.pages[0].list;
+    expect(commands.map((command) => command.code)).toEqual([
+      101, 401, 401,
+      101, 401, 401,
+      101, 401, 401,
+      0,
+    ]);
+    expect(commands.slice(3, 9).map((command) => command.parameters[0])).toEqual([
+      "Portrait", "First original line", "Second original line",
+      "Portrait", "First original line", "Second original line",
+    ]);
+    expect(commands.slice(3, 9).every((command) => command.source_index === undefined)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    await screen.findAllByText("Second original line");
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+    expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual(commands.map((command) => command.code));
+  });
+
   it("shows every Show Text line and discards an unconfirmed draft with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
