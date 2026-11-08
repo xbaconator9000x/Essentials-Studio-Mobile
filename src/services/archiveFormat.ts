@@ -12,3 +12,15 @@ export function getUnsupportedArchiveMessage(
       RAR_SIGNATURE.every((byte, index) => header[index] === byte));
   return isRar ? UNSUPPORTED_RAR_MESSAGE : null;
 }
+
+/** Fail early for mislabeled files, before allocating an import session.
+ * The Rust ZIP parser remains the authoritative archive validator.
+ */
+export function validateZipSignature(header: ArrayLike<number>): void {
+  const localFileHeader = header.length >= 4 &&
+    header[0] === 0x50 && header[1] === 0x4b &&
+    header[2] === 0x03 && header[3] === 0x04;
+  if (!localFileHeader) {
+    throw new Error("This file is not a supported project ZIP archive (missing ZIP file header). Export or create a real ZIP; renaming another file will not convert it.");
+  }
+}
