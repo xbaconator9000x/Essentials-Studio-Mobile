@@ -1343,6 +1343,19 @@ mod archive_roundtrip_tests {
         ]);
     }
 
+    fn add_tileset_tables_with_extension(tileset: &mut RubyObject) {
+        add_tileset_tables(tileset);
+        let (_, passages) = tileset
+            .instance_vars
+            .iter_mut()
+            .find(|(name, _)| name == "@passages")
+            .expect("passages Table");
+        let RubyValue::UserDefined { data, .. } = passages else {
+            panic!("passages Table");
+        };
+        data.extend_from_slice(b"fixture-extension");
+    }
+
     /// Fully synthetic PNG artwork for the native ZIP fixture. The previous
     /// fixture wrote ASCII placeholder bytes under a .png name, so successful
     /// project opening could not establish whether Android could actually
@@ -1563,7 +1576,7 @@ mod archive_roundtrip_tests {
                 RubyValue::Array(vec![ruby_string(""); 7]),
             ),
         ]);
-        add_tileset_tables(&mut tileset);
+        add_tileset_tables_with_extension(&mut tileset);
         let tilesets = RubyValue::Array(vec![
             RubyValue::Nil,
             RubyValue::Object(tileset),
@@ -2171,6 +2184,17 @@ mod archive_roundtrip_tests {
                 .await
                 .unwrap();
             assert_eq!(tileset.passages[7], 0x0f);
+            let serialized_tilesets =
+                crate::marshal::load_file(&imported.join("Data/Tilesets.rxdata")).unwrap();
+            let passage_bytes = serialized_tilesets.as_array().unwrap()[1]
+                .as_object()
+                .unwrap()
+                .get("passages")
+                .unwrap();
+            let RubyValue::UserDefined { data, .. } = passage_bytes else {
+                panic!("serialized passages Table");
+            };
+            assert!(data.ends_with(b"fixture-extension"));
             let event = crate::commands::project::load_event(project_path.clone(), 1, 7)
                 .await.unwrap();
 
