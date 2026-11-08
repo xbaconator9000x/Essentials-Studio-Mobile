@@ -481,18 +481,16 @@ export function EventEditor({
                   <span className="event-command-panel-title">
                     Event Commands ({page.list.length})
                   </span>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div className="event-command-actions">
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
+                      className="event-editor-btn event-command-action"
                       onClick={() => setShowPicker(true)}
                       title="Insert a new command (Ins)"
                     >
                       + Insert
                     </button>
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
+                      className="event-editor-btn event-command-action"
                       onClick={() => setEditingCommand(selectedCommand)}
                       disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
                       title="Edit selected command"
@@ -500,8 +498,7 @@ export function EventEditor({
                       Edit
                     </button>
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
+                      className="event-editor-btn event-command-action"
                       onClick={() => {
                         if (selectedCommand >= 0) handleDeleteCommand(selectedCommand);
                       }}
@@ -566,16 +563,16 @@ export function EventEditor({
 
         {/* Footer */}
         <div className="event-editor-footer">
-          <span style={{ fontSize: 10, color: "#8c8fa1" }}>
+          <span className="event-editor-keyboard-hints" style={{ fontSize: 10, color: "#8c8fa1" }}>
             Select + Edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
           </span>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="event-editor-footer-actions">
             <button
               className="event-editor-btn"
               onClick={() => { revisionRef.current += 1; setSaveError(null); undo(); setDirty(true); }}
               disabled={!canUndo}
               title="Undo (Ctrl+Z)"
-              style={{ padding: "6px 10px" }}
+              aria-label="Undo event edit"
             >
               ↩
             </button>
@@ -584,7 +581,7 @@ export function EventEditor({
               onClick={() => { revisionRef.current += 1; setSaveError(null); redo(); setDirty(true); }}
               disabled={!canRedo}
               title="Redo (Ctrl+Y)"
-              style={{ padding: "6px 10px" }}
+              aria-label="Redo event edit"
             >
               ↪
             </button>

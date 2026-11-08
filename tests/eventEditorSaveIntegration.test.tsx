@@ -147,6 +147,8 @@ describe("rendered event editor Save All integration", () => {
   it("confirms dialogue with OK, saves all, and reloads the still-open event", async () => {
     renderProject();
 
+    expect(await screen.findByRole("button", { name: "Undo event edit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Redo event edit" })).toBeTruthy();
     fireEvent.click(await screen.findByText("Original dialogue"));
     const edit = screen.getByRole("button", { name: "Edit" });
     expect((edit as HTMLButtonElement).disabled).toBe(false);

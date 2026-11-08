@@ -225,6 +225,18 @@
   flex-shrink: 0;
 }
 
+.event-command-actions,
+.event-editor-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-command-action {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
 .event-command-panel-title {
   font-size: 12px;
   font-weight: 600;
@@ -642,6 +654,23 @@
     min-height: 0;
   }
 
+  .event-command-panel-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .event-command-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .event-command-action {
+    min-width: 64px;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
   .event-command-list {
     font-size: 14px;
   }
@@ -691,9 +720,22 @@
     padding: 8px 12px max(8px, env(safe-area-inset-bottom));
   }
 
+  .event-editor-keyboard-hints {
+    display: none;
+  }
+
+  .event-editor-footer-actions {
+    gap: 6px;
+  }
+
   .event-editor-btn {
     min-height: 44px;
     min-width: 88px;
+  }
+
+  .event-editor-footer-actions .event-editor-btn[aria-label] {
+    min-width: 44px;
+    padding: 6px;
   }
 }
 
