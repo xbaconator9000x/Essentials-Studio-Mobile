@@ -53,6 +53,7 @@ import { DatabaseEditor } from "./components/DatabaseEditor/DatabaseEditor";
 import { PbsEntityEditor } from "./components/PbsEntityEditor/PbsEntityEditor";
 import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
 import { buildPbsIndex, type PbsIndex } from "./services/pbsIndex";
+import { supportsDirectProjectFolderOpen } from "./services/projectOpenMode";
 import {
   ProjectSaveProvider,
   useProjectSave,
@@ -88,7 +89,8 @@ async function showFolderPicker(): Promise<string | null> {
  */
 function AppContent() {
   const { saveAll, dirtyCount, hasUnsavedEdits, updateDirty } = useProjectSave();
-  const isAndroid = /Android/i.test(navigator.userAgent);
+  const canOpenProjectFolder = supportsDirectProjectFolderOpen(navigator.userAgent);
+  const isAndroid = !canOpenProjectFolder;
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
   const [mobileLayout, setMobileLayout] = useState(
     () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
@@ -492,13 +494,17 @@ function AppContent() {
   }, [handleOpenProject, lastProjectPath]);
 
   const handleBrowseProject = useCallback(async () => {
+    if (!canOpenProjectFolder) {
+      setArchiveOutcome("On Android, import an Essentials project ZIP instead of opening a folder.");
+      return;
+    }
     try {
       const selected = await showFolderPicker();
       if (selected) await handleOpenProject(selected);
     } catch (err) {
       setError(`Could not open project: ${err}`);
     }
-  }, [handleOpenProject]);
+  }, [canOpenProjectFolder, handleOpenProject]);
 
   // ── Archive import into private app storage ─────────────────────────────────
   const handleImportSource = useCallback(async <T,>(
@@ -1029,13 +1035,15 @@ function AppContent() {
           <div className="app-welcome-content">
             <h1>Essentials Studio</h1>
             <p>A modern editor for Pokémon Essentials projects</p>
-            <button
-              className="app-welcome-btn"
-              onClick={handleBrowseProject}
-              disabled={loading}
-            >
-              {loading ? "Opening..." : "Open Project Folder"}
-            </button>
+            {canOpenProjectFolder && (
+              <button
+                className="app-welcome-btn"
+                onClick={handleBrowseProject}
+                disabled={loading}
+              >
+                {loading ? "Opening..." : "Open Project Folder"}
+              </button>
+            )}
             {lastProjectPath && (
               <button className="app-welcome-btn" onClick={() => void handleReopenLastProject()} disabled={loading}>
                 Reopen Last Project
@@ -1057,6 +1065,9 @@ function AppContent() {
                   if (file) void handleImportProjectZip(file);
                 }} />
             </label>
+            )}
+            {isAndroid && (
+              <p role="note">On Android, open projects from a ZIP archive. The source ZIP remains unchanged.</p>
             )}
             {isAndroid && (
               <button className="app-welcome-btn" aria-label="Use native Android document picker"
@@ -1142,9 +1153,11 @@ function AppContent() {
             </button>
           )}
           {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
-          <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
-            Open...
-          </button>
+          {canOpenProjectFolder && (
+            <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
+              Open...
+            </button>
+          )}
           {loading && <span className="app-loading">Loading...</span>}
         </div>
       </div>
@@ -1258,7 +1271,9 @@ function AppContent() {
           <div className="app-mobile-safety-note" role="alert">
             Saving, editing and export have not passed Android persistence acceptance. Keep the original ZIP and work only on a disposable copy.
           </div>
-          <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
+          {canOpenProjectFolder && (
+            <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
+          )}
           <label className="app-mobile-import-btn">
             Import disposable ZIP
             <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
