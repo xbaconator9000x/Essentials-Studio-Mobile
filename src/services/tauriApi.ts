@@ -37,6 +37,12 @@ const DEMO_READ_COMMANDS = new Set([
 
 /** Browser development uses the local token-protected Vite proxy. Demo is read-only. */
 async function browserInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  // A packaged Android editor must never display synthetic project data when
+  // its native bridge fails to initialize. Fail visibly instead of masquerading
+  // as a successfully opened Essentials project.
+  if (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent)) {
+    throw new Error("Android native editor bridge is unavailable. Restart the app; no project data was loaded or changed.");
+  }
   const endpoint = import.meta.env.VITE_BROWSER_BACKEND_URL as string | undefined;
   if (endpoint) return callBrowserBridge(cmd, args, endpoint, window.location.origin);
   if (!DEMO_READ_COMMANDS.has(cmd)) {
