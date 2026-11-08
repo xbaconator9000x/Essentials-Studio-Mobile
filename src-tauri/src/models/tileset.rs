@@ -103,11 +103,11 @@ fn extract_table(value: Option<&RubyValue>) -> Option<Table> {
     match value? {
         RubyValue::UserDefined { class_name, data } if class_name == "Table" => {
             let table = Table::from_bytes(data)?;
+            // Read only the parsed Table prefix; tileset data is not reserialized here.
             (table.dim_count == 1
                 && table.y_size == 1
                 && table.z_size == 1
-                && table.data.len() == table.x_size as usize
-                && data.len() == 20 + table.data.len() * 2)
+                && table.data.len() == table.x_size as usize)
                 .then_some(table)
         }
         _ => None,
@@ -166,5 +166,24 @@ mod tests {
             })))
             .is_none()
         );
+    }
+
+    #[test]
+    fn reads_valid_collision_tables_with_opaque_trailing_payload() {
+        let mut passages = Table::new_1d(384);
+        passages.set(7, 0, 0, 0x0f);
+        let RubyValue::UserDefined { data, .. } = serialized_table(passages) else {
+            panic!("serialized XP table");
+        };
+        let mut extended_data = data;
+        extended_data.extend_from_slice(b"extension");
+        let tileset = RpgTileset::from_ruby_value(&tileset_value(Some(RubyValue::UserDefined {
+            class_name: "Table".into(),
+            data: extended_data,
+        })))
+        .expect("valid XP collision table with an opaque extension");
+
+        assert_eq!(tileset.passages.get(7, 0, 0), 0x0f);
+        assert_eq!(tileset.passages.x_size, 384);
     }
 }
