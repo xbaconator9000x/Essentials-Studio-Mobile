@@ -20,6 +20,9 @@ interface MapToolbarProps {
   setShowEventPins: (show: boolean) => void;
   paletteVisible: boolean;
   onTogglePalette: () => void;
+  eventCount: number;
+  eventListVisible: boolean;
+  onToggleEventList: () => void;
 }
 
 export function MapToolbar({
@@ -40,6 +43,9 @@ export function MapToolbar({
   setShowEventPins,
   paletteVisible,
   onTogglePalette,
+  eventCount,
+  eventListVisible,
+  onToggleEventList,
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
@@ -156,6 +162,17 @@ export function MapToolbar({
         />
         Pins
       </label>
+
+      {eventCount > 0 && (
+        <button
+          className="toolbar-btn"
+          aria-expanded={eventListVisible}
+          aria-controls="map-event-list"
+          onClick={onToggleEventList}
+        >
+          Events ({eventCount})
+        </button>
+      )}
 
       <button
         className="toolbar-btn"

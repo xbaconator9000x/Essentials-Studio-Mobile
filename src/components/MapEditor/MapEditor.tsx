@@ -29,6 +29,7 @@ import {
 } from "../../services/mapEditorPreferences";
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
+import { MapEventList } from "./MapEventList";
 import { MapContextMenu } from "./MapContextMenu";
 import "./MapEditor.css";
 
@@ -96,6 +97,7 @@ export function MapEditor({
   const [showEventPins, setShowEventPins] = useState(
     () => readMapEventPinsVisible(projectPath, currentMapId),
   );
+  const [showEventList, setShowEventList] = useState(false);
   const [showLayers, _setShowLayers] = useState<[boolean, boolean, boolean]>([
     true,
     true,
@@ -994,6 +996,9 @@ export function MapEditor({
           setShowEventPins={updateShowEventPins}
           paletteVisible={paletteVisible}
           onTogglePalette={onTogglePalette}
+          eventCount={mapData.events.length}
+          eventListVisible={showEventList}
+          onToggleEventList={() => setShowEventList((visible) => !visible)}
           zoom={zoom}
           setZoom={setZoom}
           onUndo={() => { handleHistory("undo"); }}
@@ -1077,6 +1082,13 @@ export function MapEditor({
             });
           }}
         />
+        {showEventList && mapData && (
+          <MapEventList
+            events={mapData.events}
+            onOpenEvent={onOpenEvent}
+            onClose={() => setShowEventList(false)}
+          />
+        )}
         {/* Scrollbar overlays */}
         {mapData && (
           <MapScrollbars

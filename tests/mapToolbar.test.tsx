@@ -38,6 +38,9 @@ describe("mobile map toolbar", () => {
         setShowEventPins={vi.fn()}
         paletteVisible
         onTogglePalette={vi.fn()}
+        eventCount={2}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
       />,
     );
 
@@ -77,6 +80,9 @@ describe("mobile map toolbar", () => {
         setShowEventPins={vi.fn()}
         paletteVisible
         onTogglePalette={vi.fn()}
+        eventCount={0}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
       />,
     );
 
@@ -84,5 +90,37 @@ describe("mobile map toolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pan" }));
 
     expect(setPaintTool).toHaveBeenCalledWith("pan");
+  });
+
+  it("offers a map event browser with its expanded state", () => {
+    const onToggleEventList = vi.fn();
+
+    render(
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={vi.fn()}
+        tileClipboard={null}
+        selectedLayer={3}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={4}
+        eventListVisible
+        onToggleEventList={onToggleEventList}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Events (4)" });
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(button);
+    expect(onToggleEventList).toHaveBeenCalledOnce();
   });
 });
