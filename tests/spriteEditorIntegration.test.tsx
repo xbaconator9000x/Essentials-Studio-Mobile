@@ -60,6 +60,7 @@ function RenderedEditor({ onSaved }: { onSaved: () => void }) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   editorApi.listAssetFiles.mockResolvedValue(["Guide"]);
   editorApi.loadCharacterImage.mockResolvedValue({ width: 4, height: 4 });
   editorApi.savePrivateProjectSprite.mockImplementation(
@@ -121,13 +122,21 @@ describe("sprite editor integration", () => {
 
     expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
     expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
-    expect(screen.getByRole("searchbox", { name: "Filter project character sprites" })).toBeTruthy();
-
-    act(() => onMediaChange?.({ matches: true } as MediaQueryListEvent));
-    expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
     act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
     expect(screen.getByRole("searchbox", { name: "Filter project character sprites" })).toBeTruthy();
+    act(() => onMediaChange?.({ matches: true } as MediaQueryListEvent));
+    expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+    fireEvent.click(screen.getByRole("button", { name: "Palette ▾" }));
+    expect(screen.queryByRole("group", { name: "Quick colors" })).toBeNull();
+    view.unmount();
+
+    const reopened = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    expect(screen.getByRole("searchbox", { name: "Filter project character sprites" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Quick colors" })).toBeNull();
+    expect(reopened.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
   });
 
   it("filters project sprites by name while preserving the selected sprite and copy target", async () => {

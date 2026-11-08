@@ -31,6 +31,28 @@ interface PointerPoint {
   y: number;
 }
 
+const TOOL_PANEL_PREFERENCE = "essentials-studio:sprite-editor:tools-collapsed";
+const PALETTE_PREFERENCE = "essentials-studio:sprite-editor:palette-visible";
+
+function readPanelPreference(key: string): boolean | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const stored = window.localStorage.getItem(key);
+    return stored === "true" ? true : stored === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePanelPreference(key: string, value: boolean) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Keep the editor usable when persistent storage is unavailable.
+  }
+}
+
 export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const { updateDirty } = useProjectSave();
   const [names, setNames] = useState<string[]>([]);
@@ -57,9 +79,12 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [controlsCollapsed, setControlsCollapsed] = useState(
-    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
+    () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
+      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches),
   );
-  const [paletteVisible, setPaletteVisible] = useState(true);
+  const [paletteVisible, setPaletteVisible] = useState(
+    () => readPanelPreference(PALETTE_PREFERENCE) ?? true,
+  );
   const filteredNames = useMemo(() => {
     const query = spriteSearch.trim().toLowerCase();
     return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
@@ -87,7 +112,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const compactViewport = window.matchMedia("(max-width: 700px)");
-    const updateControls = (event: MediaQueryListEvent) => setControlsCollapsed(event.matches);
+    const updateControls = (event: MediaQueryListEvent) => {
+      if (readPanelPreference(TOOL_PANEL_PREFERENCE) === null) {
+        setControlsCollapsed(event.matches);
+      }
+    };
     compactViewport.addEventListener("change", updateControls);
     return () => compactViewport.removeEventListener("change", updateControls);
   }, []);
@@ -544,6 +573,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   };
 
   const handlePointerEnd = (event: React.PointerEvent<HTMLCanvasElement>, commitTap: boolean) => {
+    const wasPinching = pinchStart.current !== null;
     const pending = pendingTouchPaint.current;
     if (commitTap && pending?.id === event.pointerId) {
       paintPixel(pending.point.x, pending.point.y);
@@ -564,6 +594,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     lastPaintPixel.current = null;
     if (activePan.current?.id === event.pointerId) activePan.current = null;
     if (activeTracePan.current?.id === event.pointerId) activeTracePan.current = null;
+    if (wasPinching && pointerPositions.current.size === 1) {
+      const [remainingId, remainingPoint] = [...pointerPositions.current.entries()][0];
+      activePan.current = {
+        id: remainingId,
+        point: remainingPoint,
+        x: offsetX,
+        y: offsetY,
+      };
+    }
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, true);
@@ -637,7 +676,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <button
               aria-expanded={!controlsCollapsed}
               aria-controls="sprite-editor-controls"
-              onClick={() => setControlsCollapsed((collapsed) => !collapsed)}
+              onClick={() => setControlsCollapsed((collapsed) => {
+                const next = !collapsed;
+                writePanelPreference(TOOL_PANEL_PREFERENCE, next);
+                return next;
+              })}
             >
               {controlsCollapsed ? "Tools ▸" : "Tools ▾"}
             </button>
@@ -701,7 +744,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button
                 className="sprite-editor-panel-toggle"
                 aria-expanded={paletteVisible}
-                onClick={() => setPaletteVisible((visible) => !visible)}
+                onClick={() => setPaletteVisible((visible) => {
+                  const next = !visible;
+                  writePanelPreference(PALETTE_PREFERENCE, next);
+                  return next;
+                })}
               >
                 Palette {paletteVisible ? "▾" : "▸"}
               </button>
