@@ -12,13 +12,17 @@ const events: EventInfo[] = [
 describe("map event browser", () => {
   afterEach(cleanup);
 
-  it("opens the selected event through the shared EventEditor callback", () => {
+  it("closes the browser and opens the selected event through the shared EventEditor callback", () => {
     const onOpenEvent = vi.fn();
-    render(<MapEventList events={events} onOpenEvent={onOpenEvent} onClose={vi.fn()} />);
+    const onClose = vi.fn(() => order.push("close"));
+    const order: string[] = [];
+    onOpenEvent.mockImplementation(() => order.push("open"));
+    render(<MapEventList events={events} onOpenEvent={onOpenEvent} onClose={onClose} />);
 
     fireEvent.click(screen.getByRole("button", { name: /002.*Guide.*8, 4/ }));
 
     expect(onOpenEvent).toHaveBeenCalledWith(2, "Guide");
+    expect(order).toEqual(["close", "open"]);
     expect(screen.getByText("2 pages")).toBeTruthy();
   });
 

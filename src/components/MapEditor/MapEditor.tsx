@@ -17,6 +17,7 @@ import {
   resolveMapTapTarget,
   TouchGestureMachine,
   clampMapViewport,
+  centerMapViewportOnTile,
   rasterizeTileLine,
   type TouchGestureAction,
 } from "../../services/mapGestures";
@@ -443,6 +444,25 @@ export function MapEditor({
     },
     [mapData, zoom],
   );
+
+  const handleOpenEventFromList = useCallback((eventId: number, eventName: string) => {
+    const event = mapData?.events.find((candidate) => candidate.id === eventId);
+    if (event && mapData) {
+      const canvas = canvasRef.current;
+      const viewport = centerMapViewportOnTile(
+        event.x,
+        event.y,
+        mapData.width,
+        mapData.height,
+        canvas?.clientWidth ?? canvasSize.width,
+        canvas?.clientHeight ?? canvasSize.height,
+        zoom,
+      );
+      setCursorTile({ x: event.x, y: event.y });
+      setClampedViewport(viewport.x, viewport.y);
+    }
+    onOpenEvent?.(eventId, eventName);
+  }, [canvasSize.height, canvasSize.width, mapData, onOpenEvent, setClampedViewport, zoom]);
 
   // Apply a paint operation at a position
   const doPaint = useCallback(
@@ -1085,7 +1105,7 @@ export function MapEditor({
         {showEventList && mapData && (
           <MapEventList
             events={mapData.events}
-            onOpenEvent={onOpenEvent}
+            onOpenEvent={handleOpenEventFromList}
             onClose={() => setShowEventList(false)}
           />
         )}

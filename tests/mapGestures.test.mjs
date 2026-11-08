@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clampMapViewport,
+  centerMapViewportOnTile,
   rasterizeTileLine,
   resolveMapTapTarget,
   TouchGestureMachine,
@@ -95,6 +96,12 @@ test("map viewport clamps at each edge and keeps small maps anchored at origin",
   assert.deepEqual(clampMapViewport(-4, 90, 20, 10, 320, 160, 1), { x: 0, y: 5 });
   assert.deepEqual(clampMapViewport(90, 90, 4, 3, 320, 160, 1), { x: 0, y: 0 });
   assert.deepEqual(clampMapViewport(2, 2, 20, 10, 320, 160, 0), { x: 0, y: 0 });
+});
+
+test("event navigation centers the tile when possible and clamps at map boundaries", () => {
+  assert.deepEqual(centerMapViewportOnTile(10, 5, 20, 10, 320, 160, 1), { x: 5.5, y: 3 });
+  assert.deepEqual(centerMapViewportOnTile(0, 0, 20, 10, 320, 160, 1), { x: 0, y: 0 });
+  assert.deepEqual(centerMapViewportOnTile(2, 1, 4, 3, 320, 160, 1), { x: 0, y: 0 });
 });
 
 test("touch paint interpolation includes every tile between fast diagonal samples", () => {

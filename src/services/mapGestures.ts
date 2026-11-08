@@ -32,6 +32,28 @@ export function clampMapViewport(
   };
 }
 
+export function centerMapViewportOnTile(
+  tileX: number,
+  tileY: number,
+  mapWidth: number,
+  mapHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  zoom: number,
+): GesturePoint {
+  const visibleWidth = viewportWidth / (MAP_TILE_SIZE * zoom);
+  const visibleHeight = viewportHeight / (MAP_TILE_SIZE * zoom);
+  return clampMapViewport(
+    tileX + 0.5 - visibleWidth / 2,
+    tileY + 0.5 - visibleHeight / 2,
+    mapWidth,
+    mapHeight,
+    viewportWidth,
+    viewportHeight,
+    zoom,
+  );
+}
+
 export function rasterizeTileLine(start: GesturePoint, end: GesturePoint): GesturePoint[] {
   if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return [];
   let x = Math.floor(start.x);

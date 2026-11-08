@@ -53,7 +53,10 @@ export function MapEventList({ events, onOpenEvent, onClose }: Props) {
               type="button"
               className="map-event-list-item"
               disabled={!onOpenEvent}
-              onClick={() => onOpenEvent?.(event.id, event.name)}
+              onClick={() => {
+                onClose();
+                onOpenEvent?.(event.id, event.name);
+              }}
             >
               <span className="map-event-list-name">
                 [{String(event.id).padStart(3, "0")}] {event.name || "Unnamed event"}
