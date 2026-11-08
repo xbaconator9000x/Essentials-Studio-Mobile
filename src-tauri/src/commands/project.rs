@@ -909,6 +909,10 @@ fn replace_map_tile_data(
         obj.get_int("height") != Some(height) {
         return Err("Map dimensions differ from saved XP map; reload before editing".into());
     }
+    let data_fields = obj.instance_vars.iter().filter(|(name, _)| name == "@data").count();
+    if data_fields != 1 {
+        return Err("Map must contain exactly one @data Table".into());
+    }
     let (_, raw) = obj.instance_vars.iter_mut()
         .find(|(name, _)| name == "@data")
         .ok_or("Map has no @data Table")?;
@@ -919,11 +923,12 @@ fn replace_map_tile_data(
         return Err("Map @data has an unexpected Ruby class".into());
     }
     let table = Table::from_bytes(data).ok_or("Map Table binary is invalid")?;
-    if table.x_size as usize != w ||
+    if table.dim_count != 3 ||
+        table.x_size as usize != w ||
         table.y_size as usize != h ||
         table.z_size != 3 ||
         table.data.len() != expected {
-        return Err("Map Table dimensions/count disagree with the map header".into());
+        return Err("Map Table dimensions/count disagree with the map header or three-layer XP format".into());
     }
     // XP Table's i16 cells begin at byte 20 in z/y/x order. Mutating only
     // those cells preserves the original header and any extension payload.
@@ -1089,6 +1094,51 @@ mod map_tile_fidelity_tests {
                            changed, 2, 2).await.unwrap_err();
         assert!(err.contains("ambiguous"), "{err}");
         assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn save_map_rejects_ambiguous_or_non_three_dimensional_data_without_writing() {
+        let nonce = std::time::SystemTime::now().duration_since(
+            std::time::UNIX_EPOCH,
+        ).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-invalid-map-table-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+
+        for malformed in ["duplicate_data", "wrong_dimension_count"] {
+            let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+            let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+            if malformed == "duplicate_data" {
+                let duplicate = obj.get("data").unwrap().clone();
+                obj.instance_vars.push(("@data".into(), duplicate));
+            } else {
+                let (_, value) = obj.instance_vars.iter_mut()
+                    .find(|(name, _)| name == "@data").unwrap();
+                let marshal::types::RubyValue::UserDefined { data, .. } = value else {
+                    panic!("Table")
+                };
+                data[..4].copy_from_slice(&1i32.to_le_bytes());
+            }
+
+            let before = marshal::dump(&raw).unwrap();
+            std::fs::write(&map_file, &before).unwrap();
+            let error = save_map(
+                root.to_string_lossy().into_owned(),
+                1,
+                vec![384; 12],
+                2,
+                2,
+            ).await.unwrap_err();
+            assert!(
+                error.contains("@data") || error.contains("three-layer"),
+                "{malformed}: {error}"
+            );
+            assert_eq!(std::fs::read(&map_file).unwrap(), before, "{malformed}");
+        }
+
         std::fs::remove_dir_all(root).unwrap();
     }
 
