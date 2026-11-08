@@ -102,9 +102,34 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("sprite editor integration", () => {
+  it("keeps the sprite canvas available with collapsible controls that follow orientation changes", async () => {
+    let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        onMediaChange = listener;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+
+    expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
+    expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+    expect(screen.getByRole("searchbox", { name: "Filter project character sprites" })).toBeTruthy();
+
+    act(() => onMediaChange?.({ matches: true } as MediaQueryListEvent));
+    expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
+    act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
+    expect(screen.getByRole("searchbox", { name: "Filter project character sprites" })).toBeTruthy();
+  });
+
   it("filters project sprites by name while preserving the selected sprite and copy target", async () => {
     editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero", "Guide_Alt"]);
     const view = renderEditor();

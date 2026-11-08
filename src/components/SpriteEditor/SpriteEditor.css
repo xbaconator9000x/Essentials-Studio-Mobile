@@ -264,9 +264,17 @@
   }
 
   .sprite-editor-header button {
-    min-height: 42px;
+    min-height: 44px;
     padding: 5px 7px;
     font-size: 12px;
+  }
+
+  .sprite-editor-swatches {
+    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  }
+
+  .sprite-editor-swatches > button {
+    min-height: 44px;
   }
 
   .sprite-editor-tool-row {
@@ -275,6 +283,6 @@
 
   .sprite-editor-tool-row > button {
     min-width: 64px;
-    min-height: 42px;
+    min-height: 44px;
   }
 }
