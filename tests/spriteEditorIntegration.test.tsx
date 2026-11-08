@@ -308,4 +308,91 @@ describe("sprite editor integration", () => {
     expect(traceUrl.revokeObjectURL).toHaveBeenCalledWith("blob:trace");
     expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
   });
+
+  it("positions the trace with a touch drag without painting the sprite", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    fireEvent.click(screen.getByRole("button", { name: "Position trace with touch" }));
+
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 116,
+      clientY: 116,
+    });
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 116,
+      clientY: 116,
+    });
+
+    expect(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value")).toBe("25");
+    expect(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value")).toBe("25");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
+  it("keeps pinch zoom available while trace positioning is enabled", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    fireEvent.click(screen.getByRole("button", { name: "Position trace with touch" }));
+    context.drawImage.mockClear();
+
+    fireEvent.pointerDown(editorCanvas!, { pointerId: 1, pointerType: "touch", clientX: 80, clientY: 100 });
+    fireEvent.pointerDown(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 120, clientY: 100 });
+    fireEvent.pointerMove(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
+    fireEvent.pointerUp(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
+
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call[3] === 96)).toBe(true));
+    expect(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value")).toBe("0");
+    expect(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value")).toBe("0");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
 });

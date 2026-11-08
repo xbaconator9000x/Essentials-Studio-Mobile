@@ -48,6 +48,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [traceScale, setTraceScale] = useState(100);
   const [traceOffsetX, setTraceOffsetX] = useState(0);
   const [traceOffsetY, setTraceOffsetY] = useState(0);
+  const [positionTraceWithTouch, setPositionTraceWithTouch] = useState(false);
   const [imageRevision, setImageRevision] = useState(0);
   const [, setHistoryRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
@@ -68,6 +69,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const pendingTouchPaint = useRef<{ id: number; point: PointerPoint } | null>(null);
   const lastPaintPixel = useRef<PointerPoint | null>(null);
   const activePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
+  const activeTracePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const pinchStart = useRef<{
     distance: number;
     center: PointerPoint;
@@ -432,6 +434,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       pendingTouchPaint.current = null;
       lastPaintPixel.current = null;
       activePan.current = null;
+      activeTracePan.current = null;
+      return;
+    }
+    if (traceImage && positionTraceWithTouch) {
+      activeTracePan.current = { id: event.pointerId, point, x: traceOffsetX, y: traceOffsetY };
       return;
     }
     if (tool === "fill" || tool === "eyedropper") {
@@ -481,6 +488,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (pan?.id === event.pointerId) {
       setOffsetX(pan.x + point.x - pan.point.x);
       setOffsetY(pan.y + point.y - pan.point.y);
+    } else if (activeTracePan.current?.id === event.pointerId) {
+      const source = imageCanvasRef.current;
+      if (!source) return;
+      const tracePan = activeTracePan.current;
+      setTraceOffsetX(Math.max(-100, Math.min(100,
+        tracePan.x + (point.x - tracePan.point.x) / (source.width * zoom) * 100,
+      )));
+      setTraceOffsetY(Math.max(-100, Math.min(100,
+        tracePan.y + (point.y - tracePan.point.y) / (source.height * zoom) * 100,
+      )));
     } else if (pendingTouchPaint.current?.id === event.pointerId) {
       const start = pendingTouchPaint.current.point;
       pendingTouchPaint.current = null;
@@ -511,6 +528,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     }
     lastPaintPixel.current = null;
     if (activePan.current?.id === event.pointerId) activePan.current = null;
+    if (activeTracePan.current?.id === event.pointerId) activeTracePan.current = null;
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => handlePointerEnd(event, true);
@@ -663,6 +681,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </label>
             {traceImage && (
               <>
+                <button
+                  type="button"
+                  aria-pressed={positionTraceWithTouch}
+                  onClick={() => setPositionTraceWithTouch((enabled) => !enabled)}
+                >
+                  Position trace with touch
+                </button>
+                {positionTraceWithTouch && <span role="status">Drag the canvas to align the trace.</span>}
                 <label>
                   Trace opacity: {traceOpacity}%
                   <input type="range" min="0" max="100" value={traceOpacity}
@@ -689,7 +715,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   setTraceImage(null);
                   setTraceOffsetX(0);
                   setTraceOffsetY(0);
-                }}>Remove trace</button>
+                  }}>
+                    Remove trace
+                  </button>
               </>
             )}
             <div className="sprite-editor-save-mode" role="group" aria-label="Save mode">
