@@ -49,6 +49,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [traceOffsetX, setTraceOffsetX] = useState(0);
   const [traceOffsetY, setTraceOffsetY] = useState(0);
   const [imageRevision, setImageRevision] = useState(0);
+  const [, setHistoryRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -501,8 +502,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (pending?.id === event.pointerId) pendingTouchPaint.current = null;
     pointerPositions.current.delete(event.pointerId);
     if (activePaintPointer.current === event.pointerId) {
-      if (commitTap) historyRef.current.commit();
-      else cancelStroke();
+      if (commitTap) {
+        if (historyRef.current.commit()) setHistoryRevision((value) => value + 1);
+      } else {
+        cancelStroke();
+      }
       activePaintPointer.current = null;
     }
     lastPaintPixel.current = null;

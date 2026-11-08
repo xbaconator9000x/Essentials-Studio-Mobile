@@ -233,6 +233,11 @@ describe("sprite editor integration", () => {
     const pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
     expect([0, 1, 2, 3].map((x) => pixels[x * 4 + 3])).toEqual([255, 255, 255, 255]);
     expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    expect(undoButton.disabled).toBe(false);
+    fireEvent.click(undoButton);
+    const undonePixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([0, 1, 2, 3].map((x) => undonePixels[x * 4 + 3])).toEqual([0, 0, 0, 0]);
   });
 
   it("confirms and saves an edit to the original character graphic", async () => {
