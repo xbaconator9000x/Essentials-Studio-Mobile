@@ -1245,7 +1245,7 @@ mod archive_roundtrip_tests {
     use crate::marshal::types::{RubyObject, RubyString, RubyValue};
     use crate::models::{
         EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveCommand, MoveRoute,
-        RpgEvent, RpgMap,
+        RpgEvent, RpgMap, Table,
     };
     use sha2::{Digest, Sha256};
     use std::fs::{self, File};
@@ -1324,6 +1324,23 @@ mod archive_roundtrip_tests {
 
     fn ruby_string(text: &str) -> RubyValue {
         RubyValue::String(RubyString::with_encoding(text.as_bytes().to_vec(), "UTF-8".into()))
+    }
+
+    fn table_value(table: Table) -> RubyValue {
+        RubyValue::UserDefined {
+            class_name: "Table".into(),
+            data: table.to_bytes(),
+        }
+    }
+
+    fn add_tileset_tables(tileset: &mut RubyObject) {
+        let mut passages = Table::new_1d(384);
+        passages.set(7, 0, 0, 0x0f);
+        tileset.instance_vars.extend([
+            ("@passages".into(), table_value(passages)),
+            ("@priorities".into(), table_value(Table::new_1d(384))),
+            ("@terrain_tags".into(), table_value(Table::new_1d(384))),
+        ]);
     }
 
     /// Fully synthetic PNG artwork for the native ZIP fixture. The previous
@@ -1546,6 +1563,7 @@ mod archive_roundtrip_tests {
                 RubyValue::Array(vec![ruby_string(""); 7]),
             ),
         ]);
+        add_tileset_tables(&mut tileset);
         let tilesets = RubyValue::Array(vec![
             RubyValue::Nil,
             RubyValue::Object(tileset),
@@ -2149,6 +2167,10 @@ mod archive_roundtrip_tests {
         let tiled_map = runtime.block_on(async {
             crate::commands::project::open_project(project_path.clone()).await.unwrap();
             let map = crate::commands::project::load_map(project_path.clone(), 1).await.unwrap();
+            let tileset = crate::commands::project::load_tileset(project_path.clone(), 1)
+                .await
+                .unwrap();
+            assert_eq!(tileset.passages[7], 0x0f);
             let event = crate::commands::project::load_event(project_path.clone(), 1, 7)
                 .await.unwrap();
 
@@ -2729,6 +2751,7 @@ mod archive_roundtrip_tests {
             "@name".into(),
             RubyValue::String(RubyString::new(b"Synthetic Tileset".to_vec())),
         ));
+        add_tileset_tables(&mut tileset);
         marshal::dump_file(
             &project.join("Data/Tilesets.rxdata"),
             &RubyValue::Array(vec![RubyValue::Nil, RubyValue::Object(tileset)]),
