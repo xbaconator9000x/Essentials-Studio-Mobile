@@ -168,6 +168,10 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.change(editor, { target: { value: "Updated second page dialogue" } });
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     await screen.findByText("Updated second page dialogue");
+    fireEvent.click(screen.getByRole("button", { name: "Undo event edit" }));
+    await screen.findByText("Second page dialogue");
+    fireEvent.click(screen.getByRole("button", { name: "Redo event edit" }));
+    await screen.findByText("Updated second page dialogue");
     fireEvent.click(screen.getByRole("button", { name: "Save All" }));
     await screen.findByRole("status");
 
