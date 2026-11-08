@@ -19,6 +19,7 @@ const native = vi.hoisted(() => ({
 vi.mock("../src/services/tauriApi", () => native);
 
 const projectPath = "/synthetic-rights-cleared-project";
+const defaultInnerWidth = window.innerWidth;
 
 function importedEvent(): RpgEvent {
   return {
@@ -140,10 +141,20 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: defaultInnerWidth });
   vi.clearAllMocks();
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("starts event properties collapsed on narrow screens while keeping commands available", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    renderProject();
+
+    const propertiesToggle = await screen.findByRole("button", { name: "Show event properties" });
+    expect(propertiesToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText(/^Event Commands/)).toBeTruthy();
+  });
+
   it("confirms dialogue with OK, saves all, and reloads the still-open event", async () => {
     renderProject();
 

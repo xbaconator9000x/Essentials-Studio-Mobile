@@ -48,7 +48,9 @@ export function EventEditor({
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [editingCommand, setEditingCommand] = useState<number | null>(null);
-  const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 700
+  );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
