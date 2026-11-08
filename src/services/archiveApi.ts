@@ -5,7 +5,7 @@
 import { invoke } from "./tauriApi";
 import { save } from "@tauri-apps/plugin-dialog";
 import { exportAndroidDocument } from "./androidDocumentExport";
-import { getUnsupportedArchiveMessage } from "./archiveFormat";
+import { getUnsupportedArchiveMessage, validateZipSignature } from "./archiveFormat";
 import { readBlobArrayBuffer } from "./archiveBlob";
 import {
   ARCHIVE_CHUNK_BYTES,
@@ -26,6 +26,7 @@ export async function importProjectZip(
   const signatureFormat = getUnsupportedArchiveMessage(file.name, header);
   if (signatureFormat) throw new Error(signatureFormat);
   if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Choose a .zip project archive");
+  validateZipSignature(header);
   validateArchiveSize(file.size);
   const id = await invoke<string>("begin_project_archive_import");
   try {
