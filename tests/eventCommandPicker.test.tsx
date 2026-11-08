@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { EventCommandPicker } from "../src/components/EventEditor/EventCommandPicker";
 
 afterEach(cleanup);
@@ -40,5 +41,40 @@ describe("event command picker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close command picker" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("traps dialog tab navigation, closes on Escape, and restores trigger focus", async () => {
+    function PickerHost() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Open command picker</button>
+          {open && (
+            <EventCommandPicker onSelect={() => setOpen(false)} onClose={() => setOpen(false)} />
+          )}
+        </>
+      );
+    }
+
+    render(<PickerHost />);
+    const trigger = screen.getByRole("button", { name: "Open command picker" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Insert Command" });
+    const search = screen.getByRole("textbox", { name: "Search event commands" });
+    await waitFor(() => expect(document.activeElement).toBe(search));
+
+    const buttons = dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+    const firstButton = buttons[0];
+    const lastButton = buttons[buttons.length - 1];
+    firstButton.focus();
+    fireEvent.keyDown(firstButton, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(lastButton);
+    fireEvent.keyDown(lastButton, { key: "Tab" });
+    expect(document.activeElement).toBe(firstButton);
+
+    fireEvent.keyDown(search, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
   });
 });

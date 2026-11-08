@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   getPickerCommandsByCategory,
   COMMAND_CATEGORIES,
@@ -17,6 +18,12 @@ interface Props {
 export function EventCommandPicker({ onSelect, onClose }: Props) {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
 
   const commandsByCategory = getPickerCommandsByCategory();
   const searchLower = search.toLowerCase();
@@ -32,6 +39,38 @@ export function EventCommandPicker({ onSelect, onClose }: Props) {
     0,
   );
 
+  useEffect(() => {
+    const elementToRestore = returnFocusRef.current;
+    return () => {
+      if (elementToRestore?.isConnected) elementToRestore.focus();
+    };
+  }, []);
+
+  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled)',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const activeIndex = Array.from(focusable).indexOf(document.activeElement as HTMLElement);
+    if (event.shiftKey && activeIndex <= 0) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && activeIndex === focusable.length - 1) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div className="command-picker-overlay" onClick={(e) => {
       if ((e.target as HTMLElement).classList.contains("command-picker-overlay")) {
@@ -43,6 +82,8 @@ export function EventCommandPicker({ onSelect, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="command-picker-title"
+        ref={dialogRef}
+        onKeyDown={handleDialogKeyDown}
       >
         <div className="command-picker-header">
           <h3 id="command-picker-title">Insert Command</h3>
