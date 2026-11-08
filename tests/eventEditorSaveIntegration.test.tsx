@@ -238,6 +238,35 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].source_index).toBe(1);
   });
 
+  it("inserts and edits a Show Text command through the mobile picker and Save All", async () => {
+    renderProject();
+    await screen.findByText("Original dialogue");
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Insert/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Search event commands" }), {
+      target: { value: "Show Text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Show Text/ }));
+    expect(screen.queryByRole("dialog", { name: "Insert Command" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialogueEditor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(dialogueEditor, { target: { value: "Newly inserted dialogue\nSecond line" } });
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByText("Newly inserted dialogue");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+    const savedCommands = diskEvent.pages[0].list;
+    expect(savedCommands.map((command) => command.code)).toEqual([101, 401, 101, 401, 401, 0]);
+    expect(savedCommands[3].parameters[0]).toBe("Newly inserted dialogue");
+    expect(savedCommands[4].parameters[0]).toBe("Second line");
+
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    await screen.findByText("Second line");
+  });
+
   it("shows every Show Text line and discards an unconfirmed draft with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
