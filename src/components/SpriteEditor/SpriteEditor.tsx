@@ -76,6 +76,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     viewport: { zoom: number; offsetX: number; offsetY: number };
   } | null>(null);
   const traceUrl = useRef<string | null>(null);
+  const traceLoadId = useRef(0);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -563,24 +564,33 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("Trace overlay must be 32 MiB or smaller");
       return;
     }
+    const loadId = ++traceLoadId.current;
     if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
     const url = URL.createObjectURL(file);
     traceUrl.current = url;
     const image = new Image();
     image.onload = () => {
+      if (loadId !== traceLoadId.current) return;
       if (image.width * image.height > 16_777_216) {
         setError("Trace overlay exceeds the 16-megapixel image limit");
         URL.revokeObjectURL(url);
-        traceUrl.current = null;
+        if (traceUrl.current === url) traceUrl.current = null;
         return;
       }
       setTraceImage(image);
+      setError(null);
     };
-    image.onerror = () => setError("Could not load trace overlay");
+    image.onerror = () => {
+      if (loadId !== traceLoadId.current) return;
+      setError("Could not load trace overlay");
+      URL.revokeObjectURL(url);
+      if (traceUrl.current === url) traceUrl.current = null;
+    };
     image.src = url;
   };
 
   useEffect(() => () => {
+    traceLoadId.current += 1;
     if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
   }, []);
 
@@ -710,6 +720,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                     onChange={(event) => setTraceOffsetY(Number(event.target.value))} />
                 </label>
                 <button onClick={() => {
+                  traceLoadId.current += 1;
                   if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
                   traceUrl.current = null;
                   setTraceImage(null);

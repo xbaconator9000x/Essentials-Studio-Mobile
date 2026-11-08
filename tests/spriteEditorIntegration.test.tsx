@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ProjectSaveProvider, useProjectSave } from "../src/context/ProjectSaveContext";
 import { SpriteEditor } from "../src/components/SpriteEditor/SpriteEditor";
 
@@ -394,5 +394,49 @@ describe("sprite editor integration", () => {
     expect(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value")).toBe("0");
     expect(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value")).toBe("0");
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
+  it("ignores stale trace loads and revokes a failed replacement URL", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn((file: File) => `blob:${file.name}`),
+      revokeObjectURL: vi.fn(),
+    };
+    const images: TestImage[] = [];
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private url = "";
+      constructor() { images.push(this); }
+      set src(value: string) { this.url = value; }
+      get src() { return this.url; }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const traceInput = screen.getByLabelText("Trace overlay");
+    fireEvent.change(traceInput, {
+      target: { files: [new File(["first"], "first.png", { type: "image/png" })] },
+    });
+    fireEvent.change(traceInput, {
+      target: { files: [new File(["second"], "second.png", { type: "image/png" })] },
+    });
+    expect(traceUrl.revokeObjectURL).toHaveBeenCalledWith("blob:first.png");
+
+    act(() => images[1].onload?.());
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call[0] === images[1])).toBe(true));
+    context.drawImage.mockClear();
+    act(() => images[0].onload?.());
+    expect(context.drawImage).not.toHaveBeenCalled();
+
+    fireEvent.change(traceInput, {
+      target: { files: [new File(["broken"], "broken.png", { type: "image/png" })] },
+    });
+    act(() => images[2].onerror?.());
+    expect(traceUrl.revokeObjectURL).toHaveBeenCalledWith("blob:broken.png");
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load trace overlay");
   });
 });
