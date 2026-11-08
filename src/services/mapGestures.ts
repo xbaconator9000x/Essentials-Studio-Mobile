@@ -91,6 +91,7 @@ export type TouchGestureAction =
       deltaY: number;
       from: GesturePoint;
       point: GesturePoint;
+      paint: boolean;
     }
   | {
       type: "pinch";
@@ -146,7 +147,7 @@ export function resolveMapTapTarget(
 
 export class TouchGestureMachine {
   private readonly pointers = new Map<number, PointerPosition>();
-  private mode: "idle" | "pending" | "pan" | "pinch" | "suppressed" = "idle";
+  private mode: "idle" | "pending" | "pan" | "pinch" | "pinch-pan" | "suppressed" = "idle";
   private previousPinchDistance = 0;
   private previousPinchCenter: GesturePoint = { x: 0, y: 0 };
   private readonly movementThreshold: number;
@@ -200,6 +201,7 @@ export class TouchGestureMachine {
         deltaY: point.y - pointer.startY,
         from,
         point,
+        paint: true,
       };
     }
 
@@ -209,7 +211,16 @@ export class TouchGestureMachine {
       const deltaY = point.y - pointer.lastY;
       pointer.lastX = point.x;
       pointer.lastY = point.y;
-      return { type: "pan", deltaX, deltaY, from, point };
+      return { type: "pan", deltaX, deltaY, from, point, paint: true };
+    }
+
+    if (this.mode === "pinch-pan" && this.pointers.size === 1) {
+      const from = { x: pointer.lastX, y: pointer.lastY };
+      const deltaX = point.x - pointer.lastX;
+      const deltaY = point.y - pointer.lastY;
+      pointer.lastX = point.x;
+      pointer.lastY = point.y;
+      return { type: "pan", deltaX, deltaY, from, point, paint: false };
     }
 
     if (this.mode !== "pinch" || this.pointers.size !== 2) return null;
@@ -253,6 +264,13 @@ export class TouchGestureMachine {
     this.pointers.delete(pointerId);
     if (this.pointers.size === 0) {
       this.mode = "idle";
+    } else if (this.mode === "pinch" && this.pointers.size === 1) {
+      const remaining = this.pointers.values().next().value as PointerPosition;
+      remaining.startX = remaining.x;
+      remaining.startY = remaining.y;
+      remaining.lastX = remaining.x;
+      remaining.lastY = remaining.y;
+      this.mode = "pinch-pan";
     } else {
       this.mode = "suppressed";
     }

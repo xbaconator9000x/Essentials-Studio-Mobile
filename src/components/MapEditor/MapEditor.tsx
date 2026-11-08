@@ -848,7 +848,11 @@ export function MapEditor({
         return;
       }
       if (action.type === "pan") {
-        if (!readOnly && selectedLayer >= 0 && selectedLayer <= 2 &&
+        if (
+          action.paint &&
+          !readOnly &&
+          selectedLayer >= 0 &&
+          selectedLayer <= 2 &&
             (paintTool === "pencil" || paintTool === "eraser")) {
           const from = screenToTile(action.from.x, action.from.y);
           const to = screenToTile(action.point.x, action.point.y);

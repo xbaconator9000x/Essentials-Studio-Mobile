@@ -24,6 +24,7 @@ test("tap stays a tap below the movement threshold; dragging pans without tappin
     deltaY: 0,
     from: { x: 20, y: 20 },
     point: { x: 35, y: 20 },
+    paint: true,
   });
   assert.deepEqual(gestures.pointerMove(2, { x: 41, y: 24 }), {
     type: "pan",
@@ -31,6 +32,7 @@ test("tap stays a tap below the movement threshold; dragging pans without tappin
     deltaY: 4,
     from: { x: 35, y: 20 },
     point: { x: 41, y: 24 },
+    paint: true,
   });
   assert.equal(gestures.pointerUp(2, { x: 35, y: 20 }, 300), null);
 });
@@ -72,7 +74,21 @@ test("two-finger movement pinches and suppresses a trailing single-finger tap", 
     deltaY: 0,
   });
   assert.equal(gestures.pointerUp(2, { x: 40, y: 10 }, 20), null);
-  assert.equal(gestures.pointerUp(1, { x: 10, y: 10 }, 30), null);
+  assert.deepEqual(gestures.pointerMove(1, { x: 15, y: 10 }), {
+    type: "pan",
+    deltaX: 5,
+    deltaY: 0,
+    from: { x: 10, y: 10 },
+    point: { x: 15, y: 10 },
+    paint: false,
+  });
+  assert.equal(gestures.pointerUp(1, { x: 15, y: 10 }, 30), null);
+
+  gestures.pointerDown(3, { x: 10, y: 10 }, 40);
+  gestures.pointerDown(4, { x: 30, y: 10 }, 41);
+  gestures.pointerMove(4, { x: 40, y: 10 });
+  gestures.pointerUp(4, { x: 40, y: 10 }, 50);
+  assert.equal(gestures.pointerUp(3, { x: 10, y: 10 }, 60), null);
 });
 
 test("event-layer taps inspect an event, create on empty cells, and reject out-of-bounds cells", () => {
