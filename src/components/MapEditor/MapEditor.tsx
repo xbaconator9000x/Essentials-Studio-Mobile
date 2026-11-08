@@ -445,7 +445,7 @@ export function MapEditor({
     [mapData, zoom],
   );
 
-  const handleOpenEventFromList = useCallback((eventId: number, eventName: string) => {
+  const focusEventOnMap = useCallback((eventId: number) => {
     const event = mapData?.events.find((candidate) => candidate.id === eventId);
     if (event && mapData) {
       const canvas = canvasRef.current;
@@ -459,10 +459,16 @@ export function MapEditor({
         zoom,
       );
       setCursorTile({ x: event.x, y: event.y });
+      setSelectedLayer(3);
+      updateShowEventPins(true);
       setClampedViewport(viewport.x, viewport.y);
     }
+  }, [canvasSize.height, canvasSize.width, mapData, setClampedViewport, updateShowEventPins, zoom]);
+
+  const handleOpenEventFromList = useCallback((eventId: number, eventName: string) => {
+    focusEventOnMap(eventId);
     onOpenEvent?.(eventId, eventName);
-  }, [canvasSize.height, canvasSize.width, mapData, onOpenEvent, setClampedViewport, zoom]);
+  }, [focusEventOnMap, onOpenEvent]);
 
   // Apply a paint operation at a position
   const doPaint = useCallback(
@@ -1106,6 +1112,7 @@ export function MapEditor({
           <MapEventList
             events={mapData.events}
             onOpenEvent={handleOpenEventFromList}
+            onFocusEvent={focusEventOnMap}
             onClose={() => setShowEventList(false)}
           />
         )}

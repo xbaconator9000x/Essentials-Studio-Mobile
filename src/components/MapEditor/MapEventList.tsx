@@ -4,10 +4,11 @@ import type { EventInfo } from "../../types";
 interface Props {
   events: EventInfo[];
   onOpenEvent?: (eventId: number, eventName: string) => void;
+  onFocusEvent?: (eventId: number) => void;
   onClose: () => void;
 }
 
-export function MapEventList({ events, onOpenEvent, onClose }: Props) {
+export function MapEventList({ events, onOpenEvent, onFocusEvent, onClose }: Props) {
   const [query, setQuery] = useState("");
   const visibleEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -49,21 +50,36 @@ export function MapEventList({ events, onOpenEvent, onClose }: Props) {
           <li className="map-event-list-empty" role="status">No map events match “{query.trim()}”.</li>
         ) : visibleEvents.map((event) => (
           <li key={event.id}>
-            <button
-              type="button"
-              className="map-event-list-item"
-              disabled={!onOpenEvent}
-              onClick={() => {
-                onClose();
-                onOpenEvent?.(event.id, event.name);
-              }}
-            >
-              <span className="map-event-list-name">
-                [{String(event.id).padStart(3, "0")}] {event.name || "Unnamed event"}
-              </span>
-              <span className="map-event-list-position">({event.x}, {event.y})</span>
-              <span className="map-event-list-pages">{event.page_count} pages</span>
-            </button>
+            <div className="map-event-list-row">
+              <button
+                type="button"
+                className="map-event-list-item"
+                disabled={!onOpenEvent}
+                onClick={() => {
+                  onClose();
+                  onOpenEvent?.(event.id, event.name);
+                }}
+              >
+                <span className="map-event-list-name">
+                  [{String(event.id).padStart(3, "0")}] {event.name || "Unnamed event"}
+                </span>
+                <span className="map-event-list-position">({event.x}, {event.y})</span>
+                <span className="map-event-list-pages">{event.page_count} pages</span>
+              </button>
+              {onFocusEvent && (
+                <button
+                  type="button"
+                  className="map-event-list-focus"
+                  aria-label={`Locate event ${String(event.id).padStart(3, "0")} ${event.name || "Unnamed event"} on map`}
+                  onClick={() => {
+                    onClose();
+                    onFocusEvent(event.id);
+                  }}
+                >
+                  Locate
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>

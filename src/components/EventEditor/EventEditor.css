@@ -678,6 +678,8 @@
 
   .event-command-edit-textarea {
     min-height: 120px;
+    max-height: 40vh;
+    overflow-y: auto;
   }
 
   .event-command-done {

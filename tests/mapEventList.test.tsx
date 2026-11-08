@@ -26,6 +26,28 @@ describe("map event browser", () => {
     expect(screen.getByText("2 pages")).toBeTruthy();
   });
 
+  it("locates an event on the map without opening the event editor", () => {
+    const onFocusEvent = vi.fn();
+    const onOpenEvent = vi.fn();
+    const onClose = vi.fn(() => order.push("close"));
+    const order: string[] = [];
+    onFocusEvent.mockImplementation(() => order.push("focus"));
+    render(
+      <MapEventList
+        events={events}
+        onFocusEvent={onFocusEvent}
+        onOpenEvent={onOpenEvent}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Locate event 009 Hidden switch on map" }));
+
+    expect(onFocusEvent).toHaveBeenCalledWith(9);
+    expect(onOpenEvent).not.toHaveBeenCalled();
+    expect(order).toEqual(["close", "focus"]);
+  });
+
   it("keeps event information visible but prevents editing in read-only preview", () => {
     render(<MapEventList events={events} onClose={vi.fn()} />);
 

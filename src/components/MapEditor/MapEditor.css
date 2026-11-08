@@ -191,7 +191,14 @@
   margin: 2px 0;
 }
 
+.map-event-list-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .map-event-list-item {
+  flex: 1;
   width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -199,6 +206,16 @@
   gap: 2px 8px;
   padding: 6px 8px;
   text-align: left;
+}
+
+.map-event-list-focus {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-surface0);
+  color: var(--color-text);
 }
 
 .map-event-list-item:disabled {
@@ -231,6 +248,10 @@
   .map-event-list-search button {
     min-height: 44px;
     font-size: 14px;
+  }
+
+  .map-event-list-focus {
+    min-width: 72px;
   }
 }
 
