@@ -91,6 +91,14 @@
   color: var(--color-subtext1);
 }
 
+.sprite-editor-character-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-subtext1);
+  font-size: 12px;
+}
+
 .sprite-editor-save-mode {
   display: flex;
   flex-direction: column;
@@ -107,6 +115,10 @@
 .sprite-editor-tools select,
 .sprite-editor-tools input {
   width: 100%;
+}
+
+.sprite-editor-tools input[type="search"] {
+  min-width: 0;
 }
 
 .sprite-editor-tool-row > button {
@@ -225,6 +237,16 @@
   .sprite-editor-tools label > input,
   .sprite-editor-tools label > select {
     max-width: 60%;
+  }
+
+  .sprite-editor-character-picker > input,
+  .sprite-editor-character-picker > select {
+    max-width: 100%;
+  }
+
+  .sprite-editor-tools label > input[type="search"] {
+    min-height: 44px;
+    font-size: 14px;
   }
 
   .sprite-editor-header {

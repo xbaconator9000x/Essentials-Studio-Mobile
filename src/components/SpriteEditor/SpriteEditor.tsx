@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmEditor } from "../../services/editorDialog";
 import { clearImageCache, loadCharacterImage } from "../../services/imageLoader";
 import { listAssetFiles, savePrivateProjectSprite } from "../../services/tauriApi";
@@ -34,6 +34,7 @@ interface PointerPoint {
 export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const { updateDirty } = useProjectSave();
   const [names, setNames] = useState<string[]>([]);
+  const [spriteSearch, setSpriteSearch] = useState("");
   const [selectedName, setSelectedName] = useState("");
   const [targetName, setTargetName] = useState("");
   const [saveMode, setSaveMode] = useState<"original" | "copy">("copy");
@@ -59,6 +60,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
   );
   const [paletteVisible, setPaletteVisible] = useState(true);
+  const filteredNames = useMemo(() => {
+    const query = spriteSearch.trim().toLowerCase();
+    return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
+  }, [names, spriteSearch]);
+  const keepSelectedOption = selectedName && !filteredNames.includes(selectedName);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageDataRef = useRef<ImageData | null>(null);
@@ -619,18 +625,39 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             className={`sprite-editor-tools${controlsCollapsed ? " is-collapsed" : ""}`}
             hidden={controlsCollapsed}
           >
-            <label>
-              Character
-              <select value={selectedName} onChange={(event) => {
+            <div className="sprite-editor-character-picker">
+              <label htmlFor="sprite-character-filter">Character</label>
+              <input
+                id="sprite-character-filter"
+                type="search"
+                aria-label="Filter project character sprites"
+                placeholder="Filter by sprite name"
+                value={spriteSearch}
+                onChange={(event) => setSpriteSearch(event.target.value)}
+              />
+              <select
+                aria-label="Select project character sprite"
+                value={selectedName}
+                onChange={(event) => {
                 const name = event.target.value;
                 setSelectedName(name);
                 setTargetName(`${name}_copy`);
                 setDirty(false);
                 setError(null);
-              }} disabled={dirty || loading || saving}>
-                {names.map((name) => <option key={name} value={name}>{name}</option>)}
+                }}
+                disabled={!selectedName || dirty || loading || saving}
+              >
+                {keepSelectedOption && <option value={selectedName}>{selectedName} (current)</option>}
+                {filteredNames.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-            </label>
+              {filteredNames.length === 0 && (
+                <span role="status">
+                  {names.length === 0
+                    ? "No character sprites were found in this project."
+                    : `No project sprites match “${spriteSearch.trim()}”.`}
+                </span>
+              )}
+            </div>
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite tools">
               {([
                 ["brush", "Brush (B)"],

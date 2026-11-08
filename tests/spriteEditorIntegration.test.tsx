@@ -105,6 +105,53 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("filters project sprites by name while preserving the selected sprite and copy target", async () => {
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero", "Guide_Alt"]);
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const search = screen.getByRole("searchbox", { name: "Filter project character sprites" });
+
+    fireEvent.change(search, { target: { value: "hero" } });
+    expect(screen.getByRole("option", { name: "Hero" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Guide (current)" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Guide_Alt" })).toBeNull();
+    expect(screen.getByDisplayValue("Guide_copy")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Select project character sprite" }), {
+      target: { value: "Hero" },
+    });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenLastCalledWith(
+      "/synthetic-project",
+      "Hero",
+    ));
+    expect(screen.getByDisplayValue("Hero_copy")).toBeTruthy();
+    expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
+  });
+
+  it("reports when a sprite filter has no matches without replacing the selected asset", async () => {
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter project character sprites" }), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByRole("status").textContent).toContain("No project sprites match");
+    expect((screen.getByRole("combobox", { name: "Select project character sprite" }) as HTMLSelectElement).value).toBe("Guide");
+    expect(screen.getByRole("option", { name: "Guide (current)" })).toBeTruthy();
+  });
+
+  it("explains when the project has no character sprites", async () => {
+    editorApi.listAssetFiles.mockResolvedValue([]);
+    renderEditor();
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "No character sprites were found in this project.",
+    );
+    expect(screen.getByRole("combobox", { name: "Select project character sprite" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("edits a project character, registers it as dirty, and saves an explicit copy", async () => {
     const onSaved = vi.fn();
     const view = renderEditor(onSaved);
