@@ -49,17 +49,23 @@ impl Table {
 
     /// Create a 1D table.
     pub fn new_1d(x_size: u32) -> Self {
-        Self::new(x_size, 1, 1)
+        let mut table = Self::new(x_size, 1, 1);
+        table.dim_count = 1;
+        table
     }
 
     /// Create a 2D table.
     pub fn new_2d(x_size: u32, y_size: u32) -> Self {
-        Self::new(x_size, y_size, 1)
+        let mut table = Self::new(x_size, y_size, 1);
+        table.dim_count = 2;
+        table
     }
 
     /// Create a 3D table (used for map tile data).
     pub fn new_3d(x_size: u32, y_size: u32, z_size: u32) -> Self {
-        Self::new(x_size, y_size, z_size)
+        let mut table = Self::new(x_size, y_size, z_size);
+        table.dim_count = 3;
+        table
     }
 
     /// Get a value at (x, y, z). Returns 0 if out of bounds.
@@ -100,14 +106,13 @@ impl Table {
             return None;
         }
 
-        let inferred_dimensions = if z_size > 1 {
-            3
-        } else if y_size > 1 {
-            2
-        } else {
-            1
+        let dimensions_are_consistent = match dim_count {
+            1 => y_size == 1 && z_size == 1,
+            2 => z_size == 1,
+            3 => true,
+            _ => false,
         };
-        if dim_count != inferred_dimensions {
+        if !dimensions_are_consistent {
             return None;
         }
 
@@ -244,6 +249,15 @@ mod tests {
             (3, 2, 3, 3)
         );
         assert_eq!(decoded.data.len(), 18);
+    }
+
+    #[test]
+    fn preserves_declared_dimensions_when_trailing_sizes_are_one() {
+        for table in [Table::new_2d(4, 1), Table::new_3d(4, 2, 1)] {
+            let decoded = Table::from_bytes(&table.to_bytes()).expect("valid declared dimensions");
+            assert_eq!(decoded.dim_count, table.dim_count);
+            assert_eq!(decoded.data, table.data);
+        }
     }
 
     #[test]
