@@ -468,6 +468,38 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 
+  it("zooms around the pointer and centers button zoom without dirtying sprite pixels", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    const before = context.drawImage.mock.calls.at(-1)!;
+    const widthBefore = Number(before[3]);
+    const offsetBefore = Number(before[1]);
+    const zoomBefore = widthBefore / 4;
+    const anchorX = 82;
+    const worldX = (anchorX - offsetBefore) / zoomBefore;
+
+    fireEvent.wheel(editorCanvas!, { clientX: anchorX, clientY: 94, deltaY: -120, deltaMode: 0 });
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)).not.toBe(before));
+    const afterWheel = context.drawImage.mock.calls.at(-1)!;
+    const zoomAfter = Number(afterWheel[3]) / 4;
+    expect(Number(afterWheel[1]) + worldX * zoomAfter).toBeCloseTo(anchorX, 5);
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+
+    const centerX = 100;
+    const beforeButtonZoom = context.drawImage.mock.calls.at(-1)!;
+    const currentZoom = Number(beforeButtonZoom[3]) / 4;
+    const centerWorldX = (centerX - Number(beforeButtonZoom[1])) / currentZoom;
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)).not.toBe(beforeButtonZoom));
+    const afterButtonZoom = context.drawImage.mock.calls.at(-1)!;
+    const nextZoom = Number(afterButtonZoom[3]) / 4;
+    expect(Number(afterButtonZoom[1]) + centerWorldX * nextZoom).toBeCloseTo(centerX, 5);
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
   it("ignores stale trace loads and revokes a failed replacement URL", async () => {
     const traceUrl = {
       createObjectURL: vi.fn((file: File) => `blob:${file.name}`),

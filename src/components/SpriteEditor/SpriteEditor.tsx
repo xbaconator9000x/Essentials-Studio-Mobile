@@ -162,6 +162,34 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setOffsetY((rect.height - source.height * fit) / 2);
   }, []);
 
+  const zoomViewportAt = useCallback((scale: number, point?: PointerPoint) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const center = point ?? { x: rect.width / 2, y: rect.height / 2 };
+    const next = zoomSpriteViewport(
+      { zoom, offsetX, offsetY },
+      center,
+      center,
+      scale,
+    );
+    setZoom(next.zoom);
+    setOffsetX(next.offsetX);
+    setOffsetY(next.offsetY);
+  }, [offsetX, offsetY, zoom]);
+
+  const handleWheelZoom = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const delta = event.deltaMode === 1
+      ? event.deltaY * 16
+      : event.deltaMode === 2
+        ? event.deltaY * rect.height
+        : event.deltaY;
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    zoomViewportAt(Math.exp(-delta * 0.0015), point);
+  }, [zoomViewportAt]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = canvas?.parentElement;
@@ -708,8 +736,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button disabled={!historyRef.current.canRedo()} onClick={redoSprite}>Redo</button>
             </div>
             <div className="sprite-editor-tool-row">
-              <button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(32, value * 2))}>Zoom +</button>
-              <button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(1, value / 2))}>Zoom −</button>
+              <button aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
+              <button aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
               <button onClick={fitSprite}>Fit</button>
             </div>
             <label>
@@ -798,6 +826,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerCancel}
+              onWheel={handleWheelZoom}
             />
           </div>
         </div>
