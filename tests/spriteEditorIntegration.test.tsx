@@ -367,6 +367,46 @@ describe("sprite editor integration", () => {
     expect(screen.getByDisplayValue("Guide_copy")).toBeTruthy();
   });
 
+  it("keeps edits dirty and reports a copy collision until a safe retry succeeds", async () => {
+    const onSaved = vi.fn();
+    editorApi.savePrivateProjectSprite.mockRejectedValueOnce(new Error("destination already exists"));
+    const view = renderEditor(onSaved);
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("destination already exists");
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Copy name"), { target: { value: "Guide_safe_copy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(2));
+    expect(editorApi.savePrivateProjectSprite.mock.calls[0][3]).toBe("copy");
+    expect(editorApi.savePrivateProjectSprite.mock.calls[1][2]).toBe("Guide_safe_copy");
+    await screen.findByDisplayValue("Guide_safe_copy");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
   it("loads and removes a bounded trace overlay", async () => {
     const traceUrl = {
       createObjectURL: vi.fn(() => "blob:trace"),
