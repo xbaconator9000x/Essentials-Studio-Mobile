@@ -16,6 +16,7 @@ const editorDialogs = vi.hoisted(() => ({
 
 const fillRect = vi.fn();
 const putImageData = vi.fn();
+const serializedCanvases: HTMLCanvasElement[] = [];
 
 vi.mock("../src/services/tauriApi", () => editorApi);
 vi.mock("../src/services/imageLoader", () => editorApi);
@@ -68,7 +69,11 @@ beforeEach(() => {
       mode === "copy" ? target : _source,
   );
   HTMLCanvasElement.prototype.getContext = vi.fn(() => context);
-  HTMLCanvasElement.prototype.toDataURL = vi.fn(() => "data:image/png;base64,cGl4ZWxz");
+  serializedCanvases.length = 0;
+  HTMLCanvasElement.prototype.toDataURL = vi.fn(function (this: HTMLCanvasElement) {
+    serializedCanvases.push(this);
+    return "data:image/png;base64,cGl4ZWxz";
+  });
   HTMLElement.prototype.getBoundingClientRect = vi.fn(() => ({
     x: 0,
     y: 0,
@@ -102,6 +107,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  serializedCanvases.length = 0;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -390,6 +396,58 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
   });
 
+  it("saves sprite pixels without serializing the trace-composited display canvas", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    expect(context.drawImage.mock.calls.some((call) => call[0] instanceof TestImage)).toBe(true);
+
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+
+    expect(serializedCanvases).toHaveLength(1);
+    expect(serializedCanvases[0]).not.toBe(editorCanvas);
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide",
+      "Guide_copy",
+      "copy",
+      "data:image/png;base64,cGl4ZWxz",
+    );
+  });
+
   it("positions the trace with a touch drag without painting the sprite", async () => {
     const traceUrl = {
       createObjectURL: vi.fn(() => "blob:trace"),
@@ -480,6 +538,7 @@ describe("sprite editor integration", () => {
   it("hands a completed pinch to one-finger panning without painting", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
     const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
     expect(editorCanvas).toBeTruthy();
     context.drawImage.mockClear();

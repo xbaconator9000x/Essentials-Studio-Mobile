@@ -2188,10 +2188,22 @@ mod archive_roundtrip_tests {
         let changed = tiled_map.iter().zip(&original_map).filter(|(a, b)| a != b).count();
         assert!((1..=2).contains(&changed), "{changed} bytes changed for one tile cell");
 
+        let character_directory = imported.join("Graphics/Characters");
+        let sprite_source = fs::read(character_directory.join("SyntheticGuide.png")).unwrap();
+        super::save_sprite_in_directory(
+            &character_directory,
+            &imported,
+            "SyntheticGuide",
+            "SyntheticGuide_Copy",
+            "copy",
+            &sprite_source,
+        )
+        .unwrap();
+
         let export1 = sandbox.path("export-gen1.zip");
         export_zip(&imported, &export1).unwrap();
         let hashes1 = member_sha256(&export1, "");
-        assert_eq!(original_hashes.keys().collect::<Vec<_>>(), hashes1.keys().collect::<Vec<_>>());
+        assert_eq!(hashes1.len(), original_hashes.len() + 1);
         for (name, hash) in &original_hashes {
             if name == "Data/Map001.rxdata" {
                 assert_ne!(hashes1.get(name), Some(hash));
@@ -2199,10 +2211,20 @@ mod archive_roundtrip_tests {
                 assert_eq!(hashes1.get(name), Some(hash), "untouched member changed: {name}");
             }
         }
+        assert_eq!(
+            hashes1.get("Graphics/Characters/SyntheticGuide_Copy.png"),
+            Some(&format!("{:x}", Sha256::digest(&sprite_source))),
+            "saved sprite copy must be present in the exported ZIP"
+        );
 
         // Second generation: the exported ZIP is itself a valid import source.
         let regenerated = publish(&export1, "import-gen2");
         assert_eq!(fs::read(regenerated.join("Data/Map001.rxdata")).unwrap(), tiled_map);
+        assert_eq!(
+            fs::read(regenerated.join("Graphics/Characters/SyntheticGuide_Copy.png")).unwrap(),
+            sprite_source,
+            "sprite copy must survive export and reimport byte-for-byte"
+        );
         assert!(regenerated.join("Graphics/Empty").is_dir());
         let gen2_path = regenerated.to_string_lossy().into_owned();
         runtime.block_on(async {
@@ -2236,6 +2258,11 @@ mod archive_roundtrip_tests {
         }
 
         let gen3 = extract_archive(&export2, &sandbox.path("reopened-gen3")).unwrap();
+        assert_eq!(
+            fs::read(gen3.join("Graphics/Characters/SyntheticGuide_Copy.png")).unwrap(),
+            sprite_source,
+            "sprite copy must survive the second ZIP generation"
+        );
         let gen3_path = gen3.to_string_lossy().into_owned();
         runtime.block_on(async {
             crate::commands::project::open_project(gen3_path.clone()).await.unwrap();
