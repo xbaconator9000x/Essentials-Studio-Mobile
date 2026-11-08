@@ -267,6 +267,23 @@ describe("rendered event editor Save All integration", () => {
     await screen.findByText("Second line");
   });
 
+  it("does not apply editor shortcuts while typing in the command picker", async () => {
+    renderProject();
+    await screen.findByText("Original dialogue");
+    fireEvent.click(screen.getByText("Original dialogue"));
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Insert/ }));
+    const search = screen.getByRole("textbox", { name: "Search event commands" });
+    fireEvent.keyDown(search, { key: "v", ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Close command picker" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+    expect(native.saveEvent).not.toHaveBeenCalled();
+    expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual([101, 401, 0]);
+  });
+
   it("shows every Show Text line and discards an unconfirmed draft with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },

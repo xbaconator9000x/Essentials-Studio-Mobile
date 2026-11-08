@@ -285,6 +285,16 @@ export function EventEditor({
         } else {
           handleCancel();
         }
+        return;
+      }
+      const target = e.target;
+      if (
+        showPicker ||
+        (target instanceof HTMLElement &&
+          (target.isContentEditable ||
+            target.closest("input, textarea, select, [contenteditable='true']") !== null))
+      ) {
+        return;
       }
       if (e.key === "Delete" && selectedCommand >= 0 && event && !showPicker && editingCommand === null) {
         handleDeleteCommand(selectedCommand);
