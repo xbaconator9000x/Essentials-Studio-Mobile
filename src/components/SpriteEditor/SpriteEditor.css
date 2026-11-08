@@ -244,7 +244,7 @@
     max-width: 100%;
   }
 
-  .sprite-editor-tools label > input[type="search"] {
+  .sprite-editor-character-picker > input[type="search"] {
     min-height: 44px;
     font-size: 14px;
   }
