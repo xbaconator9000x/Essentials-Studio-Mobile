@@ -60,6 +60,17 @@ export function getCommandBlockRange(
   return null;
 }
 
+export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: number): number {
+  const endIndex = list.findIndex((command) => command.code === 0);
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) {
+    return endIndex === -1 ? list.length : endIndex;
+  }
+  if (list[selectedIndex].code === 0) return selectedIndex;
+  const range = getCommandBlockRange(list, selectedIndex);
+  const insertionIndex = range ? range.end + 1 : selectedIndex + 1;
+  return endIndex !== -1 ? Math.min(insertionIndex, endIndex) : insertionIndex;
+}
+
 export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
   const range = getCommandBlockRange(list, index);
   if (!range || list[range.start].code === 0) return [];

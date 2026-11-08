@@ -23,6 +23,7 @@ import {
   cloneCommandBlock,
   getBlockEnd,
   getCommandBlockRange,
+  getCommandInsertionIndex,
   getDefaultParams,
   toVisualBlocks,
 } from "./parts/commandHelpers";
@@ -132,6 +133,38 @@ export function EventEditor({
     [event, activePage]
   );
 
+  const copySelectedCommand = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const block = cloneCommandBlock(page.list, selectedCommand);
+    if (block.length > 0) setClipboard(block);
+  }, [page, selectedCommand]);
+
+  const pasteCommand = useCallback(() => {
+    if (!page || !clipboard?.length) return;
+    const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
+    updatePage((p) => {
+      const list = [...p.list];
+      list.splice(insertAt, 0, ...structuredClone(clipboard));
+      return { ...p, list };
+    });
+    setSelectedCommand(insertAt);
+  }, [page, selectedCommand, clipboard, updatePage]);
+
+  const duplicateSelectedCommand = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const block = cloneCommandBlock(page.list, selectedCommand);
+    if (block.length === 0) return;
+    const range = getCommandBlockRange(page.list, selectedCommand);
+    if (!range) return;
+    const insertAt = getCommandInsertionIndex(page.list, range.end);
+    updatePage((p) => {
+      const list = [...p.list];
+      list.splice(insertAt, 0, ...block);
+      return { ...p, list };
+    });
+    setSelectedCommand(insertAt);
+  }, [page, selectedCommand, updatePage]);
+
   const handleInsertCommand = useCallback(
     (def: CommandDef) => {
       if (!page) return;
@@ -142,9 +175,7 @@ export function EventEditor({
       };
 
       // Insert after the entire block (past any continuations)
-      const insertAt = selectedCommand >= 0
-        ? getBlockEnd(page.list, selectedCommand) + 1
-        : page.list.length - 1;
+      const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
       updatePage((p) => {
         const list = [...p.list];
         list.splice(insertAt, 0, newCmd);
@@ -315,38 +346,17 @@ export function EventEditor({
       }
       // Copy command
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
-        const block = cloneCommandBlock(page.list, selectedCommand);
-        if (block.length > 0) setClipboard(block);
+        copySelectedCommand();
       }
       // Paste command
       if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard && clipboard.length > 0 && page && editingCommand === null) {
         e.preventDefault();
-        const selectedRange = selectedCommand >= 0
-          ? getCommandBlockRange(page.list, selectedCommand)
-          : null;
-        const insertAt = selectedRange ? selectedRange.end + 1 : page.list.length - 1;
-        updatePage((p) => {
-          const list = [...p.list];
-          list.splice(insertAt, 0, ...structuredClone(clipboard));
-          return { ...p, list };
-        });
-        setSelectedCommand(insertAt);
+        pasteCommand();
       }
       // Duplicate command (Ctrl+D)
       if ((e.ctrlKey || e.metaKey) && e.key === "d" && selectedCommand >= 0 && page && editingCommand === null) {
         e.preventDefault();
-        const block = cloneCommandBlock(page.list, selectedCommand);
-        if (block.length > 0) {
-          const range = getCommandBlockRange(page.list, selectedCommand);
-          if (!range) return;
-          const insertAt = range.end + 1;
-          updatePage((p) => {
-            const list = [...p.list];
-            list.splice(insertAt, 0, ...block);
-            return { ...p, list };
-          });
-          setSelectedCommand(insertAt);
-        }
+        duplicateSelectedCommand();
       }
       // Undo (Ctrl+Z)
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && editingCommand === null) {
@@ -367,7 +377,7 @@ export function EventEditor({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, updatePage, undo, redo]);
+  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, copySelectedCommand, pasteCommand, duplicateSelectedCommand, undo, redo]);
 
   // Click outside to close (respects dirty guard via handleCancel)
   const handleOverlayClick = useCallback(
@@ -510,6 +520,30 @@ export function EventEditor({
                       title="Insert a new command (Ins)"
                     >
                       + Insert
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={copySelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Copy selected command block"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={pasteCommand}
+                      disabled={!clipboard?.length}
+                      aria-label="Paste command block"
+                    >
+                      Paste
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={duplicateSelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Duplicate selected command block"
+                    >
+                      Duplicate
                     </button>
                     <button
                       className="event-editor-btn event-command-action"

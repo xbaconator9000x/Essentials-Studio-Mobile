@@ -325,6 +325,51 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list.map((command) => command.code)).toEqual(commands.map((command) => command.code));
   });
 
+  it("supports touch copy, paste, and duplicate while keeping the page terminator last", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["Portrait", 1, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["First original line"], source_index: 1 },
+      { code: 401, indent: 0, parameters: ["Second original line"], source_index: 2 },
+      { code: 0, indent: 0, parameters: [], source_index: 3 },
+    ];
+    const secondPage = structuredClone(diskEvent.pages[0]);
+    secondPage.list = [
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["Other page dialogue"], source_index: 1 },
+      { code: 0, indent: 0, parameters: [], source_index: 2 },
+    ];
+    diskEvent.pages.push(secondPage);
+    renderProject();
+    const secondLine = await screen.findByText("Second original line");
+    fireEvent.click(secondLine);
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected command block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event page 2" }));
+    await screen.findByText("Other page dialogue");
+    fireEvent.click(screen.getByRole("button", { name: "Paste command block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate selected command block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+
+    expect(diskEvent.pages[0].list.map((command) => command.parameters[0])).toEqual([
+      "Portrait", "First original line", "Second original line", undefined,
+    ]);
+    const savedCommands = diskEvent.pages[1].list;
+    expect(savedCommands.map((command) => command.code)).toEqual([
+      101, 401,
+      101, 401, 401,
+      101, 401, 401,
+      0,
+    ]);
+    expect(savedCommands.at(-1)?.code).toBe(0);
+    expect(savedCommands.slice(2, 8).every((command) => command.source_index === undefined)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Event page 2" }));
+    expect((await screen.findAllByText("First original line")).length).toBe(2);
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+  });
+
   it("shows every Show Text line and discards an unconfirmed draft with Escape", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["Face", 1, 0, 2], source_index: 0 },
