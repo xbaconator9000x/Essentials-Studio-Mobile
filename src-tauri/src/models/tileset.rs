@@ -47,12 +47,9 @@ impl RpgTileset {
             })
             .unwrap_or_else(|| vec![String::new(); 7]);
 
-        let passages = extract_table(obj.get("passages"))
-            .unwrap_or_else(|| Table::new_1d(384));
-        let priorities = extract_table(obj.get("priorities"))
-            .unwrap_or_else(|| Table::new_1d(384));
-        let terrain_tags = extract_table(obj.get("terrain_tags"))
-            .unwrap_or_else(|| Table::new_1d(384));
+        let passages = extract_table(obj.get("passages"))?;
+        let priorities = extract_table(obj.get("priorities"))?;
+        let terrain_tags = extract_table(obj.get("terrain_tags"))?;
 
         Some(Self {
             id: obj.get_int("id").unwrap_or(0),
@@ -105,8 +102,69 @@ impl RpgTileset {
 fn extract_table(value: Option<&RubyValue>) -> Option<Table> {
     match value? {
         RubyValue::UserDefined { class_name, data } if class_name == "Table" => {
-            Table::from_bytes(data)
+            let table = Table::from_bytes(data)?;
+            (table.dim_count == 1
+                && table.y_size == 1
+                && table.z_size == 1
+                && table.data.len() == table.x_size as usize
+                && data.len() == 20 + table.data.len() * 2)
+                .then_some(table)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RpgTileset;
+    use crate::marshal::types::{RubyObject, RubyValue};
+    use crate::models::table::Table;
+
+    fn serialized_table(table: Table) -> RubyValue {
+        RubyValue::UserDefined {
+            class_name: "Table".into(),
+            data: table.to_bytes(),
+        }
+    }
+
+    fn tileset_value(passages: Option<RubyValue>) -> RubyValue {
+        let mut tileset = RubyObject::new("RPG::Tileset".into());
+        if let Some(passages) = passages {
+            tileset.instance_vars.push(("@passages".into(), passages));
+        }
+        tileset.instance_vars.extend([
+            ("@priorities".into(), serialized_table(Table::new_1d(384))),
+            ("@terrain_tags".into(), serialized_table(Table::new_1d(384))),
+        ]);
+        RubyValue::Object(tileset)
+    }
+
+    #[test]
+    fn loads_xp_collision_tables_without_replacing_their_values() {
+        let mut passages = Table::new_1d(384);
+        passages.set(7, 0, 0, 0x0f);
+        let tileset = RpgTileset::from_ruby_value(&tileset_value(Some(serialized_table(passages))))
+            .expect("valid RPG::Tileset tables");
+
+        assert_eq!(tileset.passages.get(7, 0, 0), 0x0f);
+        assert_eq!(tileset.passages.x_size, 384);
+    }
+
+    #[test]
+    fn rejects_missing_or_non_one_dimensional_collision_tables() {
+        assert!(RpgTileset::from_ruby_value(&tileset_value(None)).is_none());
+        assert!(
+            RpgTileset::from_ruby_value(&tileset_value(Some(serialized_table(Table::new_2d(
+                2, 2
+            )))))
+            .is_none()
+        );
+        assert!(
+            RpgTileset::from_ruby_value(&tileset_value(Some(RubyValue::UserDefined {
+                class_name: "Table".into(),
+                data: vec![0; 20],
+            })))
+            .is_none()
+        );
     }
 }
