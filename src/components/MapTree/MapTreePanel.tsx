@@ -35,7 +35,10 @@ export function MapTreePanel({
 }: Props) {
   const tree = useMemo(() => buildTree(mapInfos), [mapInfos]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [mapSearch, setMapSearch] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchQuery = mapSearch.trim().toLocaleLowerCase();
+  const visibleTree = useMemo(() => filterTree(tree, searchQuery), [tree, searchQuery]);
 
   // Expansion state lives here (keyed by map id) rather than inside each node so
   // it survives tree rebuilds when mapInfos changes (create/rename/delete).
@@ -46,6 +49,19 @@ export function MapTreePanel({
     }
     return s;
   });
+
+  const forcedExpandedIds = useMemo(() => {
+    const ids = new Set<number>();
+    addParentIds(visibleTree, ids);
+    if (currentMapId !== null) {
+      for (const id of getAncestorIds(currentMapId, mapInfos)) ids.add(id);
+    }
+    return ids;
+  }, [visibleTree, currentMapId, mapInfos]);
+  const visibleExpandedIds = useMemo(
+    () => new Set([...expandedIds, ...forcedExpandedIds]),
+    [expandedIds, forcedExpandedIds],
+  );
 
   const toggleExpanded = useCallback((id: number) => {
     setExpandedIds((prev) => {
@@ -106,8 +122,25 @@ export function MapTreePanel({
           +
         </button>}
       </div>
-      <div className="map-tree-list">
-        {tree.map((node) => (
+      <label className="map-tree-search">
+        <span className="map-tree-search-label">Find a map</span>
+        <input
+          type="search"
+          aria-label="Search maps by name or ID"
+          placeholder="Name or map ID"
+          value={mapSearch}
+          onChange={(event) => setMapSearch(event.target.value)}
+        />
+        {mapSearch && (
+          <button type="button" aria-label="Clear map search" onClick={() => setMapSearch("")}>
+            Clear
+          </button>
+        )}
+      </label>
+      <div className="map-tree-list" role="tree" aria-label="Project maps">
+        {visibleTree.length === 0 ? (
+          <p className="map-tree-empty" role="status">No maps match “{mapSearch.trim()}”.</p>
+        ) : visibleTree.map((node) => (
           <MapTreeNodeItem
             key={node.id}
             node={node}
@@ -116,7 +149,7 @@ export function MapTreePanel({
             onSelectMap={onSelectMap}
             onContextMenu={readOnly ? undefined : handleContextMenu}
             readOnly={readOnly}
-            expandedIds={expandedIds}
+            expandedIds={visibleExpandedIds}
             onToggle={toggleExpanded}
           />
         ))}
@@ -211,19 +244,21 @@ function MapTreeNodeItem({
       </div>
       {expanded &&
         hasChildren &&
-        node.children.map((child) => (
-          <MapTreeNodeItem
-            key={child.id}
-            node={child}
-            depth={depth + 1}
-            currentMapId={currentMapId}
-            onSelectMap={onSelectMap}
-            onContextMenu={onContextMenu}
-            readOnly={readOnly}
-            expandedIds={expandedIds}
-            onToggle={onToggle}
-          />
-        ))}
+        <div role="group">
+          {node.children.map((child) => (
+            <MapTreeNodeItem
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              currentMapId={currentMapId}
+              onSelectMap={onSelectMap}
+              onContextMenu={onContextMenu}
+              readOnly={readOnly}
+              expandedIds={expandedIds}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>}
     </div>
   );
 }
@@ -272,4 +307,34 @@ function buildTree(mapInfos: Record<number, MapInfo>): MapTreeNode[] {
   sortNodes(roots);
 
   return roots;
+}
+
+function filterTree(nodes: MapTreeNode[], query: string): MapTreeNode[] {
+  if (!query) return nodes;
+  return nodes.flatMap((node) => {
+    const children = filterTree(node.children, query);
+    const matches = node.name.toLocaleLowerCase().includes(query)
+      || String(node.id).includes(query)
+      || String(node.id).padStart(3, "0").includes(query);
+    return matches || children.length > 0 ? [{ ...node, children }] : [];
+  });
+}
+
+function addParentIds(nodes: MapTreeNode[], expandedIds: Set<number>): void {
+  for (const node of nodes) {
+    if (node.children.length > 0) expandedIds.add(node.id);
+    addParentIds(node.children, expandedIds);
+  }
+}
+
+function getAncestorIds(mapId: number, mapInfos: Record<number, MapInfo>): Set<number> {
+  const ancestors = new Set<number>();
+  const visited = new Set<number>([mapId]);
+  let parentId = mapInfos[mapId]?.parent_id;
+  while (parentId && mapInfos[parentId] && !visited.has(parentId)) {
+    ancestors.add(parentId);
+    visited.add(parentId);
+    parentId = mapInfos[parentId].parent_id;
+  }
+  return ancestors;
 }
