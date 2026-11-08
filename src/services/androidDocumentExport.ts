@@ -3,6 +3,8 @@
  * a scoped content URI; native Rust streams and byte-verifies the ZIP.
  * Cancellation is not success and must never call the write command.
  */
+import { pickAndroidDocument } from "./androidDocumentPicker.ts";
+
 export async function exportAndroidDocument(
   exportId: string,
   expectedBytes: number,
@@ -27,7 +29,7 @@ export async function exportAndroidDocument(
   let pickerTimedOut = false;
   try {
     documentUri = await Promise.race([
-      io.pickDestination(filename).then(async (uri) => {
+      pickAndroidDocument(() => io.pickDestination(filename)).then(async (uri) => {
         if (pickerTimedOut && uri !== null) {
           await io.discardDestination(exportId, uri).catch((error: unknown) => {
             console.error("Could not remove late Android ZIP destination:", error);

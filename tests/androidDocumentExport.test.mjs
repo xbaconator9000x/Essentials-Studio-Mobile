@@ -13,6 +13,17 @@ test("cancelled Android picker never writes or reports completed export", async 
   assert.deepEqual(calls, [20, "Project.zip"]);
 });
 
+test("Tauri Android picker cancellation rejection never starts a document write", async () => {
+  let writes = 0;
+  const result = await exportAndroidDocument("export-1", 100, "Project.zip", {
+    pickDestination: async () => Promise.reject("File picker cancelled"),
+    writeAndVerify: async () => { writes++; return 100; },
+    discardDestination: async () => {},
+  });
+  assert.equal(result, "cancelled");
+  assert.equal(writes, 0);
+});
+
 test("unscoped Android picker paths are rejected before native write", async () => {
   let writes = 0;
   await assert.rejects(exportAndroidDocument("export-1", 100, "Project.zip", {

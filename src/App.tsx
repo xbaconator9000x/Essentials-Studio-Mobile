@@ -30,6 +30,7 @@ import {
   discardFailedProjectImport,
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
+import { pickAndroidDocument } from "./services/androidDocumentPicker";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
@@ -549,7 +550,7 @@ function AppContent() {
 
   const handlePickAndroidProjectZip = useCallback(async () => {
     try {
-      const selected = await open({
+      const selected = await pickAndroidDocument(() => open({
         multiple: false,
         // Android DocumentsUI providers disagree on ZIP MIME types
         // (application/zip vs application/x-zip-compressed). A restrictive
@@ -557,12 +558,9 @@ function AppContent() {
         // Select via the native provider, then let the bounded Rust ZIP
         // validator reject anything that is not a safe project archive.
         // This does not grant filesystem access or bypass the SAF picker.
-      });
+      }));
       if (selected === null) {
-        // tauri-plugin-dialog reports both a cancelled picker and a failed
-        // native picker callback as null on Android. Never leave that silent.
-        console.info("[android-import] document picker returned no selection");
-        setArchiveOutcome("No project ZIP was returned by the Android document picker; nothing was imported.");
+        setArchiveOutcome("Project ZIP import cancelled. No project was imported.");
         return;
       }
       console.info("[android-import] document picker returned a selection");
