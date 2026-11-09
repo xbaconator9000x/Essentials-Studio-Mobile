@@ -245,6 +245,21 @@ describe("rendered event editor Save All integration", () => {
     expect(screen.queryByDisplayValue("Saved label")).toBeNull();
   });
 
+  it("saves an active dialogue draft with Ctrl+S while the textarea has focus", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(textarea, { target: { value: "Saved with keyboard shortcut" } });
+    fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Saved with keyboard shortcut");
+    });
+    expect(native.saveEvent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+  });
+
   it("commits an active dialogue draft through Save & close", async () => {
     renderProject();
 

@@ -338,7 +338,10 @@ export function EventEditor({
     await commitActiveInlineDraft();
     await persistRef.current(true);
   }, [commitActiveInlineDraft, eventId, mapId]);
-  const handleSave = useCallback(() => { void persist(false); }, [persist]);
+  const handleSave = useCallback(async () => {
+    await commitActiveInlineDraft();
+    await persistRef.current(false);
+  }, [commitActiveInlineDraft]);
 
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
@@ -373,23 +376,24 @@ export function EventEditor({
         return;
       }
       const target = e.target;
-      if (
-        showPicker ||
-        (target instanceof HTMLElement &&
-          (target.isContentEditable ||
-            target.closest("input, textarea, select, [contenteditable='true']") !== null))
-      ) {
+      if (showPicker) {
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void handleSave();
+        return;
+      }
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable='true']") !== null)
+      ) return;
       if (e.key === "Delete" && selectedCommand >= 0 && event && !showPicker && editingCommand === null) {
         handleDeleteCommand(selectedCommand);
       }
       if (e.key === "Insert" && !showPicker && editingCommand === null) {
         setShowPicker(true);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
       }
       // Copy command
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
