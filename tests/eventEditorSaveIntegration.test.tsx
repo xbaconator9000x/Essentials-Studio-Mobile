@@ -257,6 +257,43 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Saved and closed from active editor");
   });
 
+  it("discards an active dialogue draft with Cancel without making the event dirty", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Discard this draft" },
+    });
+    fireEvent.click(within(screen.getByRole("group", { name: "Dialogue edit actions" }))
+      .getByRole("button", { name: "Cancel" }));
+
+    expect(await screen.findByText("Original dialogue")).toBeTruthy();
+    expect(native.saveEvent).not.toHaveBeenCalled();
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Original dialogue");
+    expect(screen.queryByText("*")).toBeNull();
+  });
+
+  it("retains a committed dialogue draft after Save All fails so it can be retried", async () => {
+    native.saveEvent.mockRejectedValueOnce(new Error("Synthetic write failure"));
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Retry this dialogue save" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText(/Save All failed:/);
+    expect(screen.getByText("Retry this dialogue save")).toBeTruthy();
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Original dialogue");
+    expect(native.saveEvent.mock.calls[0][2].pages[0].list[1].parameters[0])
+      .toBe("Retry this dialogue save");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Retry this dialogue save");
+  });
+
   it("preserves double-click editing alongside the explicit dialogue action", async () => {
     renderProject();
 
