@@ -385,6 +385,11 @@ describe("sprite editor integration", () => {
   it("keeps middle-button dragging available for sprite panning", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.some((call) =>
+        call.slice(1).join(",") === "68,68,64,64"
+      )).toBe(true);
+    });
     const canvas = view.container.querySelector(".sprite-editor-canvas");
     expect(canvas).toBeTruthy();
 
@@ -729,6 +734,80 @@ describe("sprite editor integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove trace" }));
     expect(traceUrl.revokeObjectURL).toHaveBeenCalledWith("blob:trace");
     expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
+  });
+
+  it("restores trace alignment per sprite after switching sprites and reopening the editor", async () => {
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const traceInput = screen.getByLabelText("Trace overlay");
+    fireEvent.change(traceInput, {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    fireEvent.change(screen.getByLabelText("Trace opacity: 35%"), { target: { value: "60" } });
+    fireEvent.change(screen.getByLabelText("Trace scale: 100%"), { target: { value: "125" } });
+    fireEvent.change(screen.getByLabelText("Trace horizontal alignment: 0"), { target: { value: "-20" } });
+    fireEvent.change(screen.getByLabelText("Trace vertical alignment: 0"), { target: { value: "35" } });
+    await waitFor(() => {
+      expect(window.localStorage.getItem(
+        "essentials-studio:sprite-trace:%2Fsynthetic-project:Guide",
+      )).toBe('{"opacity":60,"scale":125,"offsetX":-20,"offsetY":35}');
+    });
+
+    const spritePicker = screen.getByRole("combobox", { name: "Select project character sprite" });
+    fireEvent.change(spritePicker, { target: { value: "Hero" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenLastCalledWith(
+      "/synthetic-project",
+      "Hero",
+    ));
+    await waitFor(() => expect(screen.getByLabelText("Trace opacity: 35%")).toBeTruthy());
+
+    fireEvent.change(spritePicker, { target: { value: "Guide" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenLastCalledWith(
+      "/synthetic-project",
+      "Guide",
+    ));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Trace opacity: 60%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace scale: 125%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace horizontal alignment: -20")).toBeTruthy();
+      expect(screen.getByLabelText("Trace vertical alignment: 35")).toBeTruthy();
+    });
+
+    view.unmount();
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    expect(screen.queryByLabelText(/^Trace opacity:/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Trace opacity: 60%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace scale: 125%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace horizontal alignment: -20")).toBeTruthy();
+      expect(screen.getByLabelText("Trace vertical alignment: 35")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset trace alignment" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Trace opacity: 35%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace scale: 100%")).toBeTruthy();
+      expect(screen.getByLabelText("Trace horizontal alignment: 0")).toBeTruthy();
+      expect(screen.getByLabelText("Trace vertical alignment: 0")).toBeTruthy();
+    });
   });
 
   it("accepts a decoded trace image with no MIME type and allows selecting it again", async () => {

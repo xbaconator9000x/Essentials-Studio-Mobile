@@ -20,6 +20,12 @@ import {
   type SpritePixelAction,
   type SpriteTool,
 } from "../../services/spriteEditorPixels";
+import {
+  DEFAULT_SPRITE_TRACE_TRANSFORM,
+  readSpriteTraceTransform,
+  spriteTracePreferenceKey,
+  writeSpriteTraceTransform,
+} from "../../services/spriteEditorPreferences";
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
 import "./SpriteEditor.css";
 
@@ -70,10 +76,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [offsetX, setOffsetX] = useState(12);
   const [offsetY, setOffsetY] = useState(12);
   const [traceImage, setTraceImage] = useState<HTMLImageElement | null>(null);
-  const [traceOpacity, setTraceOpacity] = useState(35);
-  const [traceScale, setTraceScale] = useState(100);
-  const [traceOffsetX, setTraceOffsetX] = useState(0);
-  const [traceOffsetY, setTraceOffsetY] = useState(0);
+  const [traceOpacity, setTraceOpacity] = useState(DEFAULT_SPRITE_TRACE_TRANSFORM.opacity);
+  const [traceScale, setTraceScale] = useState(DEFAULT_SPRITE_TRACE_TRANSFORM.scale);
+  const [traceOffsetX, setTraceOffsetX] = useState(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetX);
+  const [traceOffsetY, setTraceOffsetY] = useState(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetY);
+  const [restoredTracePreferenceKey, setRestoredTracePreferenceKey] = useState<string | null>(null);
   const [positionTraceWithTouch, setPositionTraceWithTouch] = useState(false);
   const [imageRevision, setImageRevision] = useState(0);
   const [, setHistoryRevision] = useState(0);
@@ -92,6 +99,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const query = spriteSearch.trim().toLowerCase();
     return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
   }, [names, spriteSearch]);
+  const tracePreferenceKey = spriteTracePreferenceKey(projectPath, selectedName);
   const keepSelectedOption = selectedName && !filteredNames.includes(selectedName);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -183,6 +191,35 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       });
     return () => { cancelled = true; };
   }, [projectPath, selectedName, updateDirty]);
+
+  useEffect(() => {
+    if (!selectedName || !tracePreferenceKey) return;
+    const transform = readSpriteTraceTransform(projectPath, selectedName);
+    setTraceOpacity(transform.opacity);
+    setTraceScale(transform.scale);
+    setTraceOffsetX(transform.offsetX);
+    setTraceOffsetY(transform.offsetY);
+    setRestoredTracePreferenceKey(tracePreferenceKey);
+  }, [projectPath, selectedName, tracePreferenceKey]);
+
+  useEffect(() => {
+    if (!tracePreferenceKey || restoredTracePreferenceKey !== tracePreferenceKey) return;
+    writeSpriteTraceTransform(projectPath, selectedName, {
+      opacity: traceOpacity,
+      scale: traceScale,
+      offsetX: traceOffsetX,
+      offsetY: traceOffsetY,
+    });
+  }, [
+    projectPath,
+    selectedName,
+    tracePreferenceKey,
+    restoredTracePreferenceKey,
+    traceOpacity,
+    traceScale,
+    traceOffsetX,
+    traceOffsetY,
+  ]);
 
   const fitSprite = useCallback(() => {
     const source = imageCanvasRef.current;
@@ -911,6 +948,18 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   <input type="range" min="-100" max="100" value={traceOffsetY}
                     onChange={(event) => setTraceOffsetY(Number(event.target.value))} />
                 </label>
+                <button
+                  type="button"
+                  aria-label="Reset trace alignment"
+                  onClick={() => {
+                    setTraceOpacity(DEFAULT_SPRITE_TRACE_TRANSFORM.opacity);
+                    setTraceScale(DEFAULT_SPRITE_TRACE_TRANSFORM.scale);
+                    setTraceOffsetX(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetX);
+                    setTraceOffsetY(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetY);
+                  }}
+                >
+                  Reset trace alignment
+                </button>
                 <button onClick={() => {
                   traceLoadId.current += 1;
                   if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
