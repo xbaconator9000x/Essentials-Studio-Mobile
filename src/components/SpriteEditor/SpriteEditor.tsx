@@ -110,6 +110,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const traceUrl = useRef<string | null>(null);
   const traceLoadId = useRef(0);
   const fitViewportOnResize = useRef(true);
+  const spriteEditRevision = useRef(0);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -355,6 +356,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       return false;
     }
     if (!action) return false;
+    spriteEditRevision.current += 1;
 
     if (!deferRender) {
       context.putImageData(imageData, 0, 0);
@@ -399,6 +401,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const imageData = imageDataRef.current;
     const source = imageCanvasRef.current;
     if (!imageData || !source || !historyRef.current.undo(imageData.data)) return;
+    spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setDirty(true);
     updateDirty("sprite-editor", true);
@@ -409,6 +412,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const imageData = imageDataRef.current;
     const source = imageCanvasRef.current;
     if (!imageData || !source || !historyRef.current.redo(imageData.data)) return;
+    spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setDirty(true);
     updateDirty("sprite-editor", true);
@@ -419,6 +423,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const imageData = imageDataRef.current;
     const source = imageCanvasRef.current;
     if (!imageData || !source || !historyRef.current.cancel(imageData.data)) return;
+    spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setDirty(dirtyBeforeStroke.current);
     updateDirty("sprite-editor", dirtyBeforeStroke.current);
@@ -432,6 +437,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         !(await confirmEditor(`Replace the original ${selectedName}.png character graphic?`))) {
       throw new Error("Original sprite replacement cancelled; edits remain unsaved");
     }
+    const savedRevision = spriteEditRevision.current;
     setSaving(true);
     setError(null);
     try {
@@ -443,11 +449,17 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         source.toDataURL("image/png"),
       );
       setNames((current) => current.includes(savedName) ? current : [...current, savedName].sort((a, b) => a.localeCompare(b)));
-      setSelectedName(savedName);
-      setTargetName(`${savedName}_copy`);
-      setSaveMode("original");
-      setDirty(false);
-      updateDirty("sprite-editor", false);
+      if (spriteEditRevision.current === savedRevision) {
+        setSelectedName(savedName);
+        setTargetName(`${savedName}_copy`);
+        setSaveMode("original");
+        setDirty(false);
+        updateDirty("sprite-editor", false);
+      } else {
+        if (saveMode === "copy") setTargetName(`${savedName}_copy`);
+        setDirty(true);
+        updateDirty("sprite-editor", true);
+      }
       clearImageCache();
       onSaved();
     } catch (cause) {

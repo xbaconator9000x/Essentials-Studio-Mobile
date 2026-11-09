@@ -317,6 +317,84 @@ describe("sprite editor integration", () => {
     ));
   });
 
+  it("keeps newer edits dirty when a sprite copy save is still in flight", async () => {
+    let finishSave!: (name: string) => void;
+    editorApi.savePrivateProjectSprite.mockReturnValueOnce(
+      new Promise<string>((resolve) => { finishSave = resolve; }),
+    );
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 2, pointerType: "mouse", button: 0, clientX: 120, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 2, pointerType: "mouse", button: 0, clientX: 120, clientY: 100,
+    });
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    await act(async () => { finishSave("Guide_copy"); });
+
+    expect(screen.getByRole("combobox", { name: "Select project character sprite" }).value).toBe("Guide");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeTruthy();
+    expect(editorApi.loadCharacterImage).not.toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide_copy",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(2));
+    expect(editorApi.savePrivateProjectSprite.mock.calls[1][2]).toBe("Guide_copy_copy");
+    await waitFor(() => expect(screen.queryByText("Unsaved pixel edits")).toBeNull());
+  });
+
+  it("keeps newer edits dirty when an original sprite replacement is still in flight", async () => {
+    let finishSave!: (name: string) => void;
+    editorApi.savePrivateProjectSprite.mockReturnValueOnce(
+      new Promise<string>((resolve) => { finishSave = resolve; }),
+    );
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Replace original PNG" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 2, pointerType: "mouse", button: 0, clientX: 120, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 2, pointerType: "mouse", button: 0, clientX: 120, clientY: 100,
+    });
+    await act(async () => { finishSave("Guide"); });
+
+    expect(screen.getByRole("combobox", { name: "Select project character sprite" }).value).toBe("Guide");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeTruthy();
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project", "Guide", "Guide", "original", "data:image/png;base64,cGl4ZWxz",
+    );
+  });
+
   it("does not paint the first touch when a second touch starts a pinch", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
