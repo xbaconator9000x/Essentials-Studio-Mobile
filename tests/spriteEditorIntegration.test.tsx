@@ -360,6 +360,51 @@ describe("sprite editor integration", () => {
     ));
   });
 
+  it("ignores right mouse clicks without painting sprite pixels", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+    fillRect.mockClear();
+    putImageData.mockClear();
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 2, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 2, clientX: 100, clientY: 100,
+    });
+
+    expect(fillRect).not.toHaveBeenCalled();
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+  it("keeps middle-button dragging available for sprite panning", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 1, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerMove(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 1, clientX: 110, clientY: 120,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 1, clientX: 110, clientY: 120,
+    });
+
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([78, 88, 64, 64]);
+    });
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(putImageData).not.toHaveBeenCalled();
+  });
+
   it("keeps newer edits dirty when a sprite copy save is still in flight", async () => {
     let finishSave!: (name: string) => void;
     editorApi.savePrivateProjectSprite.mockReturnValueOnce(

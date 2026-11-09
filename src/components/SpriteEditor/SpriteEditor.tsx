@@ -515,6 +515,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     if (loading) return;
+    if (event.pointerType !== "touch" && event.button !== 0 && event.button !== 1) return;
     const point = { x: event.clientX, y: event.clientY };
     pointerPositions.current.set(event.pointerId, point);
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* WebView capture may be unavailable. */ }
