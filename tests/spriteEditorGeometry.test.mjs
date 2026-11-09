@@ -4,6 +4,7 @@ import {
   fitSpriteViewport,
   rasterizeSpriteLine,
   spritePixelAt,
+  zoomSpriteTraceTransform,
   zoomSpriteViewport,
 } from "../src/services/spriteEditorGeometry.ts";
 
@@ -83,4 +84,42 @@ test("pinch zoom retains the pixel under the moving gesture center", () => {
   assert.equal((next.x - zoomed.offsetX) / zoomed.zoom, world.x);
   assert.equal((next.y - zoomed.offsetY) / zoomed.zoom, world.y);
   assert.equal(zoomSpriteViewport(viewport, start, next, 100).zoom, 32);
+});
+
+test("trace pinch scales around the moving gesture center and preserves separate offsets", () => {
+  const start = { x: 100, y: 100 };
+  const next = { x: 110, y: 100 };
+  const transform = zoomSpriteTraceTransform(
+    { scale: 100, offsetX: 0, offsetY: 0 },
+    { zoom: 16, offsetX: 68, offsetY: 68 },
+    4,
+    4,
+    start,
+    next,
+    1.5,
+  );
+
+  assert.equal(transform.scale, 150);
+  assert.equal(transform.offsetX, 15.625);
+  assert.equal(transform.offsetY, 0);
+  const oldLeft = 68;
+  const oldWidth = 64;
+  const newLeft = 68 + (64 - 96) / 2 + 64 * transform.offsetX / 100;
+  assert.equal(newLeft + 96 / 2, next.x + (oldLeft + oldWidth / 2 - start.x) * 1.5);
+});
+
+test("trace pinch clamps scale and offsets and ignores invalid gestures", () => {
+  const viewport = { zoom: 4, offsetX: 0, offsetY: 0 };
+  const center = { x: 0, y: 0 };
+  assert.deepEqual(zoomSpriteTraceTransform(
+    { scale: 100, offsetX: 0, offsetY: 0 },
+    viewport,
+    4,
+    4,
+    center,
+    { x: 1000, y: 1000 },
+    10,
+  ), { scale: 200, offsetX: 100, offsetY: 100 });
+  const transform = { scale: 100, offsetX: 4, offsetY: -5 };
+  assert.equal(zoomSpriteTraceTransform(transform, viewport, 4, 4, center, center, 0), transform);
 });

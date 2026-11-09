@@ -4,6 +4,12 @@ export interface SpriteViewport {
   offsetY: number;
 }
 
+export interface SpriteTraceTransform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 export function fitSpriteViewport(
   imageWidth: number,
   imageHeight: number,
@@ -96,5 +102,53 @@ export function zoomSpriteViewport(
     zoom,
     offsetX: nextCenter.x - worldX * zoom,
     offsetY: nextCenter.y - worldY * zoom,
+  };
+}
+
+export function zoomSpriteTraceTransform(
+  transform: SpriteTraceTransform,
+  viewport: SpriteViewport,
+  imageWidth: number,
+  imageHeight: number,
+  startCenter: { x: number; y: number },
+  nextCenter: { x: number; y: number },
+  scale: number,
+): SpriteTraceTransform {
+  if (
+    ![viewport.zoom, viewport.offsetX, viewport.offsetY, imageWidth, imageHeight,
+      startCenter.x, startCenter.y, nextCenter.x, nextCenter.y, scale,
+      transform.scale, transform.offsetX, transform.offsetY].every(Number.isFinite) ||
+    viewport.zoom <= 0 ||
+    imageWidth <= 0 ||
+    imageHeight <= 0 ||
+    scale <= 0 ||
+    transform.scale <= 0
+  ) {
+    return transform;
+  }
+
+  const nextScale = Math.max(25, Math.min(200, transform.scale * scale));
+  const effectiveScale = nextScale / transform.scale;
+  const spriteWidth = imageWidth * viewport.zoom;
+  const spriteHeight = imageHeight * viewport.zoom;
+  const traceWidth = spriteWidth * transform.scale / 100;
+  const traceHeight = spriteHeight * transform.scale / 100;
+  const traceLeft = viewport.offsetX + (spriteWidth - traceWidth) / 2 +
+    spriteWidth * transform.offsetX / 100;
+  const traceTop = viewport.offsetY + (spriteHeight - traceHeight) / 2 +
+    spriteHeight * transform.offsetY / 100;
+  const nextLeft = nextCenter.x + (traceLeft - startCenter.x) * effectiveScale;
+  const nextTop = nextCenter.y + (traceTop - startCenter.y) * effectiveScale;
+  const nextTraceWidth = spriteWidth * nextScale / 100;
+  const nextTraceHeight = spriteHeight * nextScale / 100;
+
+  return {
+    scale: nextScale,
+    offsetX: Math.max(-100, Math.min(100,
+      (nextLeft - viewport.offsetX - (spriteWidth - nextTraceWidth) / 2) / spriteWidth * 100,
+    )),
+    offsetY: Math.max(-100, Math.min(100,
+      (nextTop - viewport.offsetY - (spriteHeight - nextTraceHeight) / 2) / spriteHeight * 100,
+    )),
   };
 }
