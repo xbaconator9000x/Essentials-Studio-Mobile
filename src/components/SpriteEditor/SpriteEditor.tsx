@@ -879,7 +879,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 >
                   Position trace with touch
                 </button>
-                {positionTraceWithTouch && <span role="status">Drag the canvas to align the trace.</span>}
+                {positionTraceWithTouch && (
+                  <span role="status">Drag with one finger; pinch to scale and align the trace.</span>
+                )}
                 <label>
                   Trace opacity: {traceOpacity}%
                   <input type="range" min="0" max="100" value={traceOpacity}

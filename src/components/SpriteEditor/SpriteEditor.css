@@ -222,6 +222,12 @@
     display: none;
   }
 
+  .sprite-editor-tools button,
+  .sprite-editor-tools input[type="range"],
+  .sprite-editor-tools input[type="color"] {
+    min-height: 44px;
+  }
+
   .sprite-editor-canvas-wrap {
     flex: 1;
     min-height: 0;
