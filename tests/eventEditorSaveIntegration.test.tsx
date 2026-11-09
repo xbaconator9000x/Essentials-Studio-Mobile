@@ -195,6 +195,23 @@ describe("rendered event editor Save All integration", () => {
     expect(screen.getByText(/^Event Commands/)).toBeTruthy();
   });
 
+  it("opens the visible dialogue editor from a single touch-sized row action and persists with Save All", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const dialogueEditor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    expect(dialogueEditor).toBeTruthy();
+    expect((dialogueEditor as HTMLTextAreaElement).value).toBe("Original dialogue");
+
+    fireEvent.change(dialogueEditor, { target: { value: "Edited by direct touch action" } });
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await screen.findByText("Edited by direct touch action");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited by direct touch action");
+  });
+
   it("confirms dialogue with OK, saves all, and reloads the still-open event", async () => {
     renderProject();
 

@@ -305,6 +305,25 @@
   white-space: nowrap;
 }
 
+.event-command-inline-edit {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -10px -8px -10px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.event-command-inline-edit:hover,
+.event-command-inline-edit:focus-visible {
+  background: var(--color-surface1);
+}
+
 /* Special command styling */
 .event-command-row.cmd-comment .event-command-name,
 .event-command-row.cmd-comment .event-command-params {

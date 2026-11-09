@@ -284,6 +284,18 @@ export function MultiLineBlock({
         <span className="event-command-icon">{icon}</span>
         <span className="event-command-name">{def.name}</span>
         <span className="event-command-params">{allLines[0]}</span>
+        <button
+          type="button"
+          className="event-command-inline-edit"
+          aria-label={block.cmd.code === 101 ? "Edit dialogue" : `Edit ${def.name.toLowerCase()}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+            onStartEdit();
+          }}
+        >
+          Edit
+        </button>
       </div>
       {allLines.slice(1).map((line, idx) => (
         <div
