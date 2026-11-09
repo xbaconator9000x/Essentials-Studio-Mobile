@@ -145,6 +145,26 @@ describe("sprite editor integration", () => {
     expect(reopened.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
   });
 
+  it("keeps a fit-to-view action available with tools collapsed without dirtying pixels", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+    expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
+
+    fireEvent.wheel(canvas!, { clientX: 80, clientY: 94, deltaY: -120, deltaMode: 0 });
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).not.toBe(64));
+    fireEvent.click(screen.getByRole("button", { name: "Fit sprite to view" }));
+    await waitFor(() => {
+      const call = context.drawImage.mock.calls.at(-1);
+      expect(call?.slice(1)).toEqual([68, 68, 64, 64]);
+    });
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
   it("filters project sprites by name while preserving the selected sprite and copy target", async () => {
     editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero", "Guide_Alt"]);
     const view = renderEditor();
@@ -600,7 +620,7 @@ describe("sprite editor integration", () => {
   it("zooms around the pointer and centers button zoom without dirtying sprite pixels", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
-    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call.length === 5)).toBe(true));
     const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
     expect(editorCanvas).toBeTruthy();
     const before = context.drawImage.mock.calls.at(-1)!;

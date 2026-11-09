@@ -15,8 +15,8 @@ export function fitSpriteViewport(
     ![imageWidth, imageHeight, viewportWidth, viewportHeight, maxZoom].every(Number.isFinite) ||
     imageWidth <= 0 ||
     imageHeight <= 0 ||
-    viewportWidth < 0 ||
-    viewportHeight < 0 ||
+    viewportWidth <= 0 ||
+    viewportHeight <= 0 ||
     maxZoom < 1
   ) {
     return { zoom: 1, offsetX: 0, offsetY: 0 };

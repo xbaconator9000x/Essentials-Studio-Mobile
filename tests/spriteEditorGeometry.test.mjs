@@ -25,11 +25,11 @@ test("sprite fit centers an integer zoom and respects the maximum scale", () => 
   });
 });
 
-test("sprite fit remains finite for zero-sized viewports and invalid image dimensions", () => {
+test("sprite fit returns a safe origin for zero-sized viewports and invalid image dimensions", () => {
   assert.deepEqual(fitSpriteViewport(16, 8, 0, 0), {
     zoom: 1,
-    offsetX: -8,
-    offsetY: -4,
+    offsetX: 0,
+    offsetY: 0,
   });
   assert.deepEqual(fitSpriteViewport(0, 8, 320, 200), {
     zoom: 1,

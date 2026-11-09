@@ -4,6 +4,7 @@ import { clearImageCache, loadCharacterImage } from "../../services/imageLoader"
 import { listAssetFiles, savePrivateProjectSprite } from "../../services/tauriApi";
 import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import {
+  fitSpriteViewport,
   rasterizeSpriteLine,
   spritePixelAt,
   zoomSpriteViewport,
@@ -161,12 +162,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         historyRef.current.clear();
         const bounds = canvasRef.current?.parentElement?.getBoundingClientRect();
         if (bounds?.width && bounds.height) {
-          const fit = Math.max(1, Math.min(16, Math.floor(
-            Math.min((bounds.width - 32) / source.width, (bounds.height - 32) / source.height),
-          )));
-          setZoom(fit);
-          setOffsetX((bounds.width - source.width * fit) / 2);
-          setOffsetY((bounds.height - source.height * fit) / 2);
+          const viewport = fitSpriteViewport(source.width, source.height, bounds.width, bounds.height);
+          setZoom(viewport.zoom);
+          setOffsetX(viewport.offsetX);
+          setOffsetY(viewport.offsetY);
         }
         setDirty(false);
         setImageRevision((value) => value + 1);
@@ -183,12 +182,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const canvas = canvasRef.current;
     if (!source || !canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const fit = Math.max(1, Math.min(16, Math.floor(
-      Math.min((rect.width - 32) / source.width, (rect.height - 32) / source.height),
-    )));
-    setZoom(fit);
-    setOffsetX((rect.width - source.width * fit) / 2);
-    setOffsetY((rect.height - source.height * fit) / 2);
+    const viewport = fitSpriteViewport(source.width, source.height, rect.width, rect.height);
+    setZoom(viewport.zoom);
+    setOffsetX(viewport.offsetX);
+    setOffsetY(viewport.offsetY);
   }, []);
 
   const zoomViewportAt = useCallback((scale: number, point?: PointerPoint) => {
@@ -684,6 +681,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             >
               {controlsCollapsed ? "Tools ▸" : "Tools ▾"}
             </button>
+            <button aria-label="Fit sprite to view" onClick={fitSprite}>Fit</button>
             <button disabled={!dirty || saving} onClick={() => void saveSprite().catch(() => {})}>
               {saving ? "Saving…" : "Save sprite"}
             </button>
@@ -785,7 +783,6 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <div className="sprite-editor-tool-row">
               <button aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
               <button aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
-              <button onClick={fitSprite}>Fit</button>
             </div>
             <label>
               Trace overlay
