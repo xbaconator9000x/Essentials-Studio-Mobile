@@ -157,6 +157,7 @@ export function MapToolbar({
       <label className="toolbar-check toolbar-pin-toggle">
         <input
           type="checkbox"
+          aria-label="Show event pins"
           checked={showEventPins}
           onChange={(e) => setShowEventPins(e.target.checked)}
         />

@@ -2237,15 +2237,29 @@ mod archive_roundtrip_tests {
 
         let character_directory = imported.join("Graphics/Characters");
         let sprite_source = fs::read(character_directory.join("SyntheticGuide.png")).unwrap();
+        let mut edited_sprite_image = image::load_from_memory(&sprite_source)
+            .expect("decode synthetic character PNG")
+            .to_rgba8();
+        edited_sprite_image.put_pixel(7, 9, image::Rgba([255, 0, 0, 255]));
+        let mut encoded_sprite = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(edited_sprite_image)
+            .write_to(&mut encoded_sprite, image::ImageFormat::Png)
+            .expect("encode edited synthetic character PNG");
+        let edited_sprite = encoded_sprite.into_inner();
         super::save_sprite_in_directory(
             &character_directory,
             &imported,
             "SyntheticGuide",
             "SyntheticGuide_Copy",
             "copy",
-            &sprite_source,
+            &edited_sprite,
         )
         .unwrap();
+        assert_eq!(
+            fs::read(character_directory.join("SyntheticGuide.png")).unwrap(),
+            sprite_source,
+            "saving a copy must not modify the source character graphic"
+        );
 
         let export1 = sandbox.path("export-gen1.zip");
         export_zip(&imported, &export1).unwrap();
@@ -2260,7 +2274,7 @@ mod archive_roundtrip_tests {
         }
         assert_eq!(
             hashes1.get("Graphics/Characters/SyntheticGuide_Copy.png"),
-            Some(&format!("{:x}", Sha256::digest(&sprite_source))),
+            Some(&format!("{:x}", Sha256::digest(&edited_sprite))),
             "saved sprite copy must be present in the exported ZIP"
         );
 
@@ -2269,9 +2283,15 @@ mod archive_roundtrip_tests {
         assert_eq!(fs::read(regenerated.join("Data/Map001.rxdata")).unwrap(), tiled_map);
         assert_eq!(
             fs::read(regenerated.join("Graphics/Characters/SyntheticGuide_Copy.png")).unwrap(),
-            sprite_source,
-            "sprite copy must survive export and reimport byte-for-byte"
+            edited_sprite,
+            "edited sprite copy must survive export and reimport byte-for-byte"
         );
+        let reopened_sprite = image::load_from_memory(
+            &fs::read(regenerated.join("Graphics/Characters/SyntheticGuide_Copy.png")).unwrap(),
+        )
+        .expect("decode reimported edited character PNG");
+        assert_eq!((reopened_sprite.width(), reopened_sprite.height()), (128, 128));
+        assert_eq!(reopened_sprite.to_rgba8().get_pixel(7, 9), &image::Rgba([255, 0, 0, 255]));
         assert!(regenerated.join("Graphics/Empty").is_dir());
         let gen2_path = regenerated.to_string_lossy().into_owned();
         runtime.block_on(async {
@@ -2307,8 +2327,8 @@ mod archive_roundtrip_tests {
         let gen3 = extract_archive(&export2, &sandbox.path("reopened-gen3")).unwrap();
         assert_eq!(
             fs::read(gen3.join("Graphics/Characters/SyntheticGuide_Copy.png")).unwrap(),
-            sprite_source,
-            "sprite copy must survive the second ZIP generation"
+            edited_sprite,
+            "edited sprite copy must survive the second ZIP generation"
         );
         let gen3_path = gen3.to_string_lossy().into_owned();
         runtime.block_on(async {

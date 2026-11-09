@@ -354,6 +354,10 @@
     padding: 8px;
   }
 
+  .toolbar-pin-toggle {
+    min-height: 44px;
+  }
+
   .toolbar-label {
     font-size: 11px;
   }

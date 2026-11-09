@@ -286,3 +286,18 @@
     min-height: 44px;
   }
 }
+
+@media (max-width: 430px) {
+  .sprite-editor-header {
+    flex-wrap: wrap;
+  }
+
+  .sprite-editor-header > strong {
+    flex: 1 1 100%;
+  }
+
+  .sprite-editor-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

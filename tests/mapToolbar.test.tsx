@@ -92,6 +92,49 @@ describe("mobile map toolbar", () => {
     expect(setPaintTool).toHaveBeenCalledWith("pan");
   });
 
+  it("keeps the pin visibility toggle available and accessible when tools are collapsed", () => {
+    const setShowEventPins = vi.fn();
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+
+    const toolbar = (showEventPins: boolean) => (
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={vi.fn()}
+        tileClipboard={null}
+        selectedLayer={0}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        showEventPins={showEventPins}
+        setShowEventPins={setShowEventPins}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={0}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
+      />
+    );
+    const view = render(toolbar(true));
+
+    expect(screen.queryByRole("button", { name: "Pen" })).toBeNull();
+    const pins = screen.getByRole("checkbox", { name: "Show event pins" });
+    expect((pins as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(pins);
+
+    expect(setShowEventPins).toHaveBeenCalledWith(false);
+    view.rerender(toolbar(false));
+    expect((screen.getByRole("checkbox", { name: "Show event pins" }) as HTMLInputElement).checked).toBe(false);
+  });
+
   it("offers a map event browser with its expanded state", () => {
     const onToggleEventList = vi.fn();
 
