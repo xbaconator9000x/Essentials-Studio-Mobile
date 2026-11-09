@@ -190,6 +190,50 @@ describe("rendered event editor Save All integration", () => {
       .toBe("Kept before adding a page");
   });
 
+  it("commits an active dialogue draft before starting another command edit", async () => {
+    diskEvent.pages[0].list.splice(2, 0, {
+      code: 118,
+      indent: 0,
+      parameters: ["start"],
+      source_index: 2,
+    });
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Kept before editing another command" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Label" }));
+    expect(await screen.findByDisplayValue("start")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+    fireEvent.click(within(
+      screen.getByRole("group", { name: "Command edit actions" }),
+    ).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Kept before editing another command");
+  });
+
+  it("commits an active dialogue draft before opening the command picker", async () => {
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Kept before inserting a command" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Insert" }));
+    expect(await screen.findByRole("dialog", { name: "Insert Command" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close command picker" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Kept before inserting a command");
+  });
+
   it("commits a page draft before removal so undo can restore it", async () => {
     const event = importedEvent();
     const secondPage = structuredClone(event.pages[0]);

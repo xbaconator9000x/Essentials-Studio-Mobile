@@ -82,7 +82,7 @@ export function EventEditor({
     commit();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }, []);
-  const commitDraftBeforePageAction = useCallback((action: () => void) => {
+  const commitDraftBeforeAction = useCallback((action: () => void) => {
     if (pageActionPendingRef.current) return;
     if (!activeInlineDraftCommitRef.current) {
       action();
@@ -95,12 +95,18 @@ export function EventEditor({
       .finally(() => { pageActionPendingRef.current = false; });
   }, [commitActiveInlineDraft]);
   const switchEventPage = useCallback((pageIndex: number) => {
-    commitDraftBeforePageAction(() => {
+    commitDraftBeforeAction(() => {
       setActivePage(pageIndex);
       setSelectedCommand(-1);
       setEditingCommand(null);
     });
-  }, [commitDraftBeforePageAction]);
+  }, [commitDraftBeforeAction]);
+  const startCommandEdit = useCallback((index: number) => {
+    commitDraftBeforeAction(() => setEditingCommand(index));
+  }, [commitDraftBeforeAction]);
+  const openCommandPicker = useCallback(() => {
+    commitDraftBeforeAction(() => setShowPicker(true));
+  }, [commitDraftBeforeAction]);
   const handleInlineDraftChange = useCallback(() => {
     if (!inlineDraftActiveRef.current) {
       dirtyBeforeInlineDraftRef.current = dirty;
@@ -365,7 +371,7 @@ export function EventEditor({
     await persistRef.current(false);
   }, [commitActiveInlineDraft]);
   const handleAddEventPage = useCallback(() => {
-    commitDraftBeforePageAction(() => {
+    commitDraftBeforeAction(() => {
       const current = eventRef.current;
       if (!current) return;
       const newPage: EventPage = {
@@ -386,9 +392,9 @@ export function EventEditor({
       setSaveError(null);
       setDirty(true);
     });
-  }, [commitDraftBeforePageAction, setEvent]);
+  }, [commitDraftBeforeAction, setEvent]);
   const handleRemoveEventPage = useCallback(() => {
-    commitDraftBeforePageAction(() => {
+    commitDraftBeforeAction(() => {
       const current = eventRef.current;
       if (!current || current.pages.length <= 1) return;
       setEvent((previous) => {
@@ -402,7 +408,7 @@ export function EventEditor({
       setSaveError(null);
       setDirty(true);
     });
-  }, [activePage, commitDraftBeforePageAction, setEvent]);
+  }, [activePage, commitDraftBeforeAction, setEvent]);
 
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
@@ -454,7 +460,7 @@ export function EventEditor({
         handleDeleteCommand(selectedCommand);
       }
       if (e.key === "Insert" && !showPicker && editingCommand === null) {
-        setShowPicker(true);
+        openCommandPicker();
       }
       // Copy command
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
@@ -489,7 +495,7 @@ export function EventEditor({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, copySelectedCommand, pasteCommand, duplicateSelectedCommand, undo, redo]);
+  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, copySelectedCommand, pasteCommand, duplicateSelectedCommand, openCommandPicker, undo, redo]);
 
   // Click outside to close (respects dirty guard via handleCancel)
   const handleOverlayClick = useCallback(
@@ -598,7 +604,7 @@ export function EventEditor({
                   <div className="event-command-actions">
                     <button
                       className="event-editor-btn event-command-action"
-                      onClick={() => setShowPicker(true)}
+                      onClick={openCommandPicker}
                       title="Insert a new command (Ins)"
                     >
                       + Insert
@@ -645,7 +651,7 @@ export function EventEditor({
                     </button>
                     <button
                       className="event-editor-btn event-command-action"
-                      onClick={() => setEditingCommand(selectedCommand)}
+                      onClick={() => startCommandEdit(selectedCommand)}
                       disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
                       title="Edit selected command"
                     >
@@ -673,7 +679,7 @@ export function EventEditor({
                           selected={selectedCommand === block.rawIndex}
                           editing={editingCommand === block.rawIndex}
                           onSelect={() => setSelectedCommand(block.rawIndex)}
-                          onStartEdit={() => setEditingCommand(block.rawIndex)}
+                          onStartEdit={() => startCommandEdit(block.rawIndex)}
                           onUpdateLines={(lines) => {
                             const contCode = PARENT_CONT[block.cmd.code]!;
                             updatePage((p) => {
@@ -699,7 +705,7 @@ export function EventEditor({
                         selected={selectedCommand === i}
                         editing={editingCommand === i}
                         onClick={() => setSelectedCommand(i)}
-                        onDoubleClick={() => { if (cmd.code !== 0) setEditingCommand(i); }}
+                        onDoubleClick={() => { if (cmd.code !== 0) startCommandEdit(i); }}
                         onParamChange={(paramIdx, value) => handleUpdateCommandParam(i, paramIdx, value)}
                         onStopEditing={() => setEditingCommand(null)}
                         onRegisterDraftCommit={registerActiveInlineDraftCommit}
