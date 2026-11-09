@@ -1,10 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  fitSpriteViewport,
   rasterizeSpriteLine,
   spritePixelAt,
   zoomSpriteViewport,
 } from "../src/services/spriteEditorGeometry.ts";
+
+test("sprite fit centers an integer zoom and respects the maximum scale", () => {
+  assert.deepEqual(fitSpriteViewport(16, 8, 320, 200), {
+    zoom: 16,
+    offsetX: 32,
+    offsetY: 36,
+  });
+  assert.deepEqual(fitSpriteViewport(100, 50, 180, 120), {
+    zoom: 1,
+    offsetX: 40,
+    offsetY: 35,
+  });
+  assert.deepEqual(fitSpriteViewport(16, 8, 320, 200, 8), {
+    zoom: 8,
+    offsetX: 96,
+    offsetY: 68,
+  });
+});
+
+test("sprite fit remains finite for zero-sized viewports and invalid image dimensions", () => {
+  assert.deepEqual(fitSpriteViewport(16, 8, 0, 0), {
+    zoom: 1,
+    offsetX: -8,
+    offsetY: -4,
+  });
+  assert.deepEqual(fitSpriteViewport(0, 8, 320, 200), {
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
+  assert.deepEqual(fitSpriteViewport(Number.NaN, 8, 320, 200), {
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
+});
 
 test("sprite brush interpolation covers fast strokes in either direction", () => {
   assert.deepEqual(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 4, y: 2 }), [

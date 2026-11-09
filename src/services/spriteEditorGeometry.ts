@@ -4,6 +4,41 @@ export interface SpriteViewport {
   offsetY: number;
 }
 
+export function fitSpriteViewport(
+  imageWidth: number,
+  imageHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  maxZoom = 16,
+): SpriteViewport {
+  if (
+    ![imageWidth, imageHeight, viewportWidth, viewportHeight, maxZoom].every(Number.isFinite) ||
+    imageWidth <= 0 ||
+    imageHeight <= 0 ||
+    viewportWidth < 0 ||
+    viewportHeight < 0 ||
+    maxZoom < 1
+  ) {
+    return { zoom: 1, offsetX: 0, offsetY: 0 };
+  }
+
+  const zoom = Math.max(
+    1,
+    Math.min(
+      Math.floor(maxZoom),
+      Math.floor(Math.min(
+        (viewportWidth - 32) / imageWidth,
+        (viewportHeight - 32) / imageHeight,
+      )),
+    ),
+  );
+  return {
+    zoom,
+    offsetX: (viewportWidth - imageWidth * zoom) / 2,
+    offsetY: (viewportHeight - imageHeight * zoom) / 2,
+  };
+}
+
 export function rasterizeSpriteLine(
   start: { x: number; y: number },
   end: { x: number; y: number },
