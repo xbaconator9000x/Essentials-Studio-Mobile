@@ -109,6 +109,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   } | null>(null);
   const traceUrl = useRef<string | null>(null);
   const traceLoadId = useRef(0);
+  const fitViewportOnResize = useRef(true);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -160,6 +161,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         imageCanvasRef.current = source;
         imageDataRef.current = context.getImageData(0, 0, source.width, source.height);
         historyRef.current.clear();
+        fitViewportOnResize.current = true;
         const bounds = canvasRef.current?.parentElement?.getBoundingClientRect();
         if (bounds?.width && bounds.height) {
           const viewport = fitSpriteViewport(source.width, source.height, bounds.width, bounds.height);
@@ -183,6 +185,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (!source || !canvas) return;
     const rect = canvas.getBoundingClientRect();
     const viewport = fitSpriteViewport(source.width, source.height, rect.width, rect.height);
+    fitViewportOnResize.current = true;
     setZoom(viewport.zoom);
     setOffsetX(viewport.offsetX);
     setOffsetY(viewport.offsetY);
@@ -193,6 +196,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const center = point ?? { x: rect.width / 2, y: rect.height / 2 };
+    fitViewportOnResize.current = false;
     const next = zoomSpriteViewport(
       { zoom, offsetX, offsetY },
       center,
@@ -235,37 +239,51 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       context.fillRect(0, 0, rect.width, rect.height);
       const source = imageCanvasRef.current;
       if (source) {
-        context.drawImage(source, offsetX, offsetY, source.width * zoom, source.height * zoom);
+        const viewport = fitViewportOnResize.current && rect.width > 0 && rect.height > 0
+          ? fitSpriteViewport(source.width, source.height, rect.width, rect.height)
+          : { zoom, offsetX, offsetY };
+        if (fitViewportOnResize.current) {
+          if (viewport.zoom !== zoom) setZoom(viewport.zoom);
+          if (viewport.offsetX !== offsetX) setOffsetX(viewport.offsetX);
+          if (viewport.offsetY !== offsetY) setOffsetY(viewport.offsetY);
+        }
+        context.drawImage(
+          source,
+          viewport.offsetX,
+          viewport.offsetY,
+          source.width * viewport.zoom,
+          source.height * viewport.zoom,
+        );
         if (traceImage) {
-          const width = source.width * zoom * traceScale / 100;
-          const height = source.height * zoom * traceScale / 100;
+          const width = source.width * viewport.zoom * traceScale / 100;
+          const height = source.height * viewport.zoom * traceScale / 100;
           context.globalAlpha = traceOpacity / 100;
           context.drawImage(
             traceImage,
-            offsetX + (source.width * zoom - width) / 2 + source.width * zoom * traceOffsetX / 100,
-            offsetY + (source.height * zoom - height) / 2 + source.height * zoom * traceOffsetY / 100,
+            viewport.offsetX + (source.width * viewport.zoom - width) / 2 + source.width * viewport.zoom * traceOffsetX / 100,
+            viewport.offsetY + (source.height * viewport.zoom - height) / 2 + source.height * viewport.zoom * traceOffsetY / 100,
             width,
             height,
           );
           context.globalAlpha = 1;
         }
-        if (zoom >= 4) {
-          const left = Math.max(0, Math.floor(-offsetX / zoom));
-          const top = Math.max(0, Math.floor(-offsetY / zoom));
-          const right = Math.min(source.width, Math.ceil((rect.width - offsetX) / zoom));
-          const bottom = Math.min(source.height, Math.ceil((rect.height - offsetY) / zoom));
+        if (viewport.zoom >= 4) {
+          const left = Math.max(0, Math.floor(-viewport.offsetX / viewport.zoom));
+          const top = Math.max(0, Math.floor(-viewport.offsetY / viewport.zoom));
+          const right = Math.min(source.width, Math.ceil((rect.width - viewport.offsetX) / viewport.zoom));
+          const bottom = Math.min(source.height, Math.ceil((rect.height - viewport.offsetY) / viewport.zoom));
           context.strokeStyle = "rgba(255,255,255,0.2)";
           context.lineWidth = 1;
           context.beginPath();
           for (let x = left; x <= right; x++) {
-            const screenX = Math.round(offsetX + x * zoom) + 0.5;
-            context.moveTo(screenX, offsetY + top * zoom);
-            context.lineTo(screenX, offsetY + bottom * zoom);
+            const screenX = Math.round(viewport.offsetX + x * viewport.zoom) + 0.5;
+            context.moveTo(screenX, viewport.offsetY + top * viewport.zoom);
+            context.lineTo(screenX, viewport.offsetY + bottom * viewport.zoom);
           }
           for (let y = top; y <= bottom; y++) {
-            const screenY = Math.round(offsetY + y * zoom) + 0.5;
-            context.moveTo(offsetX + left * zoom, screenY);
-            context.lineTo(offsetX + right * zoom, screenY);
+            const screenY = Math.round(viewport.offsetY + y * viewport.zoom) + 0.5;
+            context.moveTo(viewport.offsetX + left * viewport.zoom, screenY);
+            context.lineTo(viewport.offsetX + right * viewport.zoom, screenY);
           }
           context.stroke();
         }
@@ -490,6 +508,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         center,
         viewport: { zoom, offsetX, offsetY },
       };
+      fitViewportOnResize.current = false;
       cancelStroke();
       activePaintPointer.current = null;
       pendingTouchPaint.current = null;
@@ -508,6 +527,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     }
     if (tool === "pan" || event.button === 1) {
       lastPaintPixel.current = null;
+      fitViewportOnResize.current = false;
       activePan.current = { id: event.pointerId, point, x: offsetX, y: offsetY };
     } else {
       dirtyBeforeStroke.current = dirty;
@@ -540,6 +560,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         { x: center.x - rect.left, y: center.y - rect.top },
         pinch.distance > 0 ? distance / pinch.distance : 1,
       );
+      fitViewportOnResize.current = false;
       setZoom(next.zoom);
       setOffsetX(next.offsetX);
       setOffsetY(next.offsetY);
@@ -547,6 +568,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     }
     const pan = activePan.current;
     if (pan?.id === event.pointerId) {
+      fitViewportOnResize.current = false;
       setOffsetX(pan.x + point.x - pan.point.x);
       setOffsetY(pan.y + point.y - pan.point.y);
     } else if (activeTracePan.current?.id === event.pointerId) {

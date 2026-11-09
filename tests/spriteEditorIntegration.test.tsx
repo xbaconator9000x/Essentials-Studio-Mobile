@@ -17,6 +17,8 @@ const editorDialogs = vi.hoisted(() => ({
 const fillRect = vi.fn();
 const putImageData = vi.fn();
 const serializedCanvases: HTMLCanvasElement[] = [];
+let resizeObserverCallback: ResizeObserverCallback | null = null;
+let spriteViewportBounds = { width: 200, height: 200 };
 
 vi.mock("../src/services/tauriApi", () => editorApi);
 vi.mock("../src/services/imageLoader", () => editorApi);
@@ -62,6 +64,8 @@ function RenderedEditor({ onSaved }: { onSaved: () => void }) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  resizeObserverCallback = null;
+  spriteViewportBounds = { width: 200, height: 200 };
   editorApi.listAssetFiles.mockResolvedValue(["Guide"]);
   editorApi.loadCharacterImage.mockResolvedValue({ width: 4, height: 4 });
   editorApi.savePrivateProjectSprite.mockImplementation(
@@ -79,10 +83,10 @@ beforeEach(() => {
     y: 0,
     left: 0,
     top: 0,
-    right: 200,
-    bottom: 200,
-    width: 200,
-    height: 200,
+    right: spriteViewportBounds.width,
+    bottom: spriteViewportBounds.height,
+    width: spriteViewportBounds.width,
+    height: spriteViewportBounds.height,
     toJSON: () => ({}),
   }));
   if (!window.PointerEvent) {
@@ -99,6 +103,10 @@ beforeEach(() => {
     window.PointerEvent = TestPointerEvent as typeof PointerEvent;
   }
   globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      resizeObserverCallback = callback;
+    }
+
     observe() {}
     disconnect() {}
     unobserve() {}
@@ -163,6 +171,68 @@ describe("sprite editor integration", () => {
     expect(putImageData).not.toHaveBeenCalled();
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
     expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+  it("keeps the sprite fitted when the canvas resizes in fit mode", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.some((call) =>
+        call.slice(1).join(",") === "68,68,64,64"
+      )).toBe(true);
+    });
+
+    spriteViewportBounds = { width: 320, height: 240 };
+    act(() => resizeObserverCallback?.([], {} as ResizeObserver));
+
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([128, 88, 64, 64]);
+    });
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    view.unmount();
+  });
+
+  it("preserves a manually zoomed sprite viewport when the canvas resizes", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call.length === 5)).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([36, 36, 128, 128]);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pan (P)" }));
+    fireEvent.pointerDown(view.container.querySelector(".sprite-editor-canvas")!, {
+      pointerId: 1, pointerType: "mouse", clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerMove(view.container.querySelector(".sprite-editor-canvas")!, {
+      pointerId: 1, pointerType: "mouse", clientX: 110, clientY: 120,
+    });
+    fireEvent.pointerUp(view.container.querySelector(".sprite-editor-canvas")!, {
+      pointerId: 1, pointerType: "mouse", clientX: 110, clientY: 120,
+    });
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([46, 56, 128, 128]);
+    });
+
+    spriteViewportBounds = { width: 320, height: 240 };
+    act(() => resizeObserverCallback?.([], {} as ResizeObserver));
+
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([46, 56, 128, 128]);
+    });
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fit sprite to view" }));
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([128, 88, 64, 64]);
+    });
+    spriteViewportBounds = { width: 400, height: 320 };
+    act(() => resizeObserverCallback?.([], {} as ResizeObserver));
+    await waitFor(() => {
+      expect(context.drawImage.mock.calls.at(-1)?.slice(1)).toEqual([168, 128, 64, 64]);
+    });
+    view.unmount();
   });
 
   it("filters project sprites by name while preserving the selected sprite and copy target", async () => {
