@@ -162,7 +162,7 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.click(secondPageTab);
     expect(secondPageTab.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(await screen.findByText("Second page dialogue"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
 
     const editor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     fireEvent.change(editor, { target: { value: "Updated second page dialogue" } });
@@ -198,7 +198,9 @@ describe("rendered event editor Save All integration", () => {
   it("opens the visible dialogue editor from a single touch-sized row action and persists with Save All", async () => {
     renderProject();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const editDialogue = await screen.findByRole("button", { name: "Edit dialogue" });
+    expect(editDialogue.textContent?.trim()).toBe("Edit dialogue");
+    fireEvent.click(editDialogue);
     const dialogueEditor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     expect(dialogueEditor).toBeTruthy();
     expect((dialogueEditor as HTMLTextAreaElement).value).toBe("Original dialogue");
@@ -210,6 +212,19 @@ describe("rendered event editor Save All integration", () => {
 
     await screen.findByText("Save All succeeded");
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited by direct touch action");
+  });
+
+  it("preserves double-click editing alongside the explicit dialogue action", async () => {
+    renderProject();
+
+    fireEvent.doubleClick(await screen.findByText("Original dialogue"));
+
+    expect(await screen.findByRole("textbox", { name: "Show Text dialogue lines" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Dialogue edit actions" })).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("group", { name: "Dialogue edit actions" }))
+      .getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+    expect(native.saveEvent).not.toHaveBeenCalled();
   });
 
   it("opens a supported single-command editor from its direct touch action", async () => {
@@ -234,7 +249,7 @@ describe("rendered event editor Save All integration", () => {
     expect(await screen.findByRole("button", { name: "Undo event edit" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Redo event edit" })).toBeTruthy();
     fireEvent.click(await screen.findByText("Original dialogue"));
-    const edit = screen.getByRole("button", { name: "Edit" });
+    const edit = screen.getByRole("button", { name: "Edit dialogue" });
     expect((edit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(edit);
     const editor = await screen.findByDisplayValue("Original dialogue");
@@ -282,7 +297,7 @@ describe("rendered event editor Save All integration", () => {
     fireEvent.click(screen.getByRole("button", { name: /Show Text/ }));
     expect(screen.queryByRole("dialog", { name: "Insert Command" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit dialogue" }).at(-1)!);
     const dialogueEditor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     fireEvent.change(dialogueEditor, { target: { value: "Newly inserted dialogue\nSecond line" } });
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -453,7 +468,7 @@ describe("rendered event editor Save All integration", () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("A long opening dialogue line for a narrow phone screen"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     expect(textarea.getAttribute("autocorrect")).toBe("off");
     expect(textarea.getAttribute("spellcheck")).toBe("false");
@@ -493,7 +508,7 @@ describe("rendered event editor Save All integration", () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("Dialogue before edit"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
     fireEvent.change(textarea, { target: { value: "Edited from Android" } });
     const okButton = screen.getByRole("button", { name: "OK" });
@@ -522,7 +537,7 @@ describe("rendered event editor Save All integration", () => {
     expect(properties?.hidden).toBe(true);
 
     fireEvent.click(await screen.findByText("Original dialogue"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     fireEvent.change(await screen.findByDisplayValue("Original dialogue"), {
       target: { value: "Edited while properties collapsed" },
     });
@@ -544,7 +559,7 @@ describe("rendered event editor Save All integration", () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("Original dialogue"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     const input = await screen.findByDisplayValue("Original dialogue");
     fireEvent.change(input, { target: { value: "Edited single-line dialogue" } });
     fireEvent.click(within(
@@ -561,7 +576,7 @@ describe("rendered event editor Save All integration", () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("Original dialogue"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     const editor = await screen.findByDisplayValue("Original dialogue");
     fireEvent.change(editor, { target: { value: "Edited dialogue" } });
     fireEvent.blur(editor);
@@ -586,7 +601,7 @@ describe("rendered event editor Save All integration", () => {
     renderProject();
 
     fireEvent.click(await screen.findByText("Original dialogue"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
     const editor = await screen.findByDisplayValue("Original dialogue");
     fireEvent.change(editor, { target: { value: "Edited dialogue" } });
     fireEvent.blur(editor);

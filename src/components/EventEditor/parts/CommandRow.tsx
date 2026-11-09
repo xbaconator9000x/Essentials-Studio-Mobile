@@ -309,7 +309,7 @@ export function MultiLineBlock({
             onStartEdit();
           }}
         >
-          Edit
+          {block.cmd.code === 101 ? "Edit dialogue" : "Edit"}
         </button>
       </div>
       {allLines.slice(1).map((line, idx) => (

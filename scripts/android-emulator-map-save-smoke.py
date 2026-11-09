@@ -438,7 +438,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError(f"Visible dialogue command {original!r} was not found")
     helper.tap(helper.center(row["bounds"]))
     nodes = helper.dump_ui(evidence, "event-dialogue-selected")
-    tap_named(nodes, "Edit")
+    tap_named(nodes, "Edit dialogue")
 
     deadline = time.monotonic() + 10
     editor = None
@@ -449,7 +449,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
             break
         time.sleep(1)
     if editor is None:
-        raise AssertionError("Double-tap did not expose the visible dialogue text editor")
+        raise AssertionError("The explicit Edit dialogue action did not expose the visible text editor")
 
     field = wait_for_focused_dialogue_field(evidence)
     if not field.get("text"):
@@ -900,11 +900,11 @@ def selftest() -> None:
     assert find_button(overview, "Maps") is overview[1]
     assert not map_editor_visible(overview)
     dialogue_edit_action = {
-        "text": "",
+        "text": "Edit dialogue",
         "content-desc": "Edit dialogue",
         "bounds": "[100,200][160,250]",
     }
-    assert find_named([dialogue_edit_action], "Edit") is dialogue_edit_action
+    assert find_named([dialogue_edit_action], "Edit dialogue") is dialogue_edit_action
     accessible_dialogue_editor = {
         "text": "",
         "content-desc": "Show Text dialogue lines",
