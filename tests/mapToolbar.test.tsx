@@ -6,6 +6,7 @@ import { MapToolbar } from "../src/components/MapEditor/MapToolbar";
 describe("mobile map toolbar", () => {
   afterEach(() => {
     cleanup();
+    window.localStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -49,6 +50,52 @@ describe("mobile map toolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "L2" }));
 
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
+  });
+
+  it("persists an explicit tools choice across remounts and does not override it on rotation", () => {
+    let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        onMediaChange = listener;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const toolbar = () => (
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={vi.fn()}
+        tileClipboard={null}
+        selectedLayer={0}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={0}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
+      />
+    );
+    const view = render(toolbar());
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+
+    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    expect(window.localStorage.getItem("essentials-studio:map-editor:tools-collapsed")).toBe("false");
+    view.unmount();
+
+    const reopened = render(toolbar());
+    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    act(() => onMediaChange?.({ matches: true } as MediaQueryListEvent));
+    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    reopened.unmount();
   });
 
   it("exposes a Pan tool alongside paint tools on compact layouts", () => {

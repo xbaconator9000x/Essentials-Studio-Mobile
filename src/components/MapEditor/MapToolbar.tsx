@@ -25,6 +25,27 @@ interface MapToolbarProps {
   onToggleEventList: () => void;
 }
 
+const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
+
+function readToolsCollapsedPreference(): boolean | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const stored = window.localStorage.getItem(TOOLS_COLLAPSED_PREFERENCE);
+    return stored === "true" ? true : stored === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeToolsCollapsedPreference(collapsed: boolean) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(TOOLS_COLLAPSED_PREFERENCE, String(collapsed));
+  } catch {
+    // Keep the map editor usable when persistent storage is unavailable.
+  }
+}
+
 export function MapToolbar({
   paintTool,
   setPaintTool,
@@ -48,13 +69,16 @@ export function MapToolbar({
   onToggleEventList,
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
-    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
+    () => readToolsCollapsedPreference() ??
+      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches),
   );
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const narrowViewport = window.matchMedia("(max-width: 640px)");
     const updateCollapsedState = (event: MediaQueryListEvent) => {
-      setToolsCollapsed(event.matches);
+      if (readToolsCollapsedPreference() === null) {
+        setToolsCollapsed(event.matches);
+      }
     };
     narrowViewport.addEventListener("change", updateCollapsedState);
     return () => narrowViewport.removeEventListener("change", updateCollapsedState);
@@ -65,7 +89,11 @@ export function MapToolbar({
       <button
         className="toolbar-btn"
         aria-expanded={!toolsCollapsed}
-        onClick={() => setToolsCollapsed((collapsed) => !collapsed)}
+        onClick={() => setToolsCollapsed((collapsed) => {
+          const next = !collapsed;
+          writeToolsCollapsedPreference(next);
+          return next;
+        })}
       >
         {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
       </button>
