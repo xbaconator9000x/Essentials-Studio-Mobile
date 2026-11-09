@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import type { PaintTool } from "../../types";
 import type { TileClipboard } from "../../services/mapEditor";
+import {
+  readBooleanPanelPreference,
+  writeBooleanPanelPreference,
+} from "../../services/panelPreferences";
 
 interface MapToolbarProps {
   paintTool: PaintTool;
@@ -27,25 +31,6 @@ interface MapToolbarProps {
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
 
-function readToolsCollapsedPreference(): boolean | null {
-  try {
-    if (typeof window === "undefined") return null;
-    const stored = window.localStorage.getItem(TOOLS_COLLAPSED_PREFERENCE);
-    return stored === "true" ? true : stored === "false" ? false : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeToolsCollapsedPreference(collapsed: boolean) {
-  try {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(TOOLS_COLLAPSED_PREFERENCE, String(collapsed));
-  } catch {
-    // Keep the map editor usable when persistent storage is unavailable.
-  }
-}
-
 export function MapToolbar({
   paintTool,
   setPaintTool,
@@ -69,14 +54,14 @@ export function MapToolbar({
   onToggleEventList,
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
-    () => readToolsCollapsedPreference() ??
+    () => readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches),
   );
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const narrowViewport = window.matchMedia("(max-width: 640px)");
     const updateCollapsedState = (event: MediaQueryListEvent) => {
-      if (readToolsCollapsedPreference() === null) {
+      if (readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) === null) {
         setToolsCollapsed(event.matches);
       }
     };
@@ -91,7 +76,7 @@ export function MapToolbar({
         aria-expanded={!toolsCollapsed}
         onClick={() => setToolsCollapsed((collapsed) => {
           const next = !collapsed;
-          writeToolsCollapsedPreference(next);
+          writeBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE, next);
           return next;
         })}
       >

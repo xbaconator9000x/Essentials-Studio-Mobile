@@ -55,6 +55,10 @@ import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
 import { buildPbsIndex, type PbsIndex } from "./services/pbsIndex";
 import { supportsDirectProjectFolderOpen } from "./services/projectOpenMode";
 import {
+  readBooleanPanelPreference,
+  writeBooleanPanelPreference,
+} from "./services/panelPreferences";
+import {
   ProjectSaveProvider,
   useProjectSave,
   useEditorRegistration,
@@ -64,6 +68,7 @@ import "./App.css";
 // Android's SAF save picker can expose a ZIP as generic octet-stream.
 const PROJECT_ARCHIVE_ACCEPT =
   ".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed,application/octet-stream";
+const TILESET_PALETTE_PREFERENCE = "essentials-studio:map-editor:tileset-palette-visible";
 
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
@@ -163,7 +168,8 @@ function AppContent() {
   const [showPbs, setShowPbs] = useState(false);
   const [showSprites, setShowSprites] = useState(false);
   const [showTilesetPalette, setShowTilesetPalette] = useState(
-    () => typeof window.matchMedia !== "function" || !window.matchMedia("(max-width: 640px)").matches,
+    () => readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) ??
+      (typeof window.matchMedia !== "function" || !window.matchMedia("(max-width: 640px)").matches),
   );
   const [graphicsRevision, setGraphicsRevision] = useState(0);
   const mobileBackState = useRef({
@@ -199,7 +205,9 @@ function AppContent() {
     if (typeof window.matchMedia !== "function") return;
     const narrowViewport = window.matchMedia("(max-width: 640px)");
     const updatePaletteVisibility = (event: MediaQueryListEvent) => {
-      setShowTilesetPalette(!event.matches);
+      if (readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) === null) {
+        setShowTilesetPalette(!event.matches);
+      }
     };
     narrowViewport.addEventListener("change", updatePaletteVisibility);
     return () => narrowViewport.removeEventListener("change", updatePaletteVisibility);
@@ -1241,7 +1249,11 @@ function AppContent() {
           hasClipboardEvent={clipboardEvent !== null}
           readOnly={mobileLayout && !mobileEditEnabled}
           paletteVisible={showTilesetPalette}
-          onTogglePalette={() => setShowTilesetPalette((visible) => !visible)}
+          onTogglePalette={() => setShowTilesetPalette((visible) => {
+            const next = !visible;
+            writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, next);
+            return next;
+          })}
           graphicsRevision={graphicsRevision}
           shortcutsDisabled={Boolean(mobileLayout && !mobileEditEnabled || editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
           onMapDirty={handleMapDirty}
