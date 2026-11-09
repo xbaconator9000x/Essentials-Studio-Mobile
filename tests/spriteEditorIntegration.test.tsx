@@ -686,6 +686,51 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
   });
 
+  it("accepts a decoded trace image with no MIME type and allows selecting it again", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const input = screen.getByLabelText("Trace overlay") as HTMLInputElement;
+    const file = new File(["trace"], "trace.png");
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByText("Trace opacity: 35%")).toBeTruthy();
+    expect(input.value).toBe("");
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(traceUrl.createObjectURL).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Trace opacity: 35%")).toBeTruthy();
+  });
+
+  it("rejects an explicit non-image MIME type for a trace overlay", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    vi.stubGlobal("URL", traceUrl);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["not an image"], "trace.txt", { type: "text/plain" })] },
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Trace overlay must be an image");
+    expect(traceUrl.createObjectURL).not.toHaveBeenCalled();
+  });
+
   it("saves sprite pixels without serializing the trace-composited display canvas", async () => {
     const traceUrl = {
       createObjectURL: vi.fn(() => "blob:trace"),

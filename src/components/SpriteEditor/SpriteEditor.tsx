@@ -696,7 +696,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   const handleTraceFile = (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    if (file.type && !file.type.startsWith("image/")) {
       setError("Trace overlay must be an image");
       return;
     }
@@ -868,7 +868,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </div>
             <label>
               Trace overlay
-              <input type="file" accept="image/*" onChange={(event) => handleTraceFile(event.target.files?.[0])} />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  handleTraceFile(file);
+                }}
+              />
             </label>
             {traceImage && (
               <>
