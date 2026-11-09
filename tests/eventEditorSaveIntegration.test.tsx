@@ -172,6 +172,51 @@ describe("rendered event editor Save All integration", () => {
       .toBe("Kept while switching pages");
   });
 
+  it("commits an active dialogue draft before adding a page", async () => {
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Kept before adding a page" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add event page" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Event page 2" }).getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Event page 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages).toHaveLength(2);
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Kept before adding a page");
+  });
+
+  it("commits a page draft before removal so undo can restore it", async () => {
+    const event = importedEvent();
+    const secondPage = structuredClone(event.pages[0]);
+    secondPage.list[1].parameters[0] = "Second page dialogue";
+    event.pages.push(secondPage);
+    native.loadEvent.mockResolvedValueOnce(event);
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Event page 2" }));
+    fireEvent.click(await screen.findByText("Second page dialogue"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Draft restored by undo" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove event page" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Event page 2" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Undo event edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Event page 2" }));
+    await screen.findByText("Draft restored by undo");
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages).toHaveLength(2);
+    expect(diskEvent.pages[1].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Draft restored by undo");
+  });
+
   it("edits dialogue on another event page and persists only that page through Save All", async () => {
     const firstPage = structuredClone(diskEvent.pages[0]);
     const secondPage = structuredClone(firstPage);

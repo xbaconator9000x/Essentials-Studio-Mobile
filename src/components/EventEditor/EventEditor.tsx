@@ -69,6 +69,7 @@ export function EventEditor({
   const activeInlineDraftCommitRef = useRef<(() => void) | null>(null);
   const inlineDraftActiveRef = useRef(false);
   const dirtyBeforeInlineDraftRef = useRef(false);
+  const pageActionPendingRef = useRef(false);
   const persistRef = useRef<(closeOnSuccess: boolean, propagateErrors?: boolean) => Promise<void>>(
     async () => {},
   );
@@ -81,18 +82,25 @@ export function EventEditor({
     commit();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }, []);
+  const commitDraftBeforePageAction = useCallback((action: () => void) => {
+    if (pageActionPendingRef.current) return;
+    if (!activeInlineDraftCommitRef.current) {
+      action();
+      return;
+    }
+    pageActionPendingRef.current = true;
+    void commitActiveInlineDraft()
+      .then(action)
+      .catch((cause) => setSaveError(`Could not commit the active edit: ${String(cause)}`))
+      .finally(() => { pageActionPendingRef.current = false; });
+  }, [commitActiveInlineDraft]);
   const switchEventPage = useCallback((pageIndex: number) => {
-    const switchPage = () => {
+    commitDraftBeforePageAction(() => {
       setActivePage(pageIndex);
       setSelectedCommand(-1);
       setEditingCommand(null);
-    };
-    if (!activeInlineDraftCommitRef.current) {
-      switchPage();
-      return;
-    }
-    void commitActiveInlineDraft().then(switchPage);
-  }, [commitActiveInlineDraft]);
+    });
+  }, [commitDraftBeforePageAction]);
   const handleInlineDraftChange = useCallback(() => {
     if (!inlineDraftActiveRef.current) {
       dirtyBeforeInlineDraftRef.current = dirty;
@@ -112,6 +120,8 @@ export function EventEditor({
   // A render can lag behind a just-queued React edit. Never save an older
   // event object under the revision of that not-yet-rendered edit.
   const renderRevision = revisionRef.current;
+  const eventRef = useRef(event);
+  eventRef.current = event;
   const [clipboard, setClipboard] = useState<EventCommand[] | null>(null);
   const [switchNames, setSwitchNames] = useState<string[]>([]);
   const [variableNames, setVariableNames] = useState<string[]>([]);
@@ -354,6 +364,45 @@ export function EventEditor({
     await commitActiveInlineDraft();
     await persistRef.current(false);
   }, [commitActiveInlineDraft]);
+  const handleAddEventPage = useCallback(() => {
+    commitDraftBeforePageAction(() => {
+      const current = eventRef.current;
+      if (!current) return;
+      const newPage: EventPage = {
+        condition: { switch1_valid: false, switch2_valid: false, variable_valid: false, self_switch_valid: false, switch1_id: 1, switch2_id: 1, variable_id: 1, variable_value: 0, self_switch_ch: "A" },
+        graphic: { tile_id: 0, character_name: "", character_hue: 0, direction: 2, pattern: 0, opacity: 255, blend_type: 0 },
+        move_type: 0, move_speed: 3, move_frequency: 3,
+        move_route: { repeat: true, skippable: false, list: [{ code: 0, parameters: [] }] },
+        walk_anime: true, step_anime: false, direction_fix: false, through: false, always_on_top: false,
+        trigger: 0,
+        list: [{ code: 0, indent: 0, parameters: [] }],
+      };
+      setEvent((previous) => previous
+        ? { ...previous, pages: [...previous.pages, newPage] }
+        : previous);
+      setActivePage(current.pages.length);
+      setSelectedCommand(-1);
+      revisionRef.current += 1;
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [commitDraftBeforePageAction, setEvent]);
+  const handleRemoveEventPage = useCallback(() => {
+    commitDraftBeforePageAction(() => {
+      const current = eventRef.current;
+      if (!current || current.pages.length <= 1) return;
+      setEvent((previous) => {
+        if (!previous || previous.pages.length <= 1) return previous;
+        const pages = previous.pages.filter((_, index) => index !== activePage);
+        return { ...previous, pages };
+      });
+      setActivePage(Math.min(activePage, current.pages.length - 2));
+      setSelectedCommand(-1);
+      revisionRef.current += 1;
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforePageAction, setEvent]);
 
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
@@ -492,24 +541,7 @@ export function EventEditor({
             <button
               className="event-page-tab event-page-tab-add"
               type="button"
-              onClick={() => {
-                if (!event) return;
-                const newPage: EventPage = {
-                  condition: { switch1_valid: false, switch2_valid: false, variable_valid: false, self_switch_valid: false, switch1_id: 1, switch2_id: 1, variable_id: 1, variable_value: 0, self_switch_ch: "A" },
-                  graphic: { tile_id: 0, character_name: "", character_hue: 0, direction: 2, pattern: 0, opacity: 255, blend_type: 0 },
-                  move_type: 0, move_speed: 3, move_frequency: 3,
-                  move_route: { repeat: true, skippable: false, list: [{ code: 0, parameters: [] }] },
-                  walk_anime: true, step_anime: false, direction_fix: false, through: false, always_on_top: false,
-                  trigger: 0,
-                  list: [{ code: 0, indent: 0, parameters: [] }],
-                };
-                setEvent({ ...event, pages: [...event.pages, newPage] });
-                setActivePage(event.pages.length);
-                setSelectedCommand(-1);
-                revisionRef.current += 1;
-                setSaveError(null);
-                setDirty(true);
-              }}
+              onClick={handleAddEventPage}
               aria-label="Add event page"
               title="Add a new page"
             >
@@ -519,16 +551,7 @@ export function EventEditor({
               <button
                 className="event-page-tab event-page-tab-remove"
                 type="button"
-                onClick={() => {
-                  if (!event || event.pages.length <= 1) return;
-                  const pages = event.pages.filter((_, i) => i !== activePage);
-                  setEvent({ ...event, pages });
-                  setActivePage(Math.min(activePage, pages.length - 1));
-                  setSelectedCommand(-1);
-                  revisionRef.current += 1;
-                  setSaveError(null);
-                  setDirty(true);
-                }}
+                onClick={handleRemoveEventPage}
                 aria-label="Remove event page"
                 title="Remove current page"
               >
