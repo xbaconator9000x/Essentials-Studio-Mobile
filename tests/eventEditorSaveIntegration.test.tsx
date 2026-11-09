@@ -127,7 +127,8 @@ beforeEach(() => {
   native.loadEvent.mockImplementation(async () => structuredClone(diskEvent));
   native.saveEvent.mockImplementation(async (_path: string, _mapId: number, event: RpgEvent) => {
     const textCommand = event.pages[0]?.list.find((command) => command.code === 401);
-    if (!textCommand || textCommand.source_index !== 1) {
+    const hasTextBlock = event.pages[0]?.list.some((command) => command.code === 101 || command.code === 401);
+    if (hasTextBlock && (!textCommand || textCommand.source_index !== 1)) {
       throw new Error("Ambiguous same-code replacement; save aborted");
     }
     diskEvent = structuredClone(event);
@@ -212,6 +213,48 @@ describe("rendered event editor Save All integration", () => {
 
     await screen.findByText("Save All succeeded");
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited by direct touch action");
+  });
+
+  it("commits an active dialogue draft when Save All is tapped without inline OK", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(textarea, { target: { value: "Saved directly from active editor" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Saved directly from active editor");
+    expect(screen.queryByRole("textbox", { name: "Show Text dialogue lines" })).toBeNull();
+  });
+
+  it("commits an active single-line command draft before Save All", async () => {
+    diskEvent.pages[0].list = [
+      { code: 118, indent: 0, parameters: ["Original label"], source_index: 0 },
+      { code: 0, indent: 0, parameters: [], source_index: 1 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Label" }));
+    const input = await screen.findByDisplayValue("Original label");
+    fireEvent.change(input, { target: { value: "Saved label" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list[0].parameters[0]).toBe("Saved label");
+    expect(screen.queryByDisplayValue("Saved label")).toBeNull();
+  });
+
+  it("commits an active dialogue draft through Save & close", async () => {
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const textarea = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.change(textarea, { target: { value: "Saved and closed from active editor" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save & close" }));
+
+    await screen.findByRole("button", { name: "Open event" });
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Saved and closed from active editor");
   });
 
   it("preserves double-click editing alongside the explicit dialogue action", async () => {

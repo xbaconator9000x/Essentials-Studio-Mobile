@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { EventCommand } from "../../../types";
 import { getCommandDef, summarizeCommand } from "../../../services/eventCommands";
 import { CommandParamEditor, hasParamEditor } from "../CommandParamEditor";
@@ -7,13 +7,16 @@ import { getCommandIcon, type VisualBlock } from "./commandHelpers";
 
 export function CommandRow({
   command,
-  index: _index,
   selected,
   editing,
   onClick,
   onDoubleClick,
   onParamChange,
   onStopEditing,
+  onRegisterDraftCommit,
+  onDraftChange,
+  onDraftCommit,
+  onDraftCancel,
   mapInfos,
   switchNames,
   variableNames,
@@ -27,6 +30,10 @@ export function CommandRow({
   onDoubleClick: () => void;
   onParamChange: (paramIndex: number, value: unknown) => void;
   onStopEditing: () => void;
+  onRegisterDraftCommit: (commit: (() => void) | null) => void;
+  onDraftChange: () => void;
+  onDraftCommit: () => void;
+  onDraftCancel: () => void;
   mapInfos?: Record<number, import("../../../types").MapInfo>;
   switchNames?: string[];
   variableNames?: string[];
@@ -35,11 +42,20 @@ export function CommandRow({
   const inputRef = useRef<HTMLInputElement>(null);
   const def = getCommandDef(command.code);
   const summary = summarizeCommand(command.code, command.parameters, mapInfos, switchNames, variableNames);
-  const finishEditing = () => {
+  const finishEditing = useCallback(() => {
     onParamChange(0, inputRef.current?.value ?? String(command.parameters[0] ?? ""));
+    onDraftCommit();
+    onStopEditing();
+  }, [command.parameters, onDraftCommit, onParamChange, onStopEditing]);
+  useEffect(() => {
+    if (!editing || !isTextEditableCommand(command.code)) return;
+    onRegisterDraftCommit(finishEditing);
+    return () => onRegisterDraftCommit(null);
+  }, [editing, command.code, onRegisterDraftCommit, finishEditing]);
+  const cancelEditing = () => {
+    onDraftCancel();
     onStopEditing();
   };
-  const cancelEditing = () => onStopEditing();
 
   let rowClass = "event-command-row";
   if (selected) rowClass += " selected";
@@ -111,6 +127,7 @@ export function CommandRow({
               e.stopPropagation();
             }
           }}
+          onChange={onDraftChange}
           onClick={(e) => e.stopPropagation()}
         />
       </div>
@@ -200,6 +217,10 @@ export function MultiLineBlock({
   onStartEdit,
   onUpdateLines,
   onStopEditing,
+  onRegisterDraftCommit,
+  onDraftChange,
+  onDraftCommit,
+  onDraftCancel,
 }: {
   block: Extract<VisualBlock, { kind: "multi" }>;
   selected: boolean;
@@ -208,6 +229,10 @@ export function MultiLineBlock({
   onStartEdit: () => void;
   onUpdateLines: (lines: string[]) => void;
   onStopEditing: () => void;
+  onRegisterDraftCommit: (commit: (() => void) | null) => void;
+  onDraftChange: () => void;
+  onDraftCommit: () => void;
+  onDraftCancel: () => void;
 }) {
   const def = getCommandDef(block.cmd.code);
   const icon = getCommandIcon(block.cmd.code);
@@ -217,11 +242,18 @@ export function MultiLineBlock({
         String(block.cmd.parameters[0] ?? ""),
         ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
       ];
-  const commitLines = (value: string) => {
-    const lines = value.split("\n");
-    onUpdateLines(lines.length > 0 ? lines : [""]);
-  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commitDraft = useCallback(() => {
+    const lines = (textareaRef.current?.value ?? "").split("\n");
+    onUpdateLines(lines.length > 0 ? lines : [""]);
+    onDraftCommit();
+    onStopEditing();
+  }, [onDraftCommit, onStopEditing, onUpdateLines]);
+  useEffect(() => {
+    if (!editing) return;
+    onRegisterDraftCommit(commitDraft);
+    return () => onRegisterDraftCommit(null);
+  }, [editing, onRegisterDraftCommit, commitDraft]);
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -255,17 +287,17 @@ export function MultiLineBlock({
             <button
               type="button"
               className="event-command-done event-editor-btn event-editor-btn-primary"
-              onClick={() => {
-                commitLines(textareaRef.current?.value ?? "");
-                onStopEditing();
-              }}
+              onClick={commitDraft}
             >
               OK
             </button>
             <button
               type="button"
               className="event-command-done event-editor-btn"
-              onClick={onStopEditing}
+              onClick={() => {
+                onDraftCancel();
+                onStopEditing();
+              }}
             >
               Cancel
             </button>
@@ -281,11 +313,13 @@ export function MultiLineBlock({
             rows={Math.max(2, allLines.length + 1)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
+                onDraftCancel();
                 onStopEditing();
                 e.preventDefault();
                 e.stopPropagation();
               }
             }}
+            onChange={onDraftChange}
           />
         </div>
       </div>

@@ -66,6 +66,37 @@ export function EventEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
   const revisionRef = useRef(0);
+  const activeInlineDraftCommitRef = useRef<(() => void) | null>(null);
+  const inlineDraftActiveRef = useRef(false);
+  const dirtyBeforeInlineDraftRef = useRef(false);
+  const persistRef = useRef<(closeOnSuccess: boolean, propagateErrors?: boolean) => Promise<void>>(
+    async () => {},
+  );
+  const registerActiveInlineDraftCommit = useCallback((commit: (() => void) | null) => {
+    activeInlineDraftCommitRef.current = commit;
+  }, []);
+  const commitActiveInlineDraft = useCallback(async () => {
+    const commit = activeInlineDraftCommitRef.current;
+    if (!commit) return;
+    commit();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }, []);
+  const handleInlineDraftChange = useCallback(() => {
+    if (!inlineDraftActiveRef.current) {
+      dirtyBeforeInlineDraftRef.current = dirty;
+      inlineDraftActiveRef.current = true;
+    }
+    setDirty(true);
+    setSaveError(null);
+  }, [dirty]);
+  const handleInlineDraftCommit = useCallback(() => {
+    inlineDraftActiveRef.current = false;
+  }, []);
+  const handleInlineDraftCancel = useCallback(() => {
+    if (!inlineDraftActiveRef.current) return;
+    inlineDraftActiveRef.current = false;
+    setDirty(dirtyBeforeInlineDraftRef.current);
+  }, []);
   // A render can lag behind a just-queued React edit. Never save an older
   // event object under the revision of that not-yet-rendered edit.
   const renderRevision = revisionRef.current;
@@ -132,7 +163,7 @@ export function EventEditor({
       });
       setDirty(true);
     },
-    [event, activePage]
+    [event, activePage, setEvent]
   );
 
   const copySelectedCommand = useCallback(() => {
@@ -289,19 +320,24 @@ export function EventEditor({
       setSaving(false);
     }
   }, [event, dirty, renderRevision, projectPath, mapId, eventId, onClose]);
+  persistRef.current = persist;
 
   // Include open event dialogs in Save All, project switching and ZIP export.
   // Unlike a button save, a global save must propagate failures to its caller.
-  const saveForProject = useCallback(() => persist(false, true), [persist]);
+  const saveForProject = useCallback(async () => {
+    await commitActiveInlineDraft();
+    await persistRef.current(false, true);
+  }, [commitActiveInlineDraft]);
   const discardForProject = useCallback(() => {
     if (!savingRef.current) onClose();
   }, [onClose]);
   useEditorRegistration(`event-${projectPath}-${mapId}-${eventId}`, saveForProject, discardForProject, dirty);
 
-  const handleOk = useCallback(() => {
+  const handleOk = useCallback(async () => {
     console.info("[event-save] OK activated", { eventId, mapId });
-    void persist(true);
-  }, [eventId, mapId, persist]);
+    await commitActiveInlineDraft();
+    await persistRef.current(true);
+  }, [commitActiveInlineDraft, eventId, mapId]);
   const handleSave = useCallback(() => { void persist(false); }, [persist]);
 
   // Do not discard/close while the native event write is still pending.
@@ -313,7 +349,8 @@ export function EventEditor({
       return;
     }
     const cancelRevision = revisionRef.current;
-    if (dirty && !(await confirmEditor("Discard changes to this event?"))) return;
+    if ((dirty || inlineDraftActiveRef.current || activeInlineDraftCommitRef.current) &&
+        !(await confirmEditor("Discard changes to this event?"))) return;
     if (savingRef.current || revisionRef.current !== cancelRevision) return;
     onClose();
   }, [dirty, onClose, renderRevision]);
@@ -611,6 +648,10 @@ export function EventEditor({
                             setDirty(true);
                           }}
                           onStopEditing={() => setEditingCommand(null)}
+                          onRegisterDraftCommit={registerActiveInlineDraftCommit}
+                          onDraftChange={handleInlineDraftChange}
+                          onDraftCommit={handleInlineDraftCommit}
+                          onDraftCancel={handleInlineDraftCancel}
                         />
                       );
                     }
@@ -626,6 +667,10 @@ export function EventEditor({
                         onDoubleClick={() => { if (cmd.code !== 0) setEditingCommand(i); }}
                         onParamChange={(paramIdx, value) => handleUpdateCommandParam(i, paramIdx, value)}
                         onStopEditing={() => setEditingCommand(null)}
+                        onRegisterDraftCommit={registerActiveInlineDraftCommit}
+                        onDraftChange={handleInlineDraftChange}
+                        onDraftCommit={handleInlineDraftCommit}
+                        onDraftCancel={handleInlineDraftCancel}
                         mapInfos={mapInfos}
                         switchNames={switchNames}
                         variableNames={variableNames}
