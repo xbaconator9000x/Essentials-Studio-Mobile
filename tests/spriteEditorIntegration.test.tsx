@@ -789,7 +789,7 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 
-  it("keeps pinch zoom available while trace positioning is enabled", async () => {
+  it("pinches and pans the trace independently while trace positioning is enabled", async () => {
     const traceUrl = {
       createObjectURL: vi.fn(() => "blob:trace"),
       revokeObjectURL: vi.fn(),
@@ -818,10 +818,15 @@ describe("sprite editor integration", () => {
     fireEvent.pointerDown(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 120, clientY: 100 });
     fireEvent.pointerMove(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
     fireEvent.pointerUp(editorCanvas!, { pointerId: 2, pointerType: "touch", clientX: 140, clientY: 100 });
+    fireEvent.pointerMove(editorCanvas!, { pointerId: 1, pointerType: "touch", clientX: 84, clientY: 104 });
+    fireEvent.pointerUp(editorCanvas!, { pointerId: 1, pointerType: "touch", clientX: 84, clientY: 104 });
 
-    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call[3] === 96)).toBe(true));
-    expect(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value")).toBe("0");
-    expect(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value")).toBe("0");
+    await waitFor(() => expect(screen.getByText("Trace scale: 150%")).toBeTruthy());
+    expect(context.drawImage.mock.calls.some((call) => call[3] === 64 && call[1] === 68)).toBe(true);
+    expect(context.drawImage.mock.calls.some((call) => call[3] === 96)).toBe(true);
+    expect(Number(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value"))).toBeCloseTo(21.875);
+    expect(Number(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value"))).toBeCloseTo(6.25);
+    expect(putImageData).not.toHaveBeenCalled();
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 

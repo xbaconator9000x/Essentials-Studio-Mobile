@@ -7,7 +7,9 @@ import {
   fitSpriteViewport,
   rasterizeSpriteLine,
   spritePixelAt,
+  zoomSpriteTraceTransform,
   zoomSpriteViewport,
+  type SpriteTraceTransform,
 } from "../../services/spriteEditorGeometry";
 import {
   applySpritePixelAction,
@@ -103,9 +105,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const activePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const activeTracePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const pinchStart = useRef<{
+    mode: "sprite" | "trace";
     distance: number;
     center: PointerPoint;
     viewport: { zoom: number; offsetX: number; offsetY: number };
+    trace: SpriteTraceTransform;
   } | null>(null);
   const traceUrl = useRef<string | null>(null);
   const traceLoadId = useRef(0);
@@ -518,9 +522,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       const points = [...pointerPositions.current.values()];
       const center = { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
       pinchStart.current = {
+        mode: traceImage && positionTraceWithTouch ? "trace" : "sprite",
         distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
         center,
         viewport: { zoom, offsetX, offsetY },
+        trace: { scale: traceScale, offsetX: traceOffsetX, offsetY: traceOffsetY },
       };
       fitViewportOnResize.current = false;
       cancelStroke();
@@ -569,6 +575,23 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       };
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       const rect = event.currentTarget.getBoundingClientRect();
+      if (pinch.mode === "trace") {
+        const source = imageCanvasRef.current;
+        if (!source || pinch.distance <= 0) return;
+        const trace = zoomSpriteTraceTransform(
+          pinch.trace,
+          pinch.viewport,
+          source.width,
+          source.height,
+          { x: pinch.center.x - rect.left, y: pinch.center.y - rect.top },
+          { x: center.x - rect.left, y: center.y - rect.top },
+          distance / pinch.distance,
+        );
+        setTraceScale(trace.scale);
+        setTraceOffsetX(trace.offsetX);
+        setTraceOffsetY(trace.offsetY);
+        return;
+      }
       const next = zoomSpriteViewport(
         pinch.viewport,
         { x: pinch.center.x - rect.left, y: pinch.center.y - rect.top },
@@ -607,7 +630,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   };
 
   const handlePointerEnd = (event: React.PointerEvent<HTMLCanvasElement>, commitTap: boolean) => {
-    const wasPinching = pinchStart.current !== null;
+    const pinch = pinchStart.current;
+    const wasPinching = pinch !== null;
     const pending = pendingTouchPaint.current;
     if (commitTap && pending?.id === event.pointerId) {
       paintPixel(pending.point.x, pending.point.y);
@@ -630,12 +654,21 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (activeTracePan.current?.id === event.pointerId) activeTracePan.current = null;
     if (wasPinching && pointerPositions.current.size === 1) {
       const [remainingId, remainingPoint] = [...pointerPositions.current.entries()][0];
-      activePan.current = {
-        id: remainingId,
-        point: remainingPoint,
-        x: offsetX,
-        y: offsetY,
-      };
+      if (pinch.mode === "trace") {
+        activeTracePan.current = {
+          id: remainingId,
+          point: remainingPoint,
+          x: traceOffsetX,
+          y: traceOffsetY,
+        };
+      } else {
+        activePan.current = {
+          id: remainingId,
+          point: remainingPoint,
+          x: offsetX,
+          y: offsetY,
+        };
+      }
     }
     if (pointerPositions.current.size < 2) pinchStart.current = null;
   };
