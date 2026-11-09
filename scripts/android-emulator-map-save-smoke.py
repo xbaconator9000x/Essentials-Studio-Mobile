@@ -60,6 +60,11 @@ def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
         if (node.get("text", "").strip() == name
                 and usable_bounds(node.get("bounds", ""))):
             return node
+    for node in nodes:
+        description = node.get("content-desc", "").strip()
+        if ((description == name or description.startswith(f"{name} "))
+                and usable_bounds(node.get("bounds", ""))):
+            return node
     raise AssertionError(f"Missing Android UI control: {name}")
 
 
@@ -882,6 +887,12 @@ def selftest() -> None:
     ]
     assert find_button(overview, "Maps") is overview[1]
     assert not map_editor_visible(overview)
+    dialogue_edit_action = {
+        "text": "",
+        "content-desc": "Edit dialogue",
+        "bounds": "[100,200][160,250]",
+    }
+    assert find_named([dialogue_edit_action], "Edit") is dialogue_edit_action
     map_editor = [
         {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
          "bounds": "[1057,462][1147,527]"},
