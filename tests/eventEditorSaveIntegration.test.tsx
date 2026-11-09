@@ -172,6 +172,37 @@ describe("rendered event editor Save All integration", () => {
       .toBe("Kept while switching pages");
   });
 
+  it("commits a single-line command draft before switching pages", async () => {
+    const event = importedEvent();
+    event.pages[0].list.splice(2, 0, {
+      code: 118,
+      indent: 0,
+      parameters: ["start"],
+      source_index: 2,
+    });
+    event.pages.push({
+      ...structuredClone(event.pages[0]),
+      source_index: 1,
+      list: [{ code: 0, indent: 0, parameters: [], source_index: 0 }],
+    });
+    native.loadEvent.mockResolvedValueOnce(event);
+    renderProject();
+    await screen.findByRole("button", { name: "Event page 2" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Label" }));
+    fireEvent.change(await screen.findByDisplayValue("start"), {
+      target: { value: "edited_label" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Event page 2" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Event page 2" }).getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Event page 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 118)?.parameters[0])
+      .toBe("edited_label");
+  });
+
   it("commits an active dialogue draft before adding a page", async () => {
     renderProject();
     fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
@@ -232,6 +263,33 @@ describe("rendered event editor Save All integration", () => {
     await screen.findByText("Save All succeeded");
     expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
       .toBe("Kept before inserting a command");
+  });
+
+  it("retains a page-switched draft after a Save All failure for retry", async () => {
+    const event = importedEvent();
+    event.pages.push({
+      ...structuredClone(event.pages[0]),
+      source_index: 1,
+      list: [{ code: 0, indent: 0, parameters: [], source_index: 0 }],
+    });
+    native.loadEvent.mockResolvedValueOnce(event);
+    native.saveEvent.mockRejectedValueOnce(new Error("synthetic event write failure"));
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Retry page-switched draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Event page 2" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Event page 2" }).getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(screen.getAllByRole("alert").some((alert) =>
+      alert.textContent?.includes("synthetic event write failure"),
+    )).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Retry page-switched draft");
   });
 
   it("commits a page draft before removal so undo can restore it", async () => {
