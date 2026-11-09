@@ -81,9 +81,26 @@ def find_button(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None
 def focused_dialogue_field(nodes: list[dict[str, str]]) -> dict[str, str] | None:
     return next((
         node for node in nodes
-        if "EditText" in node.get("class", "")
+        if (
+            "EditText" in node.get("class", "")
+            or "dialogue lines" in node.get("content-desc", "").lower()
+        )
         and node.get("focused") == "true"
         and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
+def visible_dialogue_editor(nodes: list[dict[str, str]], original: str) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if usable_bounds(node.get("bounds", ""))
+        and (
+            (
+                "EditText" in node.get("class", "")
+                and original in node.get("text", "")
+            )
+            or "dialogue lines" in node.get("content-desc", "").lower()
+        )
     ), None)
 
 
@@ -427,12 +444,7 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
     editor = None
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-editing")
-        editor = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and original in node.get("text", "")
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
+        editor = visible_dialogue_editor(nodes, original)
         if editor:
             break
         time.sleep(1)
@@ -893,6 +905,28 @@ def selftest() -> None:
         "bounds": "[100,200][160,250]",
     }
     assert find_named([dialogue_edit_action], "Edit") is dialogue_edit_action
+    accessible_dialogue_editor = {
+        "text": "",
+        "content-desc": "Show Text dialogue lines",
+        "focused": "true",
+        "bounds": "[100,200][400,320]",
+    }
+    assert visible_dialogue_editor(
+        [accessible_dialogue_editor], "Original synthetic dialogue"
+    ) is accessible_dialogue_editor
+    assert focused_dialogue_field(
+        [accessible_dialogue_editor]
+    ) is accessible_dialogue_editor
+    native_dialogue_editor = {
+        "text": "Original synthetic dialogue",
+        "class": "android.widget.EditText",
+        "focused": "false",
+        "bounds": "[100,200][400,320]",
+    }
+    assert visible_dialogue_editor(
+        [native_dialogue_editor], "Original synthetic dialogue"
+    ) is native_dialogue_editor
+    assert focused_dialogue_field([native_dialogue_editor]) is None
     map_editor = [
         {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
          "bounds": "[1057,462][1147,527]"},

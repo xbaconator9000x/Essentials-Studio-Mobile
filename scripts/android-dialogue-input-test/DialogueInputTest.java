@@ -10,8 +10,13 @@ import com.android.uiautomator.testrunner.UiAutomatorTestCase;
 public class DialogueInputTest extends UiAutomatorTestCase {
     public void testSetFocusedDialogueText() throws Exception {
         AccessibilityObject field = new AccessibilityObject(
-            new UiSelector().className("android.widget.EditText").focused(true)
+            new UiSelector().descriptionContains("dialogue lines").focused(true)
         );
+        if (!field.waitForExists(10000)) {
+            field = new AccessibilityObject(
+                new UiSelector().className("android.widget.EditText").focused(true)
+            );
+        }
         if (!field.waitForExists(10000)) {
             throw new AssertionError("No focused Android dialogue input was exposed");
         }
