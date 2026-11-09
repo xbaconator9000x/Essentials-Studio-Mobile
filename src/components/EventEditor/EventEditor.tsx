@@ -352,7 +352,7 @@ export function EventEditor({
       return;
     }
     const cancelRevision = revisionRef.current;
-    if ((dirty || inlineDraftActiveRef.current || activeInlineDraftCommitRef.current) &&
+    if ((dirty || inlineDraftActiveRef.current) &&
         !(await confirmEditor("Discard changes to this event?"))) return;
     if (savingRef.current || revisionRef.current !== cancelRevision) return;
     onClose();

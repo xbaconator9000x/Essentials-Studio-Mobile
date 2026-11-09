@@ -288,6 +288,18 @@ describe("rendered event editor Save All integration", () => {
     expect(screen.queryByText("*")).toBeNull();
   });
 
+  it("closes an untouched inline dialogue editor without a discard confirmation", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+
+    await screen.findByRole("button", { name: "Open event" });
+    expect(confirmation).not.toHaveBeenCalled();
+  });
+
   it("retains a committed dialogue draft after Save All fails so it can be retried", async () => {
     native.saveEvent.mockRejectedValueOnce(new Error("Synthetic write failure"));
     renderProject();
