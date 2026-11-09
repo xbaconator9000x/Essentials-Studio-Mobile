@@ -231,7 +231,7 @@ pub async fn load_tileset(
         .collect();
 
     Ok(TilesetRenderInfo {
-        id: tileset.id,
+        id: tileset_id,
         name: tileset.name,
         tileset_name: tileset.tileset_name,
         autotile_names: tileset.autotile_names,
