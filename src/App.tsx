@@ -564,7 +564,7 @@ function AppContent() {
         // Select via the native provider, then let the bounded Rust ZIP
         // validator reject anything that is not a safe project archive.
         // This does not grant filesystem access or bypass the SAF picker.
-      }));
+      }), 120_000);
       if (selected === null) {
         setArchiveOutcome("Project ZIP import cancelled. No project was imported.");
         return;
