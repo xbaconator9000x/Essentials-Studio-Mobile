@@ -825,6 +825,43 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 
+  it("saves sprite pixels without including the non-destructive trace overlay", async () => {
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const editorCanvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(editorCanvas).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    fireEvent.pointerDown(editorCanvas!, {
+      pointerId: 1, pointerType: "touch", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(editorCanvas!, {
+      pointerId: 1, pointerType: "touch", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledOnce());
+
+    expect(serializedCanvases).toHaveLength(1);
+    expect(serializedCanvases[0]).not.toBe(editorCanvas);
+    expect(serializedCanvases[0].width).toBe(4);
+    expect(serializedCanvases[0].height).toBe(4);
+  });
+
   it("hands a completed pinch to one-finger panning without painting", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
