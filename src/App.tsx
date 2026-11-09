@@ -69,6 +69,7 @@ import "./App.css";
 const PROJECT_ARCHIVE_ACCEPT =
   ".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed,application/octet-stream";
 const TILESET_PALETTE_PREFERENCE = "essentials-studio:map-editor:tileset-palette-visible";
+const MOBILE_LAYOUT_QUERY = "(max-width: 700px)";
 
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
@@ -98,14 +99,14 @@ function AppContent() {
   const isAndroid = !canOpenProjectFolder;
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
   const [mobileLayout, setMobileLayout] = useState(
-    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches,
+    () => typeof window.matchMedia === "function" && window.matchMedia(MOBILE_LAYOUT_QUERY).matches,
   );
   const [mobileSection, setMobileSection] = useState<"projects" | "maps" | "sprites" | "settings">("projects");
   const [mobileEditEnabled, setMobileEditEnabled] = useState(false);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const phoneViewport = window.matchMedia("(max-width: 700px)");
+    const phoneViewport = window.matchMedia(MOBILE_LAYOUT_QUERY);
     const updateLayout = (event: MediaQueryListEvent) => setMobileLayout(event.matches);
     phoneViewport.addEventListener("change", updateLayout);
     return () => phoneViewport.removeEventListener("change", updateLayout);
@@ -169,7 +170,7 @@ function AppContent() {
   const [showSprites, setShowSprites] = useState(false);
   const [showTilesetPalette, setShowTilesetPalette] = useState(
     () => readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) ??
-      (typeof window.matchMedia !== "function" || !window.matchMedia("(max-width: 640px)").matches),
+      (typeof window.matchMedia !== "function" || !window.matchMedia(MOBILE_LAYOUT_QUERY).matches),
   );
   const [graphicsRevision, setGraphicsRevision] = useState(0);
   const mobileBackState = useRef({
@@ -203,7 +204,7 @@ function AppContent() {
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const narrowViewport = window.matchMedia("(max-width: 640px)");
+    const narrowViewport = window.matchMedia(MOBILE_LAYOUT_QUERY);
     const updatePaletteVisibility = (event: MediaQueryListEvent) => {
       if (readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) === null) {
         setShowTilesetPalette(!event.matches);

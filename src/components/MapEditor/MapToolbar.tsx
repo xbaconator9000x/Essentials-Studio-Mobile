@@ -30,6 +30,7 @@ interface MapToolbarProps {
 }
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
+const COMPACT_LAYOUT_QUERY = "(max-width: 700px)";
 
 export function MapToolbar({
   paintTool,
@@ -55,11 +56,11 @@ export function MapToolbar({
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) ??
-      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches),
+      (typeof window.matchMedia === "function" && window.matchMedia(COMPACT_LAYOUT_QUERY).matches),
   );
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const narrowViewport = window.matchMedia("(max-width: 640px)");
+    const narrowViewport = window.matchMedia(COMPACT_LAYOUT_QUERY);
     const updateCollapsedState = (event: MediaQueryListEvent) => {
       if (readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) === null) {
         setToolsCollapsed(event.matches);

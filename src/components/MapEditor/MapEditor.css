@@ -243,7 +243,7 @@
   padding: 12px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 700px) {
   .map-event-list-search input,
   .map-event-list-search button {
     min-height: 44px;
@@ -337,7 +337,7 @@
   background: rgba(30, 102, 245, 0.5);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 700px) {
   .map-editor-toolbar {
     flex-wrap: wrap;
     gap: 8px;

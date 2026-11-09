@@ -19,7 +19,8 @@ describe("mobile map toolbar", () => {
       }),
       removeEventListener: vi.fn(),
     };
-    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const matchMedia = vi.fn(() => mediaQuery);
+    vi.stubGlobal("matchMedia", matchMedia);
     const setSelectedLayer = vi.fn();
 
     render(
@@ -45,6 +46,7 @@ describe("mobile map toolbar", () => {
       />,
     );
 
+    expect(matchMedia).toHaveBeenCalledWith("(max-width: 700px)");
     expect(screen.queryByRole("button", { name: "L2" })).toBeNull();
     act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
     fireEvent.click(screen.getByRole("button", { name: "L2" }));
