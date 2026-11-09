@@ -108,12 +108,12 @@ jobs:
               exit 0
             fi
             if [[ "$attempt" == 3 ]] || ! grep -Eiq \
-              'Received status code (429|502|503|504)|Too Many Requests|HTTP (429|502|503|504)|Server returned HTTP response code: (429|502|503|504)' \
+              'Received status code (429|502|503|504)|Too Many Requests|HTTP (429|502|503|504)|Server returned HTTP response code: (429|502|503|504)|Downloading from https://services\.gradle\.org/distributions/[^[:space:]]+ failed: timeout|SocketTimeoutException: Read timed out' \
               "$log"; then
               echo "::error::Android ARM64 build failed for a non-retryable reason (or exhausted retries)."
               exit 1
             fi
-            echo "::warning::Gradle dependency server returned a transient HTTP error; waiting before bounded retry ${attempt}/3"
+            echo "::warning::Gradle download failed with a transient network error; waiting before bounded retry ${attempt}/3"
             sleep $((attempt * 60))
           done
       - name: Save build evidence and debug APK (if produced)
