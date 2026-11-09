@@ -147,6 +147,31 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("commits an active dialogue draft before switching event pages", async () => {
+    const event = importedEvent();
+    event.pages.push({
+      ...structuredClone(event.pages[0]),
+      source_index: 1,
+      list: [{ code: 0, indent: 0, parameters: [], source_index: 0 }],
+    });
+    native.loadEvent.mockResolvedValueOnce(event);
+    renderProject();
+    await screen.findByRole("button", { name: "Event page 2" });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Kept while switching pages" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Event page 2" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Event page 2" }).getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Event page 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Kept while switching pages");
+  });
+
   it("edits dialogue on another event page and persists only that page through Save All", async () => {
     const firstPage = structuredClone(diskEvent.pages[0]);
     const secondPage = structuredClone(firstPage);

@@ -81,6 +81,18 @@ export function EventEditor({
     commit();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }, []);
+  const switchEventPage = useCallback((pageIndex: number) => {
+    const switchPage = () => {
+      setActivePage(pageIndex);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+    };
+    if (!activeInlineDraftCommitRef.current) {
+      switchPage();
+      return;
+    }
+    void commitActiveInlineDraft().then(switchPage);
+  }, [commitActiveInlineDraft]);
   const handleInlineDraftChange = useCallback(() => {
     if (!inlineDraftActiveRef.current) {
       dirtyBeforeInlineDraftRef.current = dirty;
@@ -472,11 +484,7 @@ export function EventEditor({
                 type="button"
                 aria-label={`Event page ${i + 1}`}
                 aria-pressed={activePage === i}
-                onClick={() => {
-                  setActivePage(i);
-                  setSelectedCommand(-1);
-                  setEditingCommand(null);
-                }}
+                onClick={() => void switchEventPage(i)}
               >
                 Page {i + 1}
               </button>
