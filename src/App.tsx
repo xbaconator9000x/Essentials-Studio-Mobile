@@ -1273,7 +1273,10 @@ function AppContent() {
             autotileImages={autotileImages}
             selectedTileId={selectedTileId}
             onSelectTile={setSelectedTileId}
-            onClose={() => setShowTilesetPalette(false)}
+            onClose={() => {
+              writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, false);
+              setShowTilesetPalette(false);
+            }}
           />
         )}
 
