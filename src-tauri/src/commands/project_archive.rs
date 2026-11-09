@@ -1568,7 +1568,7 @@ mod archive_roundtrip_tests {
 
         let mut tileset = RubyObject::new("RPG::Tileset".into());
         tileset.instance_vars.extend([
-            ("@id".into(), RubyValue::Integer(1)),
+            ("@id".into(), RubyValue::Integer(42)),
             ("@name".into(), ruby_string("Synthetic Tileset")),
             ("@tileset_name".into(), ruby_string("Synthetic")),
             (
@@ -1902,6 +1902,7 @@ mod archive_roundtrip_tests {
                 .await
                 .expect("load genuine Marshal tileset");
             assert_eq!(tileset.name, "Synthetic Tileset");
+            assert_eq!(tileset.id, map.tileset_id);
 
             let event =
                 crate::commands::project::load_event(project.path.clone(), 1, 7)
