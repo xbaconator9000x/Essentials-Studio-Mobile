@@ -212,6 +212,22 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited by direct touch action");
   });
 
+  it("opens a supported single-command editor from its direct touch action", async () => {
+    diskEvent.pages[0].list = [
+      { code: 118, indent: 0, parameters: ["WelcomeLabel"], source_index: 0 },
+      { code: 0, indent: 0, parameters: [], source_index: 1 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Label" }));
+
+    expect(await screen.findByDisplayValue("WelcomeLabel")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit Label" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("group", { name: "Command edit actions" }))
+      .getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByDisplayValue("WelcomeLabel")).toBeNull();
+  });
+
   it("confirms dialogue with OK, saves all, and reloads the still-open event", async () => {
     renderProject();
 

@@ -158,6 +158,21 @@ export function CommandRow({
       <span className="event-command-params">
         {command.code === 0 ? "" : summary}
       </span>
+      {command.code !== 0 &&
+        (isTextEditableCommand(command.code) || hasParamEditor(command.code)) && (
+          <button
+            type="button"
+            className="event-command-inline-edit"
+            aria-label={`Edit ${def.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick();
+              onDoubleClick();
+            }}
+          >
+            Edit
+          </button>
+        )}
     </div>
   );
 }
