@@ -258,6 +258,42 @@ describe("sprite editor integration", () => {
     expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
   });
 
+  it("does not paint the previously selected sprite while the next image is loading", async () => {
+    let finishHero!: (image: { width: number; height: number }) => void;
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
+    editorApi.loadCharacterImage.mockImplementation((_path: string, name: string) =>
+      name === "Hero"
+        ? new Promise((resolve) => { finishHero = resolve; })
+        : Promise.resolve({ width: 4, height: 4 }),
+    );
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    const picker = screen.getByRole("combobox", { name: "Select project character sprite" });
+    expect(canvas).toBeTruthy();
+
+    fireEvent.change(picker, { target: { value: "Hero" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Hero",
+    ));
+    putImageData.mockClear();
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    await act(async () => { finishHero({ width: 4, height: 4 }); });
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    expect((picker as HTMLSelectElement).value).toBe("Hero");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
   it("reports when a sprite filter has no matches without replacing the selected asset", async () => {
     editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
     renderEditor();

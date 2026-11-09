@@ -509,6 +509,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
+    if (loading) return;
     const point = { x: event.clientX, y: event.clientY };
     pointerPositions.current.set(event.pointerId, point);
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* WebView capture may be unavailable. */ }
@@ -555,6 +556,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (loading) return;
     const point = { x: event.clientX, y: event.clientY };
     pointerPositions.current.set(event.pointerId, point);
     const points = [...pointerPositions.current.values()];
@@ -743,6 +745,18 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 value={selectedName}
                 onChange={(event) => {
                 const name = event.target.value;
+                setLoading(true);
+                imageCanvasRef.current = null;
+                imageDataRef.current = null;
+                historyRef.current.clear();
+                pointerPositions.current.clear();
+                activePaintPointer.current = null;
+                pendingTouchPaint.current = null;
+                lastPaintPixel.current = null;
+                activePan.current = null;
+                activeTracePan.current = null;
+                pinchStart.current = null;
+                setImageRevision((value) => value + 1);
                 setSelectedName(name);
                 setTargetName(`${name}_copy`);
                 setDirty(false);
@@ -900,6 +914,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               className="sprite-editor-canvas"
               role="application"
               aria-label="Sprite canvas"
+              aria-busy={loading}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
