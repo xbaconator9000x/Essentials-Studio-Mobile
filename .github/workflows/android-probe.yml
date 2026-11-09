@@ -97,7 +97,25 @@ jobs:
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: npm run tauri android build -- --ci --apk --debug --target aarch64
+        run: |
+          set -euo pipefail
+          # Gradle distribution and Maven mirrors can transiently return 429 or
+          # 5xx responses. Retry only those network failures; do not mask
+          # compiler, source or Android packaging errors.
+          for attempt in 1 2 3; do
+            log="${RUNNER_TEMP}/android-arm64-build-${attempt}.log"
+            if npm run tauri android build -- --ci --apk --debug --target aarch64 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -Eiq \
+              'Received status code (429|502|503|504)|Too Many Requests|HTTP (429|502|503|504)|Server returned HTTP response code: (429|502|503|504)' \
+              "$log"; then
+              echo "::error::Android ARM64 build failed for a non-retryable reason (or exhausted retries)."
+              exit 1
+            fi
+            echo "::warning::Gradle dependency server returned a transient HTTP error; waiting before bounded retry ${attempt}/3"
+            sleep $((attempt * 60))
+          done
       - name: Save build evidence and debug APK (if produced)
         if: always()
         uses: actions/upload-artifact@v4
