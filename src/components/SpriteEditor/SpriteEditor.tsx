@@ -449,7 +449,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         source.toDataURL("image/png"),
       );
       setNames((current) => current.includes(savedName) ? current : [...current, savedName].sort((a, b) => a.localeCompare(b)));
-      if (spriteEditRevision.current === savedRevision) {
+      const hasNewerEdits = spriteEditRevision.current !== savedRevision;
+      if (!hasNewerEdits && activePaintPointer.current === null) {
         setSelectedName(savedName);
         setTargetName(`${savedName}_copy`);
         setSaveMode("original");
@@ -457,8 +458,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         updateDirty("sprite-editor", false);
       } else {
         if (saveMode === "copy") setTargetName(`${savedName}_copy`);
-        setDirty(true);
-        updateDirty("sprite-editor", true);
+        setDirty(hasNewerEdits);
+        updateDirty("sprite-editor", hasNewerEdits);
       }
       clearImageCache();
       onSaved();
