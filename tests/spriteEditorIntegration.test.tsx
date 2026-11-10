@@ -229,6 +229,58 @@ describe("sprite editor integration", () => {
     expect(screen.getByRole("button", { name: "Paste", exact: true }).hasAttribute("disabled")).toBe(false);
   });
 
+  it("positions a loaded trace from the collapsed toolbar without editing sprite pixels", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    const traceUrl = {
+      createObjectURL: vi.fn(() => "blob:trace"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+    fireEvent.change(screen.getByLabelText("Trace overlay"), {
+      target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Trace opacity: 35%");
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▾" }));
+
+    const position = screen.getByRole("button", { name: "Position trace with touch" });
+    expect(position.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(position);
+    expect(position.getAttribute("aria-pressed")).toBe("true");
+
+    const canvas = view.container.querySelector(".sprite-editor-canvas")!;
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1, pointerType: "touch", clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 1, pointerType: "touch", clientX: 116, clientY: 116,
+    });
+    fireEvent.pointerUp(canvas, {
+      pointerId: 1, pointerType: "touch", clientX: 116, clientY: 116,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+    expect(screen.getByRole("slider", { name: /Trace horizontal alignment/ }).getAttribute("value")).toBe("25");
+    expect(screen.getByRole("slider", { name: /Trace vertical alignment/ }).getAttribute("value")).toBe("25");
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
   it("keeps sprite undo and redo reachable when tools are collapsed", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const view = renderEditor();

@@ -1089,6 +1089,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         </header>
         {controlsCollapsed && (
           <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">
+            {traceImage && (
+              <button
+                type="button"
+                aria-label="Position trace with touch"
+                aria-pressed={positionTraceWithTouch}
+                onClick={() => setPositionTraceWithTouch((enabled) => !enabled)}
+              >
+                {positionTraceWithTouch ? "Trace on" : "Trace"}
+              </button>
+            )}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools">
               {([
                 ["brush", "Brush"],
