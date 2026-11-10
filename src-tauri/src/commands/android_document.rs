@@ -69,9 +69,14 @@ impl<W: std::io::Write> BoundedDocumentWriter<W> {
 #[cfg(any(target_os = "android", test))]
 fn verify_document_readback_chunk(expected: &[u8], actual: &[i8]) -> std::io::Result<()> {
     if expected.len() != actual.len()
-        || expected.iter().zip(actual).any(|(expected, actual)| *expected != *actual as u8)
+        || expected
+            .iter()
+            .zip(actual)
+            .any(|(expected, actual)| *expected != *actual as u8)
     {
-        return Err(std::io::Error::other("Android document differs from exported ZIP"));
+        return Err(std::io::Error::other(
+            "Android document differs from exported ZIP",
+        ));
     }
     Ok(())
 }
