@@ -27,6 +27,60 @@ function sha(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function startWeb(input, workspace) {
+  const env = { ...process.env };
+  delete env.ESSENTIALS_BROWSER_WORKSPACE;
+  if (workspace) env.ESSENTIALS_BROWSER_WORKSPACE = workspace;
+  server = spawn("node", ["scripts/dev-web.mjs", input], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    // Isolate npm/Vite/Rust descendants so a failed assertion cannot leave
+    // pipe handles open and strand the Actions job until cancellation.
+    detached: process.platform !== "win32",
+  });
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on("data", chunk => {
+      const value = chunk.toString();
+      output.push(value);
+      if (process.env.CI) process.stdout.write(value);
+    });
+  }
+  server.on("error", error => output.push("Launch error: " + error.message));
+}
+async function stopWeb() {
+  const child = server;
+  if (!child) return;
+  if (child.exitCode === null) {
+    await new Promise(resolveExit => {
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null) {
+          try {
+            if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+            else child.kill("SIGKILL");
+          } catch (error) {
+            if (error?.code !== "ESRCH") throw error;
+          }
+        }
+        resolveExit();
+      }, 5000);
+      child.once("exit", () => {
+        clearTimeout(timeout);
+        resolveExit();
+      });
+      try {
+        if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+        else child.kill("SIGTERM");
+      } catch (error) {
+        clearTimeout(timeout);
+        if (error?.code !== "ESRCH") throw error;
+        resolveExit();
+      }
+    });
+  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  if (server === child) server = null;
+}
 async function invokeRead(command, args = {}) {
   const response = await fetch("http://127.0.0.1:5173/api/browser/invoke", {
     method: "POST",
@@ -51,21 +105,8 @@ async function ready() {
   throw Error("Browser editor did not start within 180 seconds");
 }
 try {
-  server = spawn("node", ["scripts/dev-web.mjs", original], {
-    env: { ...process.env, ESSENTIALS_BROWSER_WORKSPACE: join(temp, "browser-working-copy") },
-    stdio: ["ignore", "pipe", "pipe"],
-    // Isolate npm/Vite/Rust descendants so a failed assertion cannot leave
-    // pipe handles open and strand the Actions job until cancellation.
-    detached: process.platform !== "win32",
-  });
-  for (const stream of [server.stdout, server.stderr]) {
-    stream.on("data", chunk => {
-      const value = chunk.toString();
-      output.push(value);
-      if (process.env.CI) process.stdout.write(value);
-    });
-  }
-  server.on("error", error => output.push("Launch error: " + error.message));
+  const workspace = join(temp, "browser-working-copy");
+  startWeb(original, workspace);
   const root = await ready();
   const chrome = [process.env.CHROME_BIN, "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"]
     .find(path => path && existsSync(path));
@@ -199,6 +240,38 @@ try {
   assert.equal(eventAfterPbs.pages[0].list[1].parameters[0], updatedDialogue);
   await page.screenshot({ path: join(evidence, "browser-pbs-saved.png"), fullPage: true });
 
+  // Restart the actual React app and Rust bridge against the existing working
+  // copy, then reopen the project through the UI before exporting it.
+  await stopWeb();
+  startWeb(root);
+  await ready();
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.getByRole("button", { name: "Open Project Folder" }).click();
+  await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 45_000 });
+  const restartMap = await invokeRead("load_map", { projectPath: root, mapId: 1 });
+  assert.deepEqual(restartMap.tiles, afterEvent.tiles,
+    "Map edits must remain on disk and reload after React and Rust process restart");
+  const restartEvent = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(restartEvent.pages[0].list[1].parameters[0], updatedDialogue,
+    "Dialogue edits must remain on disk and reload after React and Rust process restart");
+  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  await page.locator(".map-editor-canvas").click({
+    position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
+  });
+  const restartedEventEditor = page.locator(".event-editor");
+  await restartedEventEditor.waitFor({ timeout: 15_000 });
+  await restartedEventEditor.locator(".event-command-params")
+    .filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
+  await restartedEventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await restartedEventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  const restartPbs = await invokeRead("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
+  assert.equal(
+    restartPbs[0].fields.find(field => field.key === "Name")?.value,
+    updatedPokemonName,
+    "PBS edits must remain on disk after React and Rust process restart",
+  );
+  await page.screenshot({ path: join(evidence, "browser-project-reopened.png"), fullPage: true });
+
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
   await status.waitFor({ timeout: 90_000 });
@@ -231,6 +304,7 @@ try {
     changedTile: differences[0],
     changedDialogue: updatedDialogue,
     changedPokemonName: updatedPokemonName,
+    reactAndNativeProcessRestartPassed: true,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
@@ -246,17 +320,7 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  if (server && server.exitCode === null && server.pid) {
-    try {
-      if (process.platform !== "win32") process.kill(-server.pid, "SIGTERM");
-      else server.kill("SIGTERM");
-    } catch (error) {
-      if (error?.code !== "ESRCH") throw error;
-    }
-  }
-  // Destroy inherited pipes even if a nested cargo/Vite child ignores TERM.
-  server?.stdout?.destroy();
-  server?.stderr?.destroy();
+  await stopWeb();
   await delay(600);
   rmSync(temp, { recursive: true, force: true });
 }
