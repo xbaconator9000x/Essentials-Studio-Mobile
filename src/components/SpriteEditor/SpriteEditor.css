@@ -99,6 +99,13 @@
   font-size: 12px;
 }
 
+.sprite-editor-imported-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
 .sprite-editor-save-mode {
   display: flex;
   flex-direction: column;

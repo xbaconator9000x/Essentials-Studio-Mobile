@@ -68,12 +68,20 @@ function writePanelPreference(key: string, value: boolean) {
   }
 }
 
+function importedSpriteCopyName(fileName: string): string {
+  const stem = fileName.replace(/\.[^.]*$/, "");
+  const safeName = stem.replace(/[^A-Za-z0-9 _-]/g, "_").trim().slice(0, 128);
+  return safeName || "ImportedSprite";
+}
+
 export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const { updateDirty } = useProjectSave();
   const [names, setNames] = useState<string[]>([]);
   const [spriteSearch, setSpriteSearch] = useState("");
   const [selectedName, setSelectedName] = useState("");
+  const [importedSpriteName, setImportedSpriteName] = useState<string | null>(null);
   const [targetName, setTargetName] = useState("");
+  const [projectSpriteReload, setProjectSpriteReload] = useState(0);
   const [saveMode, setSaveMode] = useState<"original" | "copy">("copy");
   const [tool, setTool] = useState<SpriteTool>("brush");
   const [selection, setSelection] = useState<SpriteSelection | null>(null);
@@ -134,6 +142,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   } | null>(null);
   const traceUrl = useRef<string | null>(null);
   const traceLoadId = useRef(0);
+  const spriteImportUrl = useRef<string | null>(null);
+  const spriteImportId = useRef(0);
   const fitViewportOnResize = useRef(true);
   const spriteEditRevision = useRef(0);
 
@@ -203,7 +213,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [projectPath, selectedName, updateDirty]);
+  }, [projectPath, projectSpriteReload, selectedName, updateDirty]);
 
   useEffect(() => {
     if (!selectedName || !tracePreferenceKey) return;
@@ -569,7 +579,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   const saveSprite = useCallback(async () => {
     const source = imageCanvasRef.current;
-    if (!source || !selectedName) throw new Error("No character sprite is selected");
+    const importedCandidate = importedSpriteName !== null;
+    if (!source || (!selectedName && !importedCandidate)) {
+      throw new Error("No character sprite is selected");
+    }
+    if (importedCandidate && saveMode !== "copy") {
+      throw new Error("Imported sprites must be saved as a new copy");
+    }
     if (saveMode === "original" &&
         !(await confirmEditor(`Replace the original ${selectedName}.png character graphic?`))) {
       throw new Error("Original sprite replacement cancelled; edits remain unsaved");
@@ -580,7 +596,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     try {
       const savedName = await savePrivateProjectSprite(
         projectPath,
-        selectedName,
+        selectedName || "",
         saveMode === "copy" ? targetName.trim() : selectedName,
         saveMode,
         source.toDataURL("image/png"),
@@ -589,6 +605,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       const hasNewerEdits = spriteEditRevision.current !== savedRevision;
       if (!hasNewerEdits && activePaintPointer.current === null) {
         setSelectedName(savedName);
+        setImportedSpriteName(null);
         setTargetName(`${savedName}_copy`);
         setSaveMode("original");
         setDirty(false);
@@ -606,9 +623,34 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [onSaved, projectPath, saveMode, selectedName, targetName, updateDirty]);
+  }, [importedSpriteName, onSaved, projectPath, saveMode, selectedName, targetName, updateDirty]);
+
+  const discardImportedSprite = useCallback(() => {
+    spriteImportId.current += 1;
+    if (spriteImportUrl.current) URL.revokeObjectURL(spriteImportUrl.current);
+    spriteImportUrl.current = null;
+    setImportedSpriteName(null);
+    setDirty(false);
+    updateDirty("sprite-editor", false);
+    setSelection(null);
+    setClipboard(null);
+    if (selectedName) {
+      setLoading(true);
+      setProjectSpriteReload((value) => value + 1);
+    } else {
+      imageCanvasRef.current = null;
+      imageDataRef.current = null;
+      historyRef.current.clear();
+      setLoading(false);
+      setImageRevision((value) => value + 1);
+    }
+  }, [selectedName, updateDirty]);
 
   const cancelSprite = useCallback(() => {
+    if (importedSpriteName !== null) {
+      discardImportedSprite();
+      return;
+    }
     setDirty(false);
     updateDirty("sprite-editor", false);
     if (selectedName) {
@@ -625,7 +667,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         setImageRevision((value) => value + 1);
       });
     }
-  }, [projectPath, selectedName, updateDirty]);
+  }, [discardImportedSprite, importedSpriteName, projectPath, selectedName, updateDirty]);
 
   useEditorRegistration("sprite-editor", saveSprite, cancelSprite, dirty);
 
@@ -911,9 +953,91 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     image.src = url;
   };
 
+  const handleSpriteImport = (file?: File) => {
+    if (!file) return;
+    if (file.type && !file.type.startsWith("image/")) {
+      setError("Imported sprite must be an image");
+      return;
+    }
+    if (file.size > 32 * 1024 * 1024) {
+      setError("Imported sprite must be 32 MiB or smaller");
+      return;
+    }
+    const loadId = ++spriteImportId.current;
+    if (spriteImportUrl.current) URL.revokeObjectURL(spriteImportUrl.current);
+    const url = URL.createObjectURL(file);
+    spriteImportUrl.current = url;
+    setLoading(true);
+    setError(null);
+    const image = new Image();
+    const finish = () => {
+      URL.revokeObjectURL(url);
+      if (spriteImportUrl.current === url) spriteImportUrl.current = null;
+      if (loadId === spriteImportId.current) setLoading(false);
+    };
+    image.onload = () => {
+      if (loadId !== spriteImportId.current) {
+        finish();
+        return;
+      }
+      if (image.width <= 0 || image.height <= 0 || image.width * image.height > 16_777_216) {
+        setError("Imported sprite exceeds the 16-megapixel edit limit");
+        finish();
+        return;
+      }
+      const source = document.createElement("canvas");
+      source.width = image.width;
+      source.height = image.height;
+      const context = source.getContext("2d");
+      if (!context) {
+        setError("Sprite canvas is unavailable");
+        finish();
+        return;
+      }
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, 0, 0);
+      try {
+        imageCanvasRef.current = source;
+        imageDataRef.current = context.getImageData(0, 0, source.width, source.height);
+      } catch (cause) {
+        imageCanvasRef.current = null;
+        imageDataRef.current = null;
+        setError(`Could not read imported sprite pixels: ${cause}`);
+        finish();
+        return;
+      }
+      historyRef.current.clear();
+      setSelection(null);
+      setClipboard(null);
+      setImportedSpriteName(file.name);
+      setTargetName(importedSpriteCopyName(file.name));
+      setSaveMode("copy");
+      setDirty(true);
+      updateDirty("sprite-editor", true);
+      spriteEditRevision.current += 1;
+      fitViewportOnResize.current = true;
+      const bounds = canvasRef.current?.parentElement?.getBoundingClientRect();
+      if (bounds?.width && bounds.height) {
+        const viewport = fitSpriteViewport(source.width, source.height, bounds.width, bounds.height);
+        setZoom(viewport.zoom);
+        setOffsetX(viewport.offsetX);
+        setOffsetY(viewport.offsetY);
+      }
+      setImageRevision((value) => value + 1);
+      finish();
+    };
+    image.onerror = () => {
+      if (loadId === spriteImportId.current) setError("Could not decode imported sprite image");
+      finish();
+    };
+    image.src = url;
+  };
+
   useEffect(() => () => {
     traceLoadId.current += 1;
     if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
+    spriteImportId.current += 1;
+    if (spriteImportUrl.current) URL.revokeObjectURL(spriteImportUrl.current);
   }, []);
 
   return (
@@ -980,7 +1104,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 setDirty(false);
                 setError(null);
                 }}
-                disabled={!selectedName || dirty || loading || saving}
+                disabled={!selectedName || importedSpriteName !== null || dirty || loading || saving}
               >
                 {keepSelectedOption && <option value={selectedName}>{selectedName} (current)</option>}
                 {filteredNames.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -993,6 +1117,31 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </span>
               )}
             </div>
+            <label>
+              Import image as copy
+              <input
+                type="file"
+                accept="image/*"
+                disabled={dirty || loading || saving}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  handleSpriteImport(file);
+                }}
+              />
+            </label>
+            {importedSpriteName !== null && (
+              <div className="sprite-editor-imported-candidate" role="status">
+                <span>Imported image: {importedSpriteName} — save as a new copy.</span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={discardImportedSprite}
+                >
+                  Discard imported image
+                </button>
+              </div>
+            )}
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite tools">
               {([
                 ["brush", "Brush (B)"],
@@ -1151,6 +1300,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button
                 type="button"
                 aria-pressed={saveMode === "original"}
+                disabled={importedSpriteName !== null}
                 onClick={() => setSaveMode("original")}
               >
                 Replace original PNG

@@ -890,6 +890,208 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Trace opacity: 35%")).toBeNull();
   });
 
+  it("imports a local image into the canvas and saves it only as a project copy", async () => {
+    const onSaved = vi.fn();
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:sprite-import"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor(onSaved);
+    await screen.findByDisplayValue("Guide");
+    const input = screen.getByLabelText("Import image as copy") as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["sprite"], "Field Hero.png")] },
+    });
+
+    expect(await screen.findByText("Imported image: Field Hero.png — save as a new copy.")).toBeTruthy();
+    expect(screen.getByDisplayValue("Field Hero")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Replace original PNG" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Select project character sprite" }).hasAttribute("disabled")).toBe(true);
+    expect(input.value).toBe("");
+    expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:sprite-import");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide",
+      "Field Hero",
+      "copy",
+      "data:image/png;base64,cGl4ZWxz",
+    );
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect((screen.getByRole("combobox", {
+        name: "Select project character sprite",
+      }) as HTMLSelectElement).value).toBe("Field Hero");
+    });
+    expect(screen.queryByText("Imported image: Field Hero.png — save as a new copy.")).toBeNull();
+  });
+
+  it("imports and saves a sprite when the project has no existing character graphics", async () => {
+    editorApi.listAssetFiles.mockResolvedValue([]);
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:new-sprite"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "No character sprites were found in this project.",
+    );
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["sprite"], "New.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByText("Imported image: New.png — save as a new copy.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(editorApi.savePrivateProjectSprite.mock.calls[0].slice(1, 4)).toEqual([
+      "",
+      "New",
+      "copy",
+    ]);
+  });
+
+  it("discards an imported candidate by reopening the selected project sprite", async () => {
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:discarded-sprite"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["sprite"], "Temporary.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Imported image: Temporary.png — save as a new copy.");
+    editorApi.loadCharacterImage.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard imported image" }));
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide",
+    ));
+    expect(screen.queryByText("Imported image: Temporary.png — save as a new copy.")).toBeNull();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:discarded-sprite");
+  });
+
+  it("clears a discarded imported candidate when the project has no character sprites", async () => {
+    editorApi.listAssetFiles.mockResolvedValue([]);
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:discarded-only-sprite"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    const view = renderEditor();
+    await screen.findByText("No character sprites were found in this project.");
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["sprite"], "Temporary.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Imported image: Temporary.png — save as a new copy.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard imported image" }));
+    expect(screen.queryByText("Imported image: Temporary.png — save as a new copy.")).toBeNull();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save sprite" }).hasAttribute("disabled")).toBe(true);
+    expect(view.container.querySelector('[aria-busy="false"]')).toBeTruthy();
+    expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:discarded-only-sprite");
+  });
+
+  it("rejects non-image sprite imports and images above the pixel limit", async () => {
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:sprite-import"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 4097;
+      height = 4096;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const input = screen.getByLabelText("Import image as copy");
+    fireEvent.change(input, {
+      target: { files: [new File(["not-image"], "sprite.txt", { type: "text/plain" })] },
+    });
+    expect((await screen.findByRole("alert")).textContent).toBe("Imported sprite must be an image");
+    expect(importUrl.createObjectURL).not.toHaveBeenCalled();
+
+    fireEvent.change(input, {
+      target: { files: [new File(["sprite"], "large.png", { type: "image/png" })] },
+    });
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Imported sprite exceeds the 16-megapixel edit limit",
+    );
+    expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:sprite-import");
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+  it("reports undecodable sprite files and releases their temporary URL", async () => {
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:broken-sprite"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) { this.onerror?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["broken"], "broken.png")] },
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Could not decode imported sprite image",
+    );
+    expect(screen.queryByText("Imported image: broken.png — save as a new copy.")).toBeNull();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:broken-sprite");
+  });
+
   it("restores trace alignment per sprite after switching sprites and reopening the editor", async () => {
     editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
     const traceUrl = {
