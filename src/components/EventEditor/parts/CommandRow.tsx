@@ -49,6 +49,17 @@ export function CommandRow({
   }, [command.parameters, onDraftCommit, onParamChange, onStopEditing]);
   useEffect(() => {
     if (!editing || !isTextEditableCommand(command.code)) return;
+    const input = inputRef.current;
+    if (!input) return;
+    const revealEditor = () => input.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    input.focus({ preventScroll: true });
+    revealEditor();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", revealEditor);
+    return () => viewport?.removeEventListener("resize", revealEditor);
+  }, [editing, command.code]);
+  useEffect(() => {
+    if (!editing || !isTextEditableCommand(command.code)) return;
     onRegisterDraftCommit(finishEditing);
     return () => onRegisterDraftCommit(null);
   }, [editing, command.code, onRegisterDraftCommit, finishEditing]);
@@ -249,6 +260,17 @@ export function MultiLineBlock({
     onDraftCommit();
     onStopEditing();
   }, [onDraftCommit, onStopEditing, onUpdateLines]);
+  useEffect(() => {
+    if (!editing) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const revealEditor = () => textarea.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    textarea.focus({ preventScroll: true });
+    revealEditor();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", revealEditor);
+    return () => viewport?.removeEventListener("resize", revealEditor);
+  }, [editing]);
   useEffect(() => {
     if (!editing) return;
     onRegisterDraftCommit(commitDraft);

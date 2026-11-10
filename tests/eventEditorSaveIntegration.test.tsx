@@ -20,6 +20,8 @@ vi.mock("../src/services/tauriApi", () => native);
 
 const projectPath = "/synthetic-rights-cleared-project";
 const defaultInnerWidth = window.innerWidth;
+const defaultVisualViewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+const defaultScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
 function importedEvent(): RpgEvent {
   return {
@@ -143,6 +145,16 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   Object.defineProperty(window, "innerWidth", { configurable: true, value: defaultInnerWidth });
+  if (defaultVisualViewport) {
+    Object.defineProperty(window, "visualViewport", defaultVisualViewport);
+  } else {
+    delete (window as Window & { visualViewport?: VisualViewport }).visualViewport;
+  }
+  if (defaultScrollIntoView) {
+    HTMLElement.prototype.scrollIntoView = defaultScrollIntoView;
+  } else {
+    delete HTMLElement.prototype.scrollIntoView;
+  }
   vi.clearAllMocks();
 });
 
@@ -385,6 +397,49 @@ describe("rendered event editor Save All integration", () => {
 
     await screen.findByText("Save All succeeded");
     expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Edited by direct touch action");
+  });
+
+  it("keeps the dialogue editor visible when the mobile keyboard resizes the visual viewport", async () => {
+    let onViewportResize: (() => void) | undefined;
+    const visualViewport = {
+      addEventListener: vi.fn((type: string, listener: () => void) => {
+        if (type === "resize") onViewportResize = listener;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: visualViewport });
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    const editor = await screen.findByRole("textbox", { name: "Show Text dialogue lines" });
+    expect(document.activeElement).toBe(editor);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+    expect(onViewportResize).toBeDefined();
+
+    onViewportResize?.();
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(visualViewport.removeEventListener).toHaveBeenCalledWith(
+      "resize",
+      onViewportResize,
+    ));
+  });
+
+  it("scrolls focused single-line event command editors into view", async () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    diskEvent.pages[0].list = [
+      { code: 118, indent: 0, parameters: ["Original label"], source_index: 0 },
+      { code: 0, indent: 0, parameters: [], source_index: 1 },
+    ];
+    renderProject();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Label" }));
+    const editor = await screen.findByDisplayValue("Original label");
+    expect(document.activeElement).toBe(editor);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
   });
 
   it("commits an active dialogue draft when Save All is tapped without inline OK", async () => {
