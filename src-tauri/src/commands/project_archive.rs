@@ -2517,6 +2517,52 @@ mod archive_roundtrip_tests {
     }
 
     #[test]
+    fn corrupted_zip_payload_fails_closed_without_publishing_or_changing_source() {
+        let sandbox = Sandbox::new();
+        let source = sandbox.path("original.zip");
+        let marker = b"opaque-fixture-content";
+        {
+            let mut writer = ZipWriter::new(File::create(&source).unwrap());
+            let options = SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("Game.rxproj", options).unwrap();
+            writer.write_all(b"RPGXP 1.02").unwrap();
+            writer.start_file("Data/opaque.rxdata", options).unwrap();
+            writer.write_all(marker).unwrap();
+            writer.finish().unwrap();
+        }
+        let original_bytes = fs::read(&source).unwrap();
+        let imports = sandbox.path("imports");
+        let projects = sandbox.path("projects");
+        fs::create_dir_all(&imports).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let staged = imports.join("import-corrupted.zip");
+        fs::copy(&source, &staged).unwrap();
+
+        let mut corrupted_bytes = fs::read(&staged).unwrap();
+        let marker_offset = corrupted_bytes
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("stored archive payload is present");
+        corrupted_bytes[marker_offset] ^= 0xff;
+        fs::write(&staged, corrupted_bytes).unwrap();
+
+        let error = finish_import(
+            staged.clone(),
+            imports.clone(),
+            projects.clone(),
+            "import-corrupted".into(),
+        )
+        .unwrap_err();
+        assert!(error.to_lowercase().contains("checksum"), "{error}");
+        assert!(!projects.join("import-corrupted").exists());
+        assert!(!imports.join("import-corrupted-extracted").exists());
+        assert!(!staged.exists(), "failed staged import should be cleaned up");
+        assert_eq!(fs::read(&source).unwrap(), original_bytes);
+        assert_eq!(read_zip_file(&source, "Data/opaque.rxdata"), marker);
+    }
+
+    #[test]
     fn failed_import_cleanup_removes_only_the_requested_direct_private_project() {
         use super::discard_imported_project_in;
         let sandbox = Sandbox::new();
