@@ -72,7 +72,9 @@ try {
   browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
+  const pageConsole = [];
   page.on("pageerror", error => pageErrors.push(error.message));
+  page.on("console", message => pageConsole.push(`${message.type()}: ${message.text()}`));
   await page.goto("http://127.0.0.1:5173/", { waitUntil: "domcontentloaded", timeout: 30_000 });
   await page.getByRole("button", { name: "Open Project Folder" }).click();
   await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 45_000 });
@@ -236,7 +238,10 @@ try {
 } catch (error) {
   console.error(error);
   if (page) await page.screenshot({ path: join(evidence, "browser-ui-failure.png"), fullPage: true }).catch(() => {});
-  writeFileSync(join(evidence, "failure.txt"), String(error) + "\n" + output.join("").slice(-15000));
+  writeFileSync(
+    join(evidence, "failure.txt"),
+    `${String(error)}\n\nBrowser console:\n${pageConsole.slice(-200).join("\n")}\n\nBackend output:\n${output.join("").slice(-15000)}`,
+  );
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
