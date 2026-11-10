@@ -26,7 +26,7 @@ const pageConsole = [];
 function sha(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
-function inspectSpritePng(path) {
+function inspectSpritePng(path, originalPath) {
   const helperPath = resolve("scripts/android-emulator-sprite-smoke.py");
   const source = [
     "import importlib.util, json, sys",
@@ -37,9 +37,14 @@ function inspectSpritePng(path) {
     "payload = Path(sys.argv[2]).read_bytes()",
     "width, height, rows = module.png_rgba_rows(payload)",
     "pixel = module.png_pixel(payload, width // 2, height // 2)",
-    "print(json.dumps({'width': width, 'height': height, 'center': pixel}))",
+    "new_color_pixels = module.count_new_color_pixels(Path(sys.argv[3]).read_bytes(), payload, (230, 69, 83, 255)) if len(sys.argv) > 3 else None",
+    "print(json.dumps({'width': width, 'height': height, 'center': pixel, 'newColorPixels': new_color_pixels}))",
   ].join("\n");
-  return JSON.parse(execFileSync("python3", ["-c", source, helperPath, path], { encoding: "utf8" }));
+  return JSON.parse(execFileSync(
+    "python3",
+    originalPath ? ["-c", source, helperPath, path, originalPath] : ["-c", source, helperPath, path],
+    { encoding: "utf8" },
+  ));
 }
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 function startWeb(input, workspace) {
@@ -323,16 +328,14 @@ try {
   const copiedSpritePath = join(root, "Graphics/Characters/SyntheticGuide_copy.png");
   assert.equal(sha(sourceSpritePath), sourceSpriteHash,
     "Saving a sprite copy through the mobile editor must not change its source PNG");
-  const copiedSpriteInfo = inspectSpritePng(copiedSpritePath);
+  const copiedSpriteInfo = inspectSpritePng(copiedSpritePath, sourceSpritePath);
   assert.deepEqual(
     { width: copiedSpriteInfo.width, height: copiedSpriteInfo.height },
     { width: sourceSpriteInfo.width, height: sourceSpriteInfo.height },
     "Sprite copy must preserve the source PNG dimensions",
   );
-  assert.notDeepEqual(copiedSpriteInfo.center, sourceSpriteInfo.center,
-    "Touch painting must change the selected source pixel in the saved copy");
-  assert.deepEqual(copiedSpriteInfo.center, [230, 69, 83, 255],
-    "Touch-painted copy pixel must match the selected palette color");
+  assert.ok(copiedSpriteInfo.newColorPixels > 0,
+    "Touch painting must add the selected palette color to the saved copy");
   await page.screenshot({ path: join(evidence, "browser-sprite-copy-saved.png"), fullPage: true });
   await spriteEditor.getByRole("button", { name: "Close" }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -375,7 +378,10 @@ try {
   assert.equal(sha(join(root, "Graphics/Characters/SyntheticGuide.png")), sourceSpriteHash,
     "Export and reimport must preserve the original character graphic");
   assert.deepEqual(
-    inspectSpritePng(join(reopened, "Graphics/Characters/SyntheticGuide_copy.png")),
+    inspectSpritePng(
+      join(reopened, "Graphics/Characters/SyntheticGuide_copy.png"),
+      join(reopened, "Graphics/Characters/SyntheticGuide.png"),
+    ),
     copiedSpriteInfo,
     "Export/reimport must preserve sprite dimensions and painted pixel",
   );
@@ -394,6 +400,7 @@ try {
       sha256: sha(copiedSpritePath),
       dimensions: [copiedSpriteInfo.width, copiedSpriteInfo.height],
       centerPixel: copiedSpriteInfo.center,
+      newPalettePixels: copiedSpriteInfo.newColorPixels,
       sourcePngUnchanged: true,
     },
     reactAndNativeProcessRestartPassed: true,

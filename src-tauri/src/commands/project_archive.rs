@@ -1075,6 +1075,29 @@ fn save_sprite_in_directory(
     }
 }
 
+pub fn save_project_sprite(
+    project_path: &Path,
+    source_name: &str,
+    target_name: &str,
+    mode: &str,
+    image_data: &str,
+) -> Result<String, String> {
+    let project = project_path.canonicalize().map_err(|e| e.to_string())?;
+    if !project.is_dir() || !project.join("Game.rxproj").is_file() {
+        return Err("Not an RPG Maker XP project directory".into());
+    }
+    let directory = character_graphics_directory(&project)?;
+    let png = sprite_png_bytes(image_data)?;
+    save_sprite_in_directory(
+        &directory,
+        &project,
+        source_name,
+        target_name,
+        mode,
+        &png,
+    )
+}
+
 #[tauri::command]
 pub async fn save_private_project_sprite(
     app: AppHandle,

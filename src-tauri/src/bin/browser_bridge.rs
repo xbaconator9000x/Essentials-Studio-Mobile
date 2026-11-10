@@ -310,6 +310,25 @@ async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, Str
             let name: String = required(args, "assetName")?;
             Ok(json!(image_data(root, &kind, &name)?))
         }
+        "save_private_project_sprite" => {
+            let project = PathBuf::from(path);
+            let source_name: String = required(args, "sourceName")?;
+            let target_name: String = required(args, "targetName")?;
+            let mode: String = required(args, "mode")?;
+            let image_data: String = required(args, "imageData")?;
+            let saved_name = tokio::task::spawn_blocking(move || {
+                project_archive::save_project_sprite(
+                    &project,
+                    &source_name,
+                    &target_name,
+                    &mode,
+                    &image_data,
+                )
+            })
+            .await
+            .map_err(|e| format!("Sprite save worker failed: {e}"))??;
+            Ok(json!(saved_name))
+        }
         _ => Err(format!(
             "Browser bridge does not support {command}. Use native Tauri for ZIP import/export or other operations."
         )),
@@ -543,6 +562,50 @@ mod tests {
         assert!(image_data(&root, "tileset", "../forest").is_err());
         fs::write(project.join("Graphics/Tilesets/FOREST.png"), b"ambiguous").unwrap();
         assert!(image_data(&root, "tileset", "forest").unwrap_err().contains("Ambiguous"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn sprite_save_uses_selected_project_and_rejects_unscoped_paths() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base = std::env::temp_dir().join(format!("essentials-browser-sprite-{}-{nonce}", std::process::id()));
+        let project = base.join("project");
+        fs::create_dir_all(project.join("Graphics/Characters")).unwrap();
+        fs::write(project.join("Game.rxproj"), b"fixture").unwrap();
+        let root = fs::canonicalize(&project).unwrap();
+
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]))
+            .write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let image_data = format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(png.into_inner())
+        );
+        let args = json!({
+            "projectPath": root.to_string_lossy(),
+            "sourceName": "Original",
+            "targetName": "Original_copy",
+            "mode": "copy",
+            "imageData": image_data,
+        });
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        assert_eq!(
+            rt.block_on(dispatch("save_private_project_sprite", &args, &root)).unwrap(),
+            json!("Original_copy")
+        );
+        let saved = image::open(project.join("Graphics/Characters/Original_copy.png")).unwrap();
+        assert_eq!(saved.to_rgba8().get_pixel(0, 0).0, [1, 2, 3, 255]);
+
+        let outside_args = json!({
+            "projectPath": base.to_string_lossy(),
+            "sourceName": "Original",
+            "targetName": "Escaped",
+            "mode": "copy",
+            "imageData": args["imageData"],
+        });
+        assert!(rt.block_on(dispatch("save_private_project_sprite", &outside_args, &root)).is_err());
+        assert!(!base.join("Graphics/Characters/Escaped.png").exists());
         fs::remove_dir_all(base).unwrap();
     }
 
