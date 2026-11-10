@@ -56,7 +56,11 @@ export function CommandRow({
     revealEditor();
     const viewport = window.visualViewport;
     viewport?.addEventListener("resize", revealEditor);
-    return () => viewport?.removeEventListener("resize", revealEditor);
+    viewport?.addEventListener("scroll", revealEditor);
+    return () => {
+      viewport?.removeEventListener("resize", revealEditor);
+      viewport?.removeEventListener("scroll", revealEditor);
+    };
   }, [editing, command.code]);
   useEffect(() => {
     if (!editing || !isTextEditableCommand(command.code)) return;
@@ -269,7 +273,11 @@ export function MultiLineBlock({
     revealEditor();
     const viewport = window.visualViewport;
     viewport?.addEventListener("resize", revealEditor);
-    return () => viewport?.removeEventListener("resize", revealEditor);
+    viewport?.addEventListener("scroll", revealEditor);
+    return () => {
+      viewport?.removeEventListener("resize", revealEditor);
+      viewport?.removeEventListener("scroll", revealEditor);
+    };
   }, [editing]);
   useEffect(() => {
     if (!editing) return;

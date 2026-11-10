@@ -401,9 +401,11 @@ describe("rendered event editor Save All integration", () => {
 
   it("keeps the dialogue editor visible when the mobile keyboard resizes the visual viewport", async () => {
     let onViewportResize: (() => void) | undefined;
+    let onViewportScroll: (() => void) | undefined;
     const visualViewport = {
       addEventListener: vi.fn((type: string, listener: () => void) => {
         if (type === "resize") onViewportResize = listener;
+        if (type === "scroll") onViewportScroll = listener;
       }),
       removeEventListener: vi.fn(),
     };
@@ -417,14 +419,17 @@ describe("rendered event editor Save All integration", () => {
     expect(document.activeElement).toBe(editor);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
     expect(onViewportResize).toBeDefined();
+    expect(onViewportScroll).toBeDefined();
 
     onViewportResize?.();
-    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    onViewportScroll?.();
+    expect(scrollIntoView).toHaveBeenCalledTimes(3);
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     await waitFor(() => expect(visualViewport.removeEventListener).toHaveBeenCalledWith(
       "resize",
       onViewportResize,
     ));
+    expect(visualViewport.removeEventListener).toHaveBeenCalledWith("scroll", onViewportScroll);
   });
 
   it("scrolls focused single-line event command editors into view", async () => {
