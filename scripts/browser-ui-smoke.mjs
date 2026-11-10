@@ -22,6 +22,7 @@ const output = [];
 let server;
 let browser;
 let page;
+const pageConsole = [];
 function sha(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -72,7 +73,6 @@ try {
   browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
-  const pageConsole = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("console", message => pageConsole.push(`${message.type()}: ${message.text()}`));
   await page.goto("http://127.0.0.1:5173/", { waitUntil: "domcontentloaded", timeout: 30_000 });
