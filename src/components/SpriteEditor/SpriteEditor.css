@@ -267,6 +267,17 @@
     min-height: 54px;
     gap: 6px;
     padding: 6px 8px;
+    flex-wrap: wrap;
+  }
+
+  .sprite-editor-header > strong {
+    flex: 1 1 100%;
+  }
+
+  .sprite-editor-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .sprite-editor-header strong {

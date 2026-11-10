@@ -163,6 +163,7 @@ describe("sprite editor integration", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call.length === 5)).toBe(true));
     const canvas = view.container.querySelector(".sprite-editor-canvas");
     expect(canvas).toBeTruthy();
     expect(screen.queryByRole("searchbox", { name: "Filter project character sprites" })).toBeNull();
@@ -177,6 +178,40 @@ describe("sprite editor integration", () => {
     expect(putImageData).not.toHaveBeenCalled();
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
     expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+  it("keeps sprite undo and redo reachable when tools are collapsed", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call.length === 5)).toBe(true));
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "touch", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "touch", button: 0, clientX: 100, clientY: 100,
+    });
+    expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▾" }));
+
+    const undo = screen.getByRole("button", { name: "Undo sprite edit" }) as HTMLButtonElement;
+    const redo = screen.getByRole("button", { name: "Redo sprite edit" }) as HTMLButtonElement;
+    expect(undo.disabled).toBe(false);
+    expect(redo.disabled).toBe(true);
+
+    fireEvent.click(undo);
+    await waitFor(() => {
+      expect(undo.disabled).toBe(true);
+      expect(redo.disabled).toBe(false);
+    });
+    fireEvent.click(redo);
+    await waitFor(() => {
+      expect(undo.disabled).toBe(false);
+      expect(redo.disabled).toBe(true);
+    });
   });
 
   it("keeps the sprite fitted when the canvas resizes in fit mode", async () => {

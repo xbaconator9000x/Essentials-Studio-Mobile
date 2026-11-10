@@ -1057,6 +1057,26 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             >
               {controlsCollapsed ? "Tools ▸" : "Tools ▾"}
             </button>
+            {controlsCollapsed && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Undo sprite edit"
+                  disabled={!historyRef.current.canUndo()}
+                  onClick={undoSprite}
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  aria-label="Redo sprite edit"
+                  disabled={!historyRef.current.canRedo()}
+                  onClick={redoSprite}
+                >
+                  Redo
+                </button>
+              </>
+            )}
             <button aria-label="Fit sprite to view" onClick={fitSprite}>Fit</button>
             <button disabled={!dirty || saving} onClick={() => void saveSprite().catch(() => {})}>
               {saving ? "Saving…" : "Save sprite"}
