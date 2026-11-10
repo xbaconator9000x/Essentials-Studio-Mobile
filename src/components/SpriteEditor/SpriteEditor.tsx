@@ -48,6 +48,9 @@ interface PointerPoint {
 
 const TOOL_PANEL_PREFERENCE = "essentials-studio:sprite-editor:tools-collapsed";
 const PALETTE_PREFERENCE = "essentials-studio:sprite-editor:palette-visible";
+const QUICK_SPRITE_COLORS = [
+  "#000000", "#ffffff", "#e64553", "#40a02b", "#1e66f5", "#df8e1d", "#8839ef", "#179299",
+];
 
 function readPanelPreference(key: string): boolean | null {
   try {
@@ -1119,6 +1122,29 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onChange={(event) => setBrushColor(event.target.value)}
               />
             </label>
+            <label className="sprite-editor-quick-size">
+              Size
+              <input
+                type="range"
+                aria-label="Quick brush size"
+                min="1"
+                max="8"
+                value={brushSize}
+                onChange={(event) => setBrushSize(Number(event.target.value))}
+              />
+            </label>
+            <div className="sprite-editor-quick-swatches" role="group" aria-label="Quick sprite colors">
+              {QUICK_SPRITE_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  aria-label={`Select ${color}`}
+                  aria-pressed={brushColor.toLowerCase() === color}
+                  style={{ backgroundColor: color }}
+                  onClick={() => setBrushColor(color)}
+                />
+              ))}
+            </div>
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
               <button type="button" disabled={!selection || loading || saving}
                 onClick={() => copySelection()}>Copy</button>
@@ -1260,7 +1286,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                     <input type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} />
                   </label>
                   <div className="sprite-editor-swatches" role="group" aria-label="Quick colors">
-                    {["#000000", "#ffffff", "#e64553", "#40a02b", "#1e66f5", "#df8e1d", "#8839ef", "#179299"].map((color) => (
+                    {QUICK_SPRITE_COLORS.map((color) => (
                       <button
                         key={color}
                         type="button"

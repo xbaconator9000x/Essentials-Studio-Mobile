@@ -134,6 +134,39 @@
   background: var(--color-surface0);
 }
 
+.sprite-editor-quick-size {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-subtext1);
+  font-size: 12px;
+}
+
+.sprite-editor-quick-size input[type="range"] {
+  width: 84px;
+  min-height: 44px;
+}
+
+.sprite-editor-quick-swatches {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.sprite-editor-quick-swatches > button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--color-surface1);
+}
+
+.sprite-editor-quick-swatches > button[aria-pressed="true"] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .sprite-editor-tools label {
   display: flex;
   flex-direction: column;

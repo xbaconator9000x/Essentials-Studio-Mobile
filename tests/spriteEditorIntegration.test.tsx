@@ -198,6 +198,12 @@ describe("sprite editor integration", () => {
       target: { value: "#e64553" },
     });
     expect((screen.getByLabelText("Quick sprite color") as HTMLInputElement).value).toBe("#e64553");
+    fireEvent.change(screen.getByLabelText("Quick brush size"), {
+      target: { value: "3" },
+    });
+    expect((screen.getByLabelText("Quick brush size") as HTMLInputElement).value).toBe("3");
+    fireEvent.click(screen.getByRole("button", { name: "Select #40a02b" }));
+    expect(screen.getByRole("button", { name: "Select #40a02b" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
     await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(128));
