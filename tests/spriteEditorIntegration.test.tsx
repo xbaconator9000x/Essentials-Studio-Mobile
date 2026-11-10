@@ -591,6 +591,7 @@ describe("sprite editor integration", () => {
   it("applies fill and samples a color only when a single-finger tap completes", async () => {
     const fillView = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
     const fillCanvas = fillView.container.querySelector(".sprite-editor-canvas");
     expect(fillCanvas).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Fill (G)" }));
@@ -608,6 +609,7 @@ describe("sprite editor integration", () => {
 
     const pickerView = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
     const pickerCanvas = pickerView.container.querySelector(".sprite-editor-canvas");
     expect(pickerCanvas).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Pick (I)" }));
@@ -717,6 +719,7 @@ describe("sprite editor integration", () => {
   it("uses a touch drag to select pixels without dirtying the sprite", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
     const canvas = view.container.querySelector(".sprite-editor-canvas");
     expect(canvas).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Select (S)" }));
