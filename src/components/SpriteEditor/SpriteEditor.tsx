@@ -1084,6 +1084,49 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <button disabled={saving} onClick={() => void requestClose()}>Close</button>
           </div>
         </header>
+        {controlsCollapsed && (
+          <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools">
+              {([
+                ["brush", "Brush"],
+                ["eraser", "Erase"],
+                ["eyedropper", "Pick"],
+                ["fill", "Fill"],
+                ["select", "Select"],
+                ["pan", "Pan"],
+              ] as [SpriteTool, string][]).map(([name, label]) => (
+                <button
+                  key={name}
+                  type="button"
+                  aria-label={`${label} sprite pixels`}
+                  aria-pressed={tool === name}
+                  onClick={() => setTool(name)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="sprite-editor-quick-color">
+              Color
+              <input
+                type="color"
+                aria-label="Quick sprite color"
+                value={brushColor}
+                onChange={(event) => setBrushColor(event.target.value)}
+              />
+            </label>
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
+              <button type="button" disabled={!selection || loading || saving}
+                onClick={() => copySelection()}>Copy</button>
+              <button type="button" disabled={!selection || loading || saving}
+                onClick={() => copySelection(true)}>Cut</button>
+              <button type="button" disabled={!selection || !clipboard || loading || saving}
+                onClick={() => pasteSelection()}>Paste</button>
+              <button type="button" disabled={!selection}
+                onClick={() => setSelection(null)}>Clear</button>
+            </div>
+          </div>
+        )}
         <div className="sprite-editor-workspace">
           <aside
             id="sprite-editor-controls"

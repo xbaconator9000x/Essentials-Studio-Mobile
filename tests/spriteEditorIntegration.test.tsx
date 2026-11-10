@@ -180,6 +180,42 @@ describe("sprite editor integration", () => {
     expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
   });
 
+  it("keeps touch tools, color, and selection actions available when the tools panel is collapsed", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const toolbar = screen.getByRole("toolbar", { name: "Quick sprite editing" });
+    const erase = screen.getByRole("button", { name: "Erase sprite pixels" });
+    expect(erase.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(erase);
+    expect(erase.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.change(screen.getByLabelText("Quick sprite color"), {
+      target: { value: "#e64553" },
+    });
+    expect((screen.getByLabelText("Quick sprite color") as HTMLInputElement).value).toBe("#e64553");
+
+    const copy = screen.getByRole("button", { name: "Copy", exact: true });
+    expect(copy.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Select sprite pixels" }));
+    const canvas = view.container.querySelector(".sprite-editor-canvas")!;
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+    fireEvent.pointerUp(canvas, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100,
+    });
+
+    expect(copy.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(copy);
+    expect(toolbar.textContent).toContain("Paste");
+    expect(screen.getByRole("button", { name: "Paste", exact: true }).hasAttribute("disabled")).toBe(false);
+  });
+
   it("keeps sprite undo and redo reachable when tools are collapsed", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const view = renderEditor();
