@@ -28,6 +28,7 @@ import {
   exportProjectZip,
   exportBrowserProjectZip,
   discardFailedProjectImport,
+  type AndroidDocumentImportProgress,
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
 import { pickAndroidDocument } from "./services/androidDocumentPicker";
@@ -314,6 +315,7 @@ function AppContent() {
   const projectOpenCoordinator = useRef(new ProjectOpenCoordinator());
   const mapSelectionCoordinator = useRef(new ProjectOpenCoordinator());
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
+  const [archiveProgressDetail, setArchiveProgressDetail] = useState<string | null>(null);
   const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
   useEffect(() => { mapDataRef.current = mapData; }, [mapData]);
@@ -529,6 +531,7 @@ function AppContent() {
     editorOperationRef.current = true;
     setLoading(true);
     setArchiveProgress(0);
+    setArchiveProgressDetail(null);
     setArchiveOutcome(null);
     setError(null);
     try {
@@ -555,6 +558,7 @@ function AppContent() {
       editorOperationRef.current = false;
       setLoading(false);
       setArchiveProgress(null);
+      setArchiveProgressDetail(null);
     }
   }, [confirmProjectSwitch, handleOpenProject]);
 
@@ -583,7 +587,23 @@ function AppContent() {
       if (typeof selected !== "string") {
         throw new Error("Android document picker returned an unsupported selection");
       }
-      await handleImportSource(selected, importProjectZipFromAndroidDocument);
+      const importArchive = (
+        uri: string,
+        onProgress?: (percent: number) => void,
+      ) => {
+        setArchiveProgressDetail("Waiting for Android to open the selected project ZIP...");
+        return importProjectZipFromAndroidDocument(uri, onProgress, (progress: AndroidDocumentImportProgress) => {
+          if (progress.stage === "reading") {
+            const megabytes = (progress.bytesRead / (1024 * 1024)).toFixed(1);
+            setArchiveProgressDetail(`Read ${megabytes} MiB from Android ZIP...`);
+          } else if (progress.stage === "validating") {
+            setArchiveProgressDetail("Validating ZIP and creating the private project copy...");
+          } else {
+            setArchiveProgressDetail("ZIP imported; opening project...");
+          }
+        });
+      };
+      await handleImportSource(selected, importArchive);
     } catch (err) {
       setError(`Project ZIP import failed: ${String(err)}`);
     }
@@ -1161,7 +1181,11 @@ function AppContent() {
               Import ZIP (native)
             </button>
           )}
-          {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
+          {archiveProgress !== null && (
+            <span className="app-loading">
+              {archiveProgressDetail ?? `${archiveProgress}%`}
+            </span>
+          )}
           {canOpenProjectFolder && (
             <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
               Open...
@@ -1173,7 +1197,8 @@ function AppContent() {
 
       {archiveProgress !== null && (
         <div className="app-operation-status" role="status" aria-live="polite">
-          {archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`}
+          {archiveProgressDetail ??
+            (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
         </div>
       )}
       {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}

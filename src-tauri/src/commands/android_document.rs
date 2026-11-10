@@ -11,6 +11,26 @@ use super::project_archive::{
 
 #[cfg(any(target_os = "android", test))]
 const DOCUMENT_IMPORT_CHUNK_BYTES: usize = 64 * 1024;
+#[cfg(target_os = "android")]
+const DOCUMENT_IMPORT_PROGRESS_INTERVAL: u64 = 1024 * 1024;
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AndroidDocumentImportProgress {
+    stage: &'static str,
+    bytes_read: u64,
+}
+
+#[cfg(target_os = "android")]
+fn send_import_progress(
+    channel: &tauri::ipc::Channel<AndroidDocumentImportProgress>,
+    stage: &'static str,
+    bytes_read: u64,
+) {
+    // Progress is informational. A closed frontend channel must not interrupt
+    // the bounded copy or change the import's validation/cleanup semantics.
+    let _ = channel.send(AndroidDocumentImportProgress { stage, bytes_read });
+}
 
 #[cfg(target_os = "android")]
 fn trace_android_document_import(stage: &str) {
@@ -85,24 +105,30 @@ fn verify_document_readback_chunk(expected: &[u8], actual: &[i8]) -> std::io::Re
 pub async fn import_project_archive_from_document(
     app: AppHandle,
     document_uri: String,
+    progress: tauri::ipc::Channel<AndroidDocumentImportProgress>,
 ) -> Result<String, String> {
     validate_document_uri(&document_uri)?;
 
     #[cfg(target_os = "android")]
     {
         trace_android_document_import("begin");
+        send_import_progress(&progress, "reading", 0);
         let import_id = begin_project_archive_import(app.clone()).await?;
         trace_android_document_import("staging stream start");
+        let progress_for_worker = progress.clone();
         let result = async {
             let path = staging_path(&import_root(&app)?, &import_id)?;
-            tauri::async_runtime::spawn_blocking(move || {
-                stream_android_document_to_staging(&path, &document_uri)
+            let bytes_read = tauri::async_runtime::spawn_blocking(move || {
+                stream_android_document_to_staging(&path, &document_uri, &progress_for_worker)
             })
             .await
             .map_err(|e| format!("Android document import worker failed: {e}"))??;
             trace_android_document_import("staging stream complete");
             trace_android_document_import("archive finalization start");
-            finish_project_archive_import(app.clone(), import_id.clone()).await
+            send_import_progress(&progress, "validating", bytes_read);
+            let project_path = finish_project_archive_import(app.clone(), import_id.clone()).await?;
+            send_import_progress(&progress, "ready", bytes_read);
+            Ok(project_path)
         }
         .await;
         trace_android_document_import(if result.is_ok() {
@@ -117,13 +143,17 @@ pub async fn import_project_archive_from_document(
     }
     #[cfg(not(target_os = "android"))]
     {
-        let _ = app;
+        let _ = (app, progress);
         Err("Android document import is only available on Android".into())
     }
 }
 
 #[cfg(target_os = "android")]
-fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Result<u64, String> {
+fn stream_android_document_to_staging(
+    path: &std::path::Path,
+    uri: &str,
+    progress: &tauri::ipc::Channel<AndroidDocumentImportProgress>,
+) -> Result<u64, String> {
     use jni::objects::{JObject, JValue};
     use std::fs::OpenOptions;
     use std::io;
@@ -163,6 +193,7 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
             let mut writer = BoundedDocumentWriter::new(file, MAX_ARCHIVE_BYTES);
             let bytes = env.new_byte_array(DOCUMENT_IMPORT_CHUNK_BYTES as i32)?;
             let mut buffer = [0i8; DOCUMENT_IMPORT_CHUNK_BYTES];
+            let mut last_reported_bytes = 0u64;
             let transfer_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 loop {
                     let count = env.call_method(
@@ -181,6 +212,10 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
                     env.get_byte_array_region(&bytes, 0, &mut buffer[..count])?;
                     let chunk = buffer[..count].iter().map(|byte| *byte as u8).collect::<Vec<_>>();
                     writer.write_chunk(&chunk)?;
+                    if writer.written - last_reported_bytes >= DOCUMENT_IMPORT_PROGRESS_INTERVAL {
+                        last_reported_bytes = writer.written;
+                        send_import_progress(progress, "reading", writer.written);
+                    }
                 }
                 Ok(())
             })();
@@ -189,6 +224,7 @@ fn stream_android_document_to_staging(path: &std::path::Path, uri: &str) -> Resu
             delete_result?;
             let (file, written) = writer.finish()?;
             file.sync_all()?;
+            send_import_progress(progress, "reading", written);
             trace_android_document_import("provider input stream read complete");
             Ok(written)
         })();
@@ -465,7 +501,8 @@ fn delete_android_document(uri: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        document_failure_message, validate_document_uri, BoundedDocumentWriter,
+        document_failure_message, validate_document_uri, AndroidDocumentImportProgress,
+        BoundedDocumentWriter,
         verify_document_readback_chunk, DOCUMENT_IMPORT_CHUNK_BYTES,
     };
     use std::io::Cursor;
@@ -485,6 +522,17 @@ mod tests {
         ] {
             assert!(validate_document_uri(valid).is_ok());
         }
+    }
+
+    #[test]
+    fn document_import_progress_uses_the_frontend_channel_field_names() {
+        let progress = AndroidDocumentImportProgress {
+            stage: "reading",
+            bytes_read: 1024,
+        };
+        let value = serde_json::to_value(progress).unwrap();
+        assert_eq!(value["stage"], "reading");
+        assert_eq!(value["bytesRead"], 1024);
     }
 
     #[test]

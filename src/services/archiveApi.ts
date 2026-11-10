@@ -16,6 +16,11 @@ import {
   verifyImportChunkAcknowledgement,
 } from "./archiveChunks";
 
+export interface AndroidDocumentImportProgress {
+  stage: "reading" | "validating" | "ready";
+  bytesRead: number;
+}
+
 export async function importProjectZip(
   file: File,
   onProgress?: (percent: number) => void,
@@ -60,12 +65,19 @@ export async function importProjectZip(
 export async function importProjectZipFromAndroidDocument(
   documentUri: string,
   onProgress?: (percent: number) => void,
+  onTransferProgress?: (progress: AndroidDocumentImportProgress) => void,
 ): Promise<string> {
   if (!documentUri.startsWith("content://")) {
     throw new Error("Android document picker must return a scoped content URI");
   }
+  const { Channel } = await import("@tauri-apps/api/core");
+  const progress = new Channel<AndroidDocumentImportProgress>();
+  progress.onmessage = (update) => onTransferProgress?.(update);
   onProgress?.(0);
-  const projectPath = await invoke<string>("import_project_archive_from_document", { documentUri });
+  const projectPath = await invoke<string>("import_project_archive_from_document", {
+    documentUri,
+    progress,
+  });
   onProgress?.(100);
   return projectPath;
 }
