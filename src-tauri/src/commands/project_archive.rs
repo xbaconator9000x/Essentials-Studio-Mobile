@@ -1276,6 +1276,13 @@ mod archive_roundtrip_tests {
         }
     }
 
+    fn test_project_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
     fn sample_zip(path: &Path, prefix: &str, extra: Option<&str>) {
         let file = File::create(path).unwrap();
         let mut zip = ZipWriter::new(file);
@@ -1879,10 +1886,7 @@ mod archive_roundtrip_tests {
         assert!(imported.join("Game.rxproj").is_file());
         assert!(imported.join("Graphics/Empty").is_dir());
 
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = test_project_runtime();
         runtime.block_on(async {
             let project = crate::commands::project::open_project(
                 imported.to_string_lossy().into_owned(),
@@ -2066,6 +2070,8 @@ mod archive_roundtrip_tests {
             .expect("reimport exported synthetic project ZIP"),
         );
         assert!(reopened_root.join("Graphics/Empty").is_dir());
+        drop(runtime);
+        let runtime = test_project_runtime();
         assert_eq!(
             fs::read(reopened_root.join("Data/Scripts.rxdata")).unwrap(),
             fs::read(imported.join("Data/Scripts.rxdata")).unwrap(),
@@ -2173,10 +2179,7 @@ mod archive_roundtrip_tests {
             "import must publish the original map bytes"
         );
 
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = test_project_runtime();
         let project_path = imported.to_string_lossy().into_owned();
         let tiled_map = runtime.block_on(async {
             crate::commands::project::open_project(project_path.clone()).await.unwrap();
@@ -2294,6 +2297,8 @@ mod archive_roundtrip_tests {
         assert_eq!(reopened_sprite.to_rgba8().get_pixel(7, 9), &image::Rgba([255, 0, 0, 255]));
         assert!(regenerated.join("Graphics/Empty").is_dir());
         let gen2_path = regenerated.to_string_lossy().into_owned();
+        drop(runtime);
+        let runtime = test_project_runtime();
         runtime.block_on(async {
             crate::commands::project::open_project(gen2_path.clone()).await.unwrap();
             let map = crate::commands::project::load_map(gen2_path.clone(), 1).await.unwrap();
@@ -2331,6 +2336,8 @@ mod archive_roundtrip_tests {
             "edited sprite copy must survive the second ZIP generation"
         );
         let gen3_path = gen3.to_string_lossy().into_owned();
+        drop(runtime);
+        let runtime = test_project_runtime();
         runtime.block_on(async {
             crate::commands::project::open_project(gen3_path.clone()).await.unwrap();
             let map = crate::commands::project::load_map(gen3_path.clone(), 1).await.unwrap();
