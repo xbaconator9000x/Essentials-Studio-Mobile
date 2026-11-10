@@ -588,6 +588,41 @@ describe("sprite editor integration", () => {
     }
   });
 
+  it("applies fill and samples a color only when a single-finger tap completes", async () => {
+    const fillView = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const fillCanvas = fillView.container.querySelector(".sprite-editor-canvas");
+    expect(fillCanvas).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fill (G)" }));
+    putImageData.mockClear();
+    fireEvent.pointerDown(fillCanvas!, {
+      pointerId: 1, pointerType: "touch", clientX: 76, clientY: 76,
+    });
+    expect(putImageData).not.toHaveBeenCalled();
+    fireEvent.pointerUp(fillCanvas!, {
+      pointerId: 1, pointerType: "touch", clientX: 76, clientY: 76,
+    });
+    expect(putImageData).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    fillView.unmount();
+
+    const pickerView = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const pickerCanvas = pickerView.container.querySelector(".sprite-editor-canvas");
+    expect(pickerCanvas).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Pick (I)" }));
+    fireEvent.pointerDown(pickerCanvas!, {
+      pointerId: 2, pointerType: "touch", clientX: 76, clientY: 76,
+    });
+    expect((screen.getByLabelText("Selected color") as HTMLInputElement).value).toBe("#ffffff");
+    fireEvent.pointerUp(pickerCanvas!, {
+      pointerId: 2, pointerType: "touch", clientX: 76, clientY: 76,
+    });
+    expect((screen.getByLabelText("Selected color") as HTMLInputElement).value).toBe("#000000");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
   it("paints a single-finger touch tap on release", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
