@@ -199,6 +199,13 @@ describe("sprite editor integration", () => {
     });
     expect((screen.getByLabelText("Quick sprite color") as HTMLInputElement).value).toBe("#e64553");
 
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(128));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(64));
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+
     const copy = screen.getByRole("button", { name: "Copy", exact: true });
     expect(copy.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Select sprite pixels" }));

@@ -1106,6 +1106,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </button>
               ))}
             </div>
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite zoom controls">
+              <button type="button" aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
+              <button type="button" aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
+            </div>
             <label className="sprite-editor-quick-color">
               Color
               <input
