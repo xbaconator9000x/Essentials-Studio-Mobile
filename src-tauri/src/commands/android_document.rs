@@ -466,7 +466,7 @@ fn delete_android_document(uri: &str) -> Result<(), String> {
 mod tests {
     use super::{
         document_failure_message, validate_document_uri, BoundedDocumentWriter,
-        DOCUMENT_IMPORT_CHUNK_BYTES,
+        verify_document_readback_chunk, DOCUMENT_IMPORT_CHUNK_BYTES,
     };
     use std::io::Cursor;
 
