@@ -26,6 +26,21 @@ const pageConsole = [];
 function sha(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
+function inspectSpritePng(path) {
+  const helperPath = resolve("scripts/android-emulator-sprite-smoke.py");
+  const source = [
+    "import importlib.util, json, sys",
+    "from pathlib import Path",
+    "spec = importlib.util.spec_from_file_location('sprite_smoke', sys.argv[1])",
+    "module = importlib.util.module_from_spec(spec)",
+    "spec.loader.exec_module(module)",
+    "payload = Path(sys.argv[2]).read_bytes()",
+    "width, height, rows = module.png_rgba_rows(payload)",
+    "pixel = module.png_pixel(payload, width // 2, height // 2)",
+    "print(json.dumps({'width': width, 'height': height, 'center': pixel}))",
+  ].join("\n");
+  return JSON.parse(execFileSync("python3", ["-c", source, helperPath, path], { encoding: "utf8" }));
+}
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 function startWeb(input, workspace) {
   const env = { ...process.env };
@@ -108,11 +123,18 @@ try {
   const workspace = join(temp, "browser-working-copy");
   startWeb(original, workspace);
   const root = await ready();
+  const sourceSpritePath = join(root, "Graphics/Characters/SyntheticGuide.png");
+  const sourceSpriteHash = sha(sourceSpritePath);
+  const sourceSpriteInfo = inspectSpritePng(sourceSpritePath);
   const chrome = [process.env.CHROME_BIN, "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"]
     .find(path => path && existsSync(path));
   assert.ok(chrome, "No Chrome executable on CI runner; set CHROME_BIN");
   browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
-  page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const browserContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    hasTouch: true,
+  });
+  page = await browserContext.newPage();
   const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("console", message => pageConsole.push(`${message.type()}: ${message.text()}`));
@@ -272,6 +294,50 @@ try {
   );
   await page.screenshot({ path: join(evidence, "browser-project-reopened.png"), fullPage: true });
 
+  // Exercise the real portrait SpriteEditor through touch input and the native
+  // private-project save command. This closes the missing UI-to-ZIP sprite path.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileNavigation = page.getByRole("navigation", { name: "Main navigation" });
+  await mobileNavigation.getByRole("button", { name: "Sprites", exact: true }).click();
+  await page.getByRole("button", { name: "Open Sprite Editor (experimental)" }).click();
+  const spriteEditor = page.getByRole("dialog", { name: "Sprite editor" });
+  await spriteEditor.waitFor({ timeout: 15_000 });
+  await spriteEditor.getByRole("button", { name: "Tools ▸" }).click();
+  await spriteEditor.getByRole("button", { name: "Select #e64553" }).click();
+  const spriteCanvas = spriteEditor.getByRole("application", { name: "Sprite canvas" });
+  const spriteBounds = await spriteCanvas.boundingBox();
+  assert.ok(spriteBounds && spriteBounds.width > 0 && spriteBounds.height > 0,
+    "Portrait sprite canvas must have a usable touch target");
+  await spriteCanvas.tap({
+    position: { x: spriteBounds.width / 2, y: spriteBounds.height / 2 },
+  });
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ timeout: 10_000 });
+  await spriteEditor.getByRole("button", { name: "Save sprite" }).click();
+  await spriteEditor.getByRole("combobox", { name: "Select project character sprite" })
+    .waitFor({ timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const picker = document.querySelector('[aria-label="Select project character sprite"]');
+    return picker?.value === "SyntheticGuide_copy";
+  }, null, { timeout: 15_000 });
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ state: "hidden", timeout: 15_000 });
+  const copiedSpritePath = join(root, "Graphics/Characters/SyntheticGuide_copy.png");
+  assert.equal(sha(sourceSpritePath), sourceSpriteHash,
+    "Saving a sprite copy through the mobile editor must not change its source PNG");
+  const copiedSpriteInfo = inspectSpritePng(copiedSpritePath);
+  assert.deepEqual(
+    { width: copiedSpriteInfo.width, height: copiedSpriteInfo.height },
+    { width: sourceSpriteInfo.width, height: sourceSpriteInfo.height },
+    "Sprite copy must preserve the source PNG dimensions",
+  );
+  assert.notDeepEqual(copiedSpriteInfo.center, sourceSpriteInfo.center,
+    "Touch painting must change the selected source pixel in the saved copy");
+  assert.deepEqual(copiedSpriteInfo.center, [230, 69, 83, 255],
+    "Touch-painted copy pixel must match the selected palette color");
+  await page.screenshot({ path: join(evidence, "browser-sprite-copy-saved.png"), fullPage: true });
+  await spriteEditor.getByRole("button", { name: "Close" }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 15_000 });
+
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
   await status.waitFor({ timeout: 90_000 });
@@ -285,15 +351,34 @@ try {
     "scripts/verify_project_roundtrip.py", original, exported,
     "--allow-changed", "Data/Map001.rxdata",
     "--allow-changed", "PBS/pokemon.txt",
+    "--allow-added", "Graphics/Characters/SyntheticGuide_copy.png",
   ], { encoding: "utf8" }));
   assert.equal(verification.status, "verified");
-  assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
+  assert.deepEqual(verification.approved_changed_files, [
+    "Data/Map001.rxdata",
+    "PBS/pokemon.txt",
+  ]);
+  assert.deepEqual(verification.approved_added_files, [
+    "Graphics/Characters/SyntheticGuide_copy.png",
+  ]);
   const reopened = execFileSync("src-tauri/target/debug/browser_archive", [
     "import", exported, join(temp, "reopened"),
   ], { encoding: "utf8" }).trim();
   assert.equal(sha(join(root, "Data/Map001.rxdata")), sha(join(reopened, "Data/Map001.rxdata")));
   assert.equal(sha(join(root, "PBS/pokemon.txt")), sha(join(reopened, "PBS/pokemon.txt")),
     "Exported/reimported PBS must preserve the actual UI edit");
+  assert.equal(
+    sha(join(root, "Graphics/Characters/SyntheticGuide_copy.png")),
+    sha(join(reopened, "Graphics/Characters/SyntheticGuide_copy.png")),
+    "Sprite copy edited through the mobile UI must survive ZIP export and reimport byte-for-byte",
+  );
+  assert.equal(sha(join(root, "Graphics/Characters/SyntheticGuide.png")), sourceSpriteHash,
+    "Export and reimport must preserve the original character graphic");
+  assert.deepEqual(
+    inspectSpritePng(join(reopened, "Graphics/Characters/SyntheticGuide_copy.png")),
+    copiedSpriteInfo,
+    "Export/reimport must preserve sprite dimensions and painted pixel",
+  );
   assert.equal(sha(original), originalHash, "Original ZIP must not change");
   assert.deepEqual(pageErrors, [], "No uncaught browser JavaScript errors");
   await page.screenshot({ path: join(evidence, "browser-export-complete.png"), fullPage: true });
@@ -304,6 +389,13 @@ try {
     changedTile: differences[0],
     changedDialogue: updatedDialogue,
     changedPokemonName: updatedPokemonName,
+    changedSpriteCopy: {
+      path: "Graphics/Characters/SyntheticGuide_copy.png",
+      sha256: sha(copiedSpritePath),
+      dimensions: [copiedSpriteInfo.width, copiedSpriteInfo.height],
+      centerPixel: copiedSpriteInfo.center,
+      sourcePngUnchanged: true,
+    },
     reactAndNativeProcessRestartPassed: true,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],

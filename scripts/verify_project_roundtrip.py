@@ -107,13 +107,21 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] | None = None) -> dict:
+def verify_roundtrip(
+    original: Path,
+    exported: Path,
+    allowed_changes: set[str] | None = None,
+    allowed_added_files: set[str] | None = None,
+) -> dict:
     allowed = set(allowed_changes or ())
-    for name in allowed:
+    allowed_added = set(allowed_added_files or ())
+    for name in allowed | allowed_added:
         if not name or name.startswith("/") or "\\" in name or any(
             part in ("", ".", "..") for part in name.split("/")
         ):
             raise ValueError(f"Invalid --allow-changed project path: {name}")
+    if allowed & allowed_added:
+        raise ValueError("A project path cannot be allowlisted as both changed and added")
 
     with zipfile.ZipFile(original) as source, zipfile.ZipFile(exported) as target:
         src_files, src_dirs = _members(source)
@@ -137,11 +145,20 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
         # An edit allowance never authorizes adding a new file. Require an
         # explicit manifest change review instead of silently blessing it.
         added_files = sorted(set(dst_files) - set(src_files))
-        if missing_dirs or added_dirs or missing_files or added_files:
+        unapproved_added_files = sorted(set(added_files) - allowed_added)
+        missing_allowed_added_files = sorted(allowed_added - set(added_files))
+        if (
+            missing_dirs
+            or added_dirs
+            or missing_files
+            or unapproved_added_files
+            or missing_allowed_added_files
+        ):
             raise ValueError(
                 f"Project manifest changed: missing directories={missing_dirs}, "
                 f"added directories={added_dirs}, "
-                f"missing files={missing_files}, added files={added_files}"
+                f"missing files={missing_files}, added files={unapproved_added_files}, "
+                f"missing approved additions={missing_allowed_added_files}"
             )
 
         # Hash every file, including approved edits, so corrupt ZIP payloads
@@ -161,6 +178,7 @@ def verify_roundtrip(original: Path, exported: Path, allowed_changes: set[str] |
             "output_sha256": _file_digest(exported),
             "unchanged_files": len(src_files.keys() & dst_files.keys()) - len(changed),
             "approved_changed_files": changed,
+            "approved_added_files": added_files,
             "input_files": len(src_files),
             "output_files": len(dst_files),
             "preserved_explicit_directories": len(src_dirs),
@@ -172,9 +190,15 @@ def main() -> int:
     parser.add_argument("original", type=Path)
     parser.add_argument("exported", type=Path)
     parser.add_argument("--allow-changed", action="append", default=[], metavar="PROJECT/PATH")
+    parser.add_argument("--allow-added", action="append", default=[], metavar="PROJECT/PATH")
     args = parser.parse_args()
     try:
-        result = verify_roundtrip(args.original, args.exported, set(args.allow_changed))
+        result = verify_roundtrip(
+            args.original,
+            args.exported,
+            set(args.allow_changed),
+            set(args.allow_added),
+        )
     except (OSError, ValueError, zipfile.BadZipFile, RuntimeError) as exc:
         print(f"Project roundtrip verification failed: {exc}", file=sys.stderr)
         return 1
