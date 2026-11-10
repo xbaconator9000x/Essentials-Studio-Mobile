@@ -66,6 +66,16 @@ impl<W: std::io::Write> BoundedDocumentWriter<W> {
     }
 }
 
+#[cfg(any(target_os = "android", test))]
+fn verify_document_readback_chunk(expected: &[u8], actual: &[i8]) -> std::io::Result<()> {
+    if expected.len() != actual.len()
+        || expected.iter().zip(actual).any(|(expected, actual)| *expected != *actual as u8)
+    {
+        return Err(std::io::Error::other("Android document differs from exported ZIP"));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn import_project_archive_from_document(
     app: AppHandle,
@@ -359,9 +369,7 @@ fn write_and_verify_android_document(path: &std::path::Path, uri: &str) -> Resul
                 let n = n as usize;
                 env.get_byte_array_region(&bytes, 0, &mut actual[..n])?;
                 original.read_exact(&mut expected[..n])?;
-                if actual[..n].iter().zip(&expected[..n]).any(|(a, b)| *a as u8 != *b) {
-                    return Err(io::Error::other("Android document differs from exported ZIP").into());
-                }
+                verify_document_readback_chunk(&expected[..n], &actual[..n])?;
                 verified += n as u64;
             }
             env.delete_local_ref(bytes)?;
@@ -493,6 +501,33 @@ mod tests {
         assert!(writer.write_chunk(&vec![0; DOCUMENT_IMPORT_CHUNK_BYTES + 1]).is_err());
         writer.write_chunk(b"12345678").unwrap();
         assert!(writer.write_chunk(b"x").unwrap_err().to_string().contains("limit"));
+    }
+
+    #[test]
+    fn document_readback_accepts_complete_archive_chunks_and_rejects_partial_or_changed_bytes() {
+        let archive = (0..(DOCUMENT_IMPORT_CHUNK_BYTES + 37))
+            .map(|index| (index % 256) as u8)
+            .collect::<Vec<_>>();
+        let mut writer = BoundedDocumentWriter::new(Cursor::new(Vec::new()), archive.len() as u64);
+        for chunk in archive.chunks(DOCUMENT_IMPORT_CHUNK_BYTES) {
+            writer.write_chunk(chunk).unwrap();
+        }
+        let (provider_document, written) = writer.finish().unwrap();
+        let provider_bytes = provider_document.into_inner();
+        assert_eq!(written, archive.len() as u64);
+        assert_eq!(provider_bytes, archive);
+
+        for (expected, actual) in archive
+            .chunks(DOCUMENT_IMPORT_CHUNK_BYTES)
+            .zip(provider_bytes.chunks(DOCUMENT_IMPORT_CHUNK_BYTES))
+        {
+            let actual = actual.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
+            verify_document_readback_chunk(expected, &actual).unwrap();
+        }
+
+        let changed = vec![0i8; 8];
+        assert!(verify_document_readback_chunk(b"12345678", &changed).is_err());
+        assert!(verify_document_readback_chunk(b"12345678", &[49i8]).is_err());
     }
 
     #[test]

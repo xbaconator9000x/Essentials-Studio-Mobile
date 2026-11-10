@@ -124,8 +124,10 @@ try {
   });
   const eventEditor = page.locator(".event-editor");
   await eventEditor.waitFor({ timeout: 15_000 });
-  // Single-line Show Text renders CommandRow; multi-line text uses MultiLineBlock.
-  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
+  // Use the visible mobile action as well as retaining the desktop double-click
+  // path; this catches regressions where the editor is not exposed to touch users.
+  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first()
+    .getByRole("button", { name: "Edit dialogue" }).click();
   const dialogueEditor = eventEditor.locator(".event-command-edit-input, .event-command-edit-textarea");
   await dialogueEditor.waitFor({ timeout: 10_000 });
   const updatedDialogue = "Chromium event dialogue roundtrip";
@@ -133,13 +135,24 @@ try {
   await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
-  await eventEditor.getByRole("button", { name: "Save & close", exact: true }).click();
-  await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.waitForFunction(
+    () => document.querySelector(".app-title")?.textContent?.includes(" *"),
+    null,
+    { timeout: 10_000 },
+  );
+  const saveAll = page.getByRole("button", { name: "Save All", exact: true });
+  await saveAll.click({ force: true });
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  ).waitFor({ state: "visible", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
     "Show Text face graphic must remain unchanged");
   assert.equal(dialogueAfter.pages[0].list[1].parameters[0], updatedDialogue,
-    "Dialogue edited through React must persist in native RMXP event commands");
+    "Save All must persist dialogue edited through React in native RMXP event commands");
+  await eventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   // Saving the event must not undo the tile edit saved earlier.
   const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(afterEvent.tiles[differences[0].index], differences[0].tile);
