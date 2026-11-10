@@ -16,7 +16,7 @@ const DOCUMENT_IMPORT_PROGRESS_INTERVAL: u64 = 1024 * 1024;
 
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct AndroidDocumentImportProgress {
+pub struct AndroidDocumentImportProgress {
     stage: &'static str,
     bytes_read: u64,
 }
