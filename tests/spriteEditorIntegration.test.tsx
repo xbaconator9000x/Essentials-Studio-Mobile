@@ -19,6 +19,7 @@ const putImageData = vi.fn();
 const serializedCanvases: HTMLCanvasElement[] = [];
 let resizeObserverCallback: ResizeObserverCallback | null = null;
 let spriteViewportBounds = { width: 200, height: 200 };
+let spritePixelFixture: Uint8ClampedArray | null = null;
 
 vi.mock("../src/services/tauriApi", () => editorApi);
 vi.mock("../src/services/imageLoader", () => editorApi);
@@ -32,7 +33,9 @@ const context = {
   clearRect: vi.fn(),
   drawImage: vi.fn(),
   getImageData: vi.fn((_x: number, _y: number, width: number, height: number) => ({
-    data: new Uint8ClampedArray(width * height * 4),
+    data: spritePixelFixture?.length === width * height * 4
+      ? new Uint8ClampedArray(spritePixelFixture)
+      : new Uint8ClampedArray(width * height * 4),
     width,
     height,
     colorSpace: "srgb",
@@ -42,6 +45,8 @@ const context = {
   moveTo: vi.fn(),
   lineTo: vi.fn(),
   stroke: vi.fn(),
+  strokeRect: vi.fn(),
+  setLineDash: vi.fn(),
 } as unknown as CanvasRenderingContext2D;
 
 function renderEditor(onSaved = vi.fn()) {
@@ -66,6 +71,7 @@ beforeEach(() => {
   window.localStorage.clear();
   resizeObserverCallback = null;
   spriteViewportBounds = { width: 200, height: 200 };
+  spritePixelFixture = null;
   editorApi.listAssetFiles.mockResolvedValue(["Guide"]);
   editorApi.loadCharacterImage.mockResolvedValue({ width: 4, height: 4 });
   editorApi.savePrivateProjectSprite.mockImplementation(
@@ -557,6 +563,31 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
   });
 
+  it("does not apply fill or color-pick on touch down if the gesture becomes a pinch", async () => {
+    for (const [toolLabel, expectedFillCalls] of [["Fill (G)", 0], ["Pick (I)", 0]] as const) {
+      const view = renderEditor();
+      await screen.findByDisplayValue("Guide");
+      await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+      const canvas = view.container.querySelector(".sprite-editor-canvas");
+      expect(canvas).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: toolLabel }));
+      putImageData.mockClear();
+      fillRect.mockClear();
+
+      fireEvent.pointerDown(canvas!, {
+        pointerId: 1, pointerType: "touch", clientX: 76, clientY: 76,
+      });
+      fireEvent.pointerDown(canvas!, {
+        pointerId: 2, pointerType: "touch", clientX: 92, clientY: 76,
+      });
+
+      expect(putImageData).not.toHaveBeenCalled();
+      expect(fillRect).toHaveBeenCalledTimes(expectedFillCalls);
+      expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+      view.unmount();
+    }
+  });
+
   it("paints a single-finger touch tap on release", async () => {
     const view = renderEditor();
     await screen.findByDisplayValue("Guide");
@@ -584,6 +615,91 @@ describe("sprite editor integration", () => {
     expect(putImageData).toHaveBeenCalledTimes(1);
     expect(putImageData.mock.calls[0][0].data[2 * 4 * 4 + 2 * 4 + 3]).toBe(255);
     expect(await screen.findByText("Unsaved pixel edits")).toBeTruthy();
+  });
+
+  it("marquees, copies, cuts, pastes and undoes selected sprite pixels", async () => {
+    spritePixelFixture = new Uint8ClampedArray(4 * 4 * 4);
+    spritePixelFixture.set([255, 0, 0, 255], 0);
+    spritePixelFixture.set([0, 255, 0, 255], 4);
+    spritePixelFixture.set([0, 0, 255, 255], 8);
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Select (S)" }));
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 76, clientY: 76,
+    });
+    fireEvent.pointerMove(canvas!, {
+      pointerId: 1, pointerType: "mouse", clientX: 108, clientY: 76,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "mouse", clientX: 108, clientY: 76,
+    });
+    expect(screen.getByRole("status", { name: "Selected sprite pixels" }).textContent)
+      .toBe("Selected 3 × 1 pixels");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cut selection" }));
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    let pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(0, 12)]).toEqual(new Array(12).fill(0));
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(0, 12)]).toEqual([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 2, pointerType: "mouse", button: 0, clientX: 76, clientY: 76,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 2, pointerType: "mouse", clientX: 76, clientY: 76,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Copy selection" }));
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 3, pointerType: "mouse", button: 0, clientX: 92, clientY: 76,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 3, pointerType: "mouse", clientX: 92, clientY: 76,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Paste selection" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(4, 8)]).toEqual([255, 0, 0, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(4, 8)]).toEqual([0, 255, 0, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Guide",
+      "Guide_copy",
+      "copy",
+      "data:image/png;base64,cGl4ZWxz",
+    ));
+  });
+
+  it("uses a touch drag to select pixels without dirtying the sprite", async () => {
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const canvas = view.container.querySelector(".sprite-editor-canvas");
+    expect(canvas).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Select (S)" }));
+
+    fireEvent.pointerDown(canvas!, {
+      pointerId: 1, pointerType: "touch", clientX: 76, clientY: 76,
+    });
+    fireEvent.pointerMove(canvas!, {
+      pointerId: 1, pointerType: "touch", clientX: 92, clientY: 92,
+    });
+    fireEvent.pointerUp(canvas!, {
+      pointerId: 1, pointerType: "touch", clientX: 92, clientY: 92,
+    });
+
+    expect(screen.getByRole("status", { name: "Selected sprite pixels" }).textContent)
+      .toBe("Selected 2 × 2 pixels");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
   });
 
   it("interpolates a fast single-finger touch brush stroke across missed pixels", async () => {

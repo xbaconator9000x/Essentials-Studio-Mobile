@@ -142,4 +142,11 @@ test("selection operations reject invalid buffers and clipboard dimensions", () 
     height: 2,
     data: new Uint8ClampedArray(3),
   }, { x: 0, y: 0 }), null);
+  const large = image(1001, 1000);
+  assert.equal(copySpriteSelection(large, 1001, 1000, {
+    x: 0, y: 0, width: 1001, height: 1000,
+  }), null);
+  assert.equal(clearSpriteSelection(large, 1001, 1000, {
+    x: 0, y: 0, width: 1001, height: 1000,
+  }), null);
 });

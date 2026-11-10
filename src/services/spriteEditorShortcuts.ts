@@ -3,7 +3,10 @@ import type { SpriteTool } from "./spriteEditorPixels";
 export type SpriteShortcut =
   | { type: "tool"; tool: SpriteTool }
   | { type: "undo" }
-  | { type: "redo" };
+  | { type: "redo" }
+  | { type: "copy" }
+  | { type: "cut" }
+  | { type: "paste" };
 
 interface ShortcutEvent {
   key: string;
@@ -32,6 +35,9 @@ export function resolveSpriteShortcut(event: ShortcutEvent): SpriteShortcut | nu
   if (event.ctrlKey || event.metaKey) {
     if (key === "z") return { type: event.shiftKey ? "redo" : "undo" };
     if (key === "y") return { type: "redo" };
+    if (key === "c") return { type: "copy" };
+    if (key === "x") return { type: "cut" };
+    if (key === "v") return { type: "paste" };
     return null;
   }
   if (event.shiftKey) return null;
@@ -40,6 +46,7 @@ export function resolveSpriteShortcut(event: ShortcutEvent): SpriteShortcut | nu
     e: "eraser",
     i: "eyedropper",
     g: "fill",
+    s: "select",
     p: "pan",
   };
   const tool = tools[key];

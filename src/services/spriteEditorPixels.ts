@@ -85,7 +85,8 @@ export function copySpriteSelection(
   selection: SpriteSelection,
 ): SpriteClipboardImage | null {
   if (!isValidImage(data, imageWidth, imageHeight)
-      || !isValidSpriteSelection(selection, imageWidth, imageHeight)) return null;
+      || !isValidSpriteSelection(selection, imageWidth, imageHeight)
+      || selection.width * selection.height > MAX_SPRITE_EDIT_PIXELS) return null;
   const copied = new Uint8ClampedArray(selection.width * selection.height * 4);
   for (let y = 0; y < selection.height; y++) {
     const sourceStart = ((selection.y + y) * imageWidth + selection.x) * 4;
@@ -102,7 +103,8 @@ export function clearSpriteSelection(
   selection: SpriteSelection,
 ): SpritePixelAction | null {
   if (!isValidImage(data, imageWidth, imageHeight)
-      || !isValidSpriteSelection(selection, imageWidth, imageHeight)) return null;
+      || !isValidSpriteSelection(selection, imageWidth, imageHeight)
+      || selection.width * selection.height > MAX_SPRITE_EDIT_PIXELS) return null;
   const changes = new Map<number, { before: number; after: number }>();
   for (let y = selection.y; y < selection.y + selection.height; y++) {
     for (let x = selection.x; x < selection.x + selection.width; x++) {
@@ -125,6 +127,7 @@ export function pasteSpriteSelection(
 ): SpritePixelAction | null {
   if (!isValidImage(data, imageWidth, imageHeight)
       || !isValidImage(clipboard.data, clipboard.width, clipboard.height)
+      || clipboard.width * clipboard.height > MAX_SPRITE_EDIT_PIXELS
       || !Number.isInteger(destination.x) || !Number.isInteger(destination.y)
       || destination.x < 0 || destination.y < 0
       || destination.x >= imageWidth || destination.y >= imageHeight) return null;

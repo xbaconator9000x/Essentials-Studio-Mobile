@@ -17,7 +17,13 @@ import {
   paintSpritePixels,
   spriteColorAt,
   SpritePixelHistory,
+  copySpriteSelection,
+  clearSpriteSelection,
+  normalizeSpriteSelection,
+  pasteSpriteSelection,
   type SpritePixelAction,
+  type SpriteClipboardImage,
+  type SpriteSelection,
   type SpriteTool,
 } from "../../services/spriteEditorPixels";
 import {
@@ -70,6 +76,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [targetName, setTargetName] = useState("");
   const [saveMode, setSaveMode] = useState<"original" | "copy">("copy");
   const [tool, setTool] = useState<SpriteTool>("brush");
+  const [selection, setSelection] = useState<SpriteSelection | null>(null);
+  const [clipboard, setClipboard] = useState<SpriteClipboardImage | null>(null);
   const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(1);
   const [zoom, setZoom] = useState(4);
@@ -112,6 +120,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const lastPaintPixel = useRef<PointerPoint | null>(null);
   const activePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
   const activeTracePan = useRef<{ id: number; point: PointerPoint; x: number; y: number } | null>(null);
+  const activeSelection = useRef<{
+    id: number;
+    start: PointerPoint;
+    previous: SpriteSelection | null;
+  } | null>(null);
   const pinchStart = useRef<{
     mode: "sprite" | "trace";
     distance: number;
@@ -329,13 +342,25 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           }
           context.stroke();
         }
+        if (selection) {
+          context.strokeStyle = "#f5c2e7";
+          context.lineWidth = 1;
+          context.setLineDash([4, 3]);
+          context.strokeRect(
+            Math.round(viewport.offsetX + selection.x * viewport.zoom) + 0.5,
+            Math.round(viewport.offsetY + selection.y * viewport.zoom) + 0.5,
+            selection.width * viewport.zoom,
+            selection.height * viewport.zoom,
+          );
+          context.setLineDash([]);
+        }
       }
     };
     const observer = new ResizeObserver(draw);
     observer.observe(container);
     draw();
     return () => observer.disconnect();
-  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY]);
+  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY, selection]);
 
   const pixelAtClient = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -350,6 +375,77 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       source.height,
     );
   }, [offsetX, offsetY, zoom]);
+
+  const clampedPixelAtClient = useCallback((clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const source = imageCanvasRef.current;
+    if (!canvas || !source) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(source.width - 1, Math.floor((clientX - rect.left - offsetX) / zoom))),
+      y: Math.max(0, Math.min(source.height - 1, Math.floor((clientY - rect.top - offsetY) / zoom))),
+    };
+  }, [offsetX, offsetY, zoom]);
+
+  const copySelection = useCallback((cut = false) => {
+    const source = imageCanvasRef.current;
+    const imageData = imageDataRef.current;
+    if (!source || !imageData || !selection) return false;
+    if (selection.width * selection.height > 1_000_000) {
+      setError("Selection exceeds the one-million-pixel clipboard limit");
+      return false;
+    }
+    const copied = copySpriteSelection(imageData.data, source.width, source.height, selection);
+    if (!copied) return false;
+    setClipboard(copied);
+    if (!cut) return true;
+
+    const action = clearSpriteSelection(imageData.data, source.width, source.height, selection);
+    if (!action) return true;
+    if (!historyRef.current.push(action)) {
+      applySpritePixelAction(imageData.data, action, "before");
+      setError("This cut exceeds the one-million-pixel undo limit");
+      return false;
+    }
+    source.getContext("2d")?.putImageData(imageData, 0, 0);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setImageRevision((value) => value + 1);
+    return true;
+  }, [selection, updateDirty]);
+
+  const pasteSelection = useCallback(() => {
+    const source = imageCanvasRef.current;
+    const imageData = imageDataRef.current;
+    if (!source || !imageData || !clipboard || !selection) return false;
+    const action = pasteSpriteSelection(
+      imageData.data,
+      source.width,
+      source.height,
+      clipboard,
+      { x: selection.x, y: selection.y },
+    );
+    if (!action) return true;
+    if (!historyRef.current.push(action)) {
+      applySpritePixelAction(imageData.data, action, "before");
+      setError("This paste exceeds the one-million-pixel undo limit");
+      return false;
+    }
+    source.getContext("2d")?.putImageData(imageData, 0, 0);
+    setSelection(normalizeSpriteSelection(
+      { x: selection.x, y: selection.y },
+      {
+        x: selection.x + Math.min(clipboard.width, source.width - selection.x) - 1,
+        y: selection.y + Math.min(clipboard.height, source.height - selection.y) - 1,
+      },
+      source.width,
+      source.height,
+    ));
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setImageRevision((value) => value + 1);
+    return true;
+  }, [clipboard, selection, updateDirty]);
 
   const paintPixel = useCallback((clientX: number, clientY: number, deferRender = false) => {
     const source = imageCanvasRef.current;
@@ -566,6 +662,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         viewport: { zoom, offsetX, offsetY },
         trace: { scale: traceScale, offsetX: traceOffsetX, offsetY: traceOffsetY },
       };
+      if (activeSelection.current) {
+        setSelection(activeSelection.current.previous);
+        activeSelection.current = null;
+      }
       fitViewportOnResize.current = false;
       cancelStroke();
       activePaintPointer.current = null;
@@ -579,8 +679,19 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       activeTracePan.current = { id: event.pointerId, point, x: traceOffsetX, y: traceOffsetY };
       return;
     }
+    if (tool === "select") {
+      const pixel = pixelAtClient(event.clientX, event.clientY);
+      if (!pixel) return;
+      activeSelection.current = { id: event.pointerId, start: pixel, previous: selection };
+      setSelection(normalizeSpriteSelection(pixel, pixel, imageCanvasRef.current!.width, imageCanvasRef.current!.height));
+      return;
+    }
     if (tool === "fill" || tool === "eyedropper") {
-      paintPixel(event.clientX, event.clientY);
+      if (event.pointerType === "touch") {
+        pendingTouchPaint.current = { id: event.pointerId, point };
+      } else {
+        paintPixel(event.clientX, event.clientY);
+      }
       return;
     }
     if (tool === "pan" || event.button === 1) {
@@ -642,8 +753,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setOffsetY(next.offsetY);
       return;
     }
-    const pan = activePan.current;
-    if (pan?.id === event.pointerId) {
+    const selecting = activeSelection.current;
+    if (selecting?.id === event.pointerId) {
+      const source = imageCanvasRef.current;
+      const pixel = clampedPixelAtClient(event.clientX, event.clientY);
+      if (source && pixel) {
+        setSelection(normalizeSpriteSelection(selecting.start, pixel, source.width, source.height));
+      }
+    } else if (activePan.current?.id === event.pointerId) {
+      const pan = activePan.current;
       fitViewportOnResize.current = false;
       setOffsetX(pan.x + point.x - pan.point.x);
       setOffsetY(pan.y + point.y - pan.point.y);
@@ -658,6 +776,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         tracePan.y + (point.y - tracePan.point.y) / (source.height * zoom) * 100,
       )));
     } else if (pendingTouchPaint.current?.id === event.pointerId) {
+      if (tool === "fill" || tool === "eyedropper") return;
       const start = pendingTouchPaint.current.point;
       pendingTouchPaint.current = null;
       lastPaintPixel.current = pixelAtClient(start.x, start.y);
@@ -668,6 +787,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   };
 
   const handlePointerEnd = (event: React.PointerEvent<HTMLCanvasElement>, commitTap: boolean) => {
+    const selecting = activeSelection.current;
+    if (selecting?.id === event.pointerId) {
+      const source = imageCanvasRef.current;
+      const pixel = commitTap
+        ? clampedPixelAtClient(event.clientX, event.clientY)
+        : null;
+      if (!commitTap) {
+        setSelection(selecting.previous);
+      } else if (source && pixel) {
+        setSelection(normalizeSpriteSelection(selecting.start, pixel, source.width, source.height));
+      }
+      activeSelection.current = null;
+      pointerPositions.current.delete(event.pointerId);
+      if (pointerPositions.current.size < 2) pinchStart.current = null;
+      return;
+    }
     const pinch = pinchStart.current;
     const wasPinching = pinch !== null;
     const pending = pendingTouchPaint.current;
@@ -723,6 +858,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       } else if (shortcut.type === "redo") {
         event.preventDefault();
         redoSprite();
+      } else if (shortcut.type === "copy") {
+        event.preventDefault();
+        copySelection();
+      } else if (shortcut.type === "cut") {
+        event.preventDefault();
+        copySelection(true);
+      } else if (shortcut.type === "paste") {
+        event.preventDefault();
+        pasteSelection();
       } else {
         event.preventDefault();
         setTool(shortcut.tool);
@@ -730,7 +874,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [redoSprite, undoSprite]);
+  }, [copySelection, pasteSelection, redoSprite, undoSprite]);
 
   const handleTraceFile = (file?: File) => {
     if (!file) return;
@@ -827,7 +971,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 lastPaintPixel.current = null;
                 activePan.current = null;
                 activeTracePan.current = null;
+                activeSelection.current = null;
                 pinchStart.current = null;
+                setSelection(null);
                 setImageRevision((value) => value + 1);
                 setSelectedName(name);
                 setTargetName(`${name}_copy`);
@@ -853,11 +999,32 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 ["eraser", "Erase (E)"],
                 ["eyedropper", "Pick (I)"],
                 ["fill", "Fill (G)"],
+                ["select", "Select (S)"],
                 ["pan", "Pan (P)"],
               ] as [SpriteTool, string][]).map(([name, label]) => (
                 <button key={name} aria-pressed={tool === name} onClick={() => setTool(name)}>{label}</button>
               ))}
             </div>
+            <div className="sprite-editor-tool-row" role="group" aria-label="Sprite selection actions">
+              <button type="button" disabled={!selection || loading || saving}
+                onClick={() => copySelection()}>Copy selection</button>
+              <button type="button" disabled={!selection || loading || saving}
+                onClick={() => copySelection(true)}>Cut selection</button>
+              <button type="button" disabled={!selection || !clipboard || loading || saving}
+                onClick={() => pasteSelection()}>Paste selection</button>
+              <button type="button" disabled={!selection}
+                onClick={() => setSelection(null)}>Clear selection</button>
+            </div>
+            {selection && (
+              <span role="status" aria-label="Selected sprite pixels">
+                Selected {selection.width} × {selection.height} pixels
+              </span>
+            )}
+            {clipboard && (
+              <span className="sprite-editor-shortcuts" role="status">
+                Clipboard: {clipboard.width} × {clipboard.height} pixels
+              </span>
+            )}
             <section className="sprite-editor-palette" aria-label="Sprite color palette">
               <button
                 className="sprite-editor-panel-toggle"
@@ -999,7 +1166,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             {dirty && <span className="sprite-editor-dirty">Unsaved pixel edits</span>}
             {error && <span className="sprite-editor-error" role="alert">{error}</span>}
             <span className="sprite-editor-shortcuts">
-              B brush · E erase · I pick · G fill · P pan · Ctrl/Cmd+Z undo · Ctrl/Cmd+Y redo
+              B brush · E erase · I pick · G fill · S select · P pan · Ctrl/Cmd+C/X/V copy/cut/paste · Ctrl/Cmd+Z undo · Ctrl/Cmd+Y redo
             </span>
           </aside>
           <div className="sprite-editor-canvas-wrap">
