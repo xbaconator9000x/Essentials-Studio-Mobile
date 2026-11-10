@@ -158,7 +158,11 @@ fn stream_android_document_to_staging(
     use std::fs::OpenOptions;
     use std::io;
 
-    fn transfer(path: &std::path::Path, uri: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    fn transfer(
+        path: &std::path::Path,
+        uri: &str,
+        progress: &tauri::ipc::Channel<AndroidDocumentImportProgress>,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
         let context = ndk_context::android_context();
         let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }?;
         let mut env = vm.attach_current_thread()?;
@@ -246,8 +250,8 @@ fn stream_android_document_to_staging(
         }
     }
 
-    let result =
-        transfer(path, uri).map_err(|e| format!("Android document import stream failed: {e}"));
+    let result = transfer(path, uri, progress)
+        .map_err(|e| format!("Android document import stream failed: {e}"));
     #[cfg(debug_assertions)]
     if let Ok(bytes) = result.as_ref() {
         eprintln!("[android-document-import] staged {bytes} bytes");
