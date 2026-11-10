@@ -1313,7 +1313,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               </label>
             )}
             {loading && <span role="status">Loading sprite…</span>}
-            {dirty && <span className="sprite-editor-dirty">Unsaved pixel edits</span>}
+            {dirty && (
+              <span className="sprite-editor-dirty">
+                {importedSpriteName !== null ? "Unsaved imported sprite" : "Unsaved pixel edits"}
+              </span>
+            )}
             {error && <span className="sprite-editor-error" role="alert">{error}</span>}
             <span className="sprite-editor-shortcuts">
               B brush · E erase · I pick · G fill · S select · P pan · Ctrl/Cmd+C/X/V copy/cut/paste · Ctrl/Cmd+Z undo · Ctrl/Cmd+Y redo

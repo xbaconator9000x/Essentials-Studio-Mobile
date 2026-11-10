@@ -231,7 +231,8 @@
 
   .sprite-editor-tools button,
   .sprite-editor-tools input[type="range"],
-  .sprite-editor-tools input[type="color"] {
+  .sprite-editor-tools input[type="color"],
+  .sprite-editor-tools input[type="file"] {
     min-height: 44px;
   }
 

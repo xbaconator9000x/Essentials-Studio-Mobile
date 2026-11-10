@@ -970,6 +970,60 @@ describe("sprite editor integration", () => {
     ]);
   });
 
+  it("keeps an imported sprite dirty after a copy collision until a safe name is saved", async () => {
+    editorApi.savePrivateProjectSprite.mockRejectedValueOnce(
+      new Error("Character graphic already exists: Existing"),
+    );
+    const importUrl = {
+      createObjectURL: vi.fn(() => "blob:collision-sprite"),
+      revokeObjectURL: vi.fn(),
+    };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["sprite"], "Existing.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Unsaved imported sprite");
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Character graphic already exists: Existing",
+    );
+    expect(screen.getByText("Unsaved imported sprite")).toBeTruthy();
+    expect(screen.getByText("Imported image: Existing.png — save as a new copy.")).toBeTruthy();
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Copy name"), {
+      target: { value: "Existing_safe_copy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(2));
+    expect(editorApi.savePrivateProjectSprite.mock.calls[0].slice(2, 4)).toEqual([
+      "Existing",
+      "copy",
+    ]);
+    expect(editorApi.savePrivateProjectSprite.mock.calls[1].slice(2, 4)).toEqual([
+      "Existing_safe_copy",
+      "copy",
+    ]);
+    await waitFor(() => {
+      expect((screen.getByRole("combobox", {
+        name: "Select project character sprite",
+      }) as HTMLSelectElement).value).toBe("Existing_safe_copy");
+    });
+    expect(screen.queryByText("Unsaved imported sprite")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("discards an imported candidate by reopening the selected project sprite", async () => {
     const importUrl = {
       createObjectURL: vi.fn(() => "blob:discarded-sprite"),
