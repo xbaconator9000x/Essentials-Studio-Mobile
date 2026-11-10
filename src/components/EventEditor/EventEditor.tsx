@@ -12,7 +12,7 @@ import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
 import { updateEventCommandParam } from "../../services/eventEditorMutation";
-import { useEditorRegistration } from "../../context/ProjectSaveContext";
+import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
@@ -52,6 +52,7 @@ export function EventEditor({
   pbsIndex,
 }: Props) {
   const { value: event, set: setEvent, setWithoutHistory, resetHistory, undo, redo, canUndo, canRedo } = useUndoable<RpgEvent>(null);
+  const { saveAll: saveProjectAll } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [loading, setLoading] = useState(true);
@@ -63,8 +64,11 @@ export function EventEditor({
   );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const savingAllRef = useRef(false);
   const revisionRef = useRef(0);
   const activeInlineDraftCommitRef = useRef<(() => void) | null>(null);
   const inlineDraftActiveRef = useRef(false);
@@ -113,6 +117,7 @@ export function EventEditor({
       inlineDraftActiveRef.current = true;
     }
     setDirty(true);
+    setSaveNotice(null);
     setSaveError(null);
   }, [dirty]);
   const handleInlineDraftCommit = useCallback(() => {
@@ -159,6 +164,7 @@ export function EventEditor({
           setSelectedCommand(-1);
           revisionRef.current = 0;
           setDirty(false);
+          setSaveNotice(null);
           setSaveError(null);
         }
       } catch (err) {
@@ -182,6 +188,7 @@ export function EventEditor({
     (updater: (page: EventPage) => EventPage) => {
       if (!event) return;
       revisionRef.current += 1;
+      setSaveNotice(null);
       setSaveError(null);
       setEvent((prev) => {
         if (!prev) return prev;
@@ -356,6 +363,23 @@ export function EventEditor({
     await commitActiveInlineDraft();
     await persistRef.current(false, true);
   }, [commitActiveInlineDraft]);
+  const handleSaveAll = useCallback(async () => {
+    if (savingAllRef.current) return;
+    savingAllRef.current = true;
+    setSavingAll(true);
+    setSaveNotice(null);
+    setSaveError(null);
+    try {
+      await commitActiveInlineDraft();
+      await saveProjectAll();
+      setSaveNotice("All registered editor changes were saved.");
+    } catch (cause) {
+      setSaveError(`Save All failed: ${String(cause)}`);
+    } finally {
+      savingAllRef.current = false;
+      setSavingAll(false);
+    }
+  }, [commitActiveInlineDraft, saveProjectAll]);
   const discardForProject = useCallback(() => {
     if (!savingRef.current) onClose();
   }, [onClose]);
@@ -389,6 +413,7 @@ export function EventEditor({
       setActivePage(current.pages.length);
       setSelectedCommand(-1);
       revisionRef.current += 1;
+      setSaveNotice(null);
       setSaveError(null);
       setDirty(true);
     });
@@ -405,6 +430,7 @@ export function EventEditor({
       setActivePage(Math.min(activePage, current.pages.length - 2));
       setSelectedCommand(-1);
       revisionRef.current += 1;
+      setSaveNotice(null);
       setSaveError(null);
       setDirty(true);
     });
@@ -480,6 +506,7 @@ export function EventEditor({
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && editingCommand === null) {
         e.preventDefault();
         revisionRef.current += 1;
+        setSaveNotice(null);
         setSaveError(null);
         undo();
         setDirty(true);
@@ -488,6 +515,7 @@ export function EventEditor({
       if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey)) && editingCommand === null) {
         e.preventDefault();
         revisionRef.current += 1;
+        setSaveNotice(null);
         setSaveError(null);
         redo();
         setDirty(true);
@@ -528,6 +556,7 @@ export function EventEditor({
         </div>
 
         {saveError && <div role="alert" style={{ color: "#d20f39", padding: "6px 12px" }}>{saveError}</div>}
+        {saveNotice && <div role="status" style={{ color: "#27864a", padding: "6px 12px" }}>{saveNotice}</div>}
 
         {/* Page tabs */}
         {event && (
@@ -737,7 +766,15 @@ export function EventEditor({
           <div className="event-editor-footer-actions">
             <button
               className="event-editor-btn"
-              onClick={() => { revisionRef.current += 1; setSaveError(null); undo(); setDirty(true); }}
+              aria-label="Save All from event editor"
+              onClick={() => void handleSaveAll()}
+              disabled={saving || savingAll}
+            >
+              {savingAll ? "Saving..." : "Save All"}
+            </button>
+            <button
+              className="event-editor-btn"
+              onClick={() => { revisionRef.current += 1; setSaveNotice(null); setSaveError(null); undo(); setDirty(true); }}
               disabled={!canUndo}
               title="Undo (Ctrl+Z)"
               aria-label="Undo event edit"
@@ -746,7 +783,7 @@ export function EventEditor({
             </button>
             <button
               className="event-editor-btn"
-              onClick={() => { revisionRef.current += 1; setSaveError(null); redo(); setDirty(true); }}
+              onClick={() => { revisionRef.current += 1; setSaveNotice(null); setSaveError(null); redo(); setDirty(true); }}
               disabled={!canRedo}
               title="Redo (Ctrl+Y)"
               aria-label="Redo event edit"

@@ -142,12 +142,10 @@ try {
     null,
     { timeout: 10_000 },
   );
-  const saveAll = page.getByRole("button", { name: "Save All", exact: true });
-  await saveAll.click({ force: true });
-  await page.getByText(
-    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
-    { exact: true },
-  ).waitFor({ state: "visible", timeout: 20_000 });
+  await eventEditor.getByRole("button", { name: "Save All from event editor", exact: true }).click();
+  await eventEditor.getByRole("status")
+    .filter({ hasText: "All registered editor changes were saved." })
+    .waitFor({ state: "visible", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
     "Show Text face graphic must remain unchanged");

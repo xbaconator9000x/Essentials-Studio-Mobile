@@ -159,6 +159,25 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("saves edited dialogue through the event dialog's reachable Save All action", async () => {
+    renderProject();
+    const eventEditor = document.querySelector(".event-editor");
+    expect(eventEditor).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Show Text dialogue lines" }), {
+      target: { value: "Saved from the event dialog" },
+    });
+    fireEvent.click(within(eventEditor as HTMLElement).getByRole("button", { name: "OK", exact: true }));
+    await screen.findByText("Saved from the event dialog");
+
+    fireEvent.click(within(eventEditor as HTMLElement)
+      .getByRole("button", { name: "Save All from event editor", exact: true }));
+
+    await within(eventEditor as HTMLElement).findByRole("status");
+    expect(diskEvent.pages[0].list.find((command) => command.code === 401)?.parameters[0])
+      .toBe("Saved from the event dialog");
+  });
+
   it("commits an active dialogue draft before switching event pages", async () => {
     const event = importedEvent();
     event.pages.push({
