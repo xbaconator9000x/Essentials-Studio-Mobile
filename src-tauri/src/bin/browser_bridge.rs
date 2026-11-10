@@ -584,22 +584,22 @@ mod tests {
         );
         let args = json!({
             "projectPath": root.to_string_lossy(),
-            "sourceName": "Original",
-            "targetName": "Original_copy",
+            "sourceName": "",
+            "targetName": "Imported_Sprite",
             "mode": "copy",
             "imageData": image_data,
         });
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         assert_eq!(
             rt.block_on(dispatch("save_private_project_sprite", &args, &root)).unwrap(),
-            json!("Original_copy")
+            json!("Imported_Sprite")
         );
-        let saved = image::open(project.join("Graphics/Characters/Original_copy.png")).unwrap();
+        let saved = image::open(project.join("Graphics/Characters/Imported_Sprite.png")).unwrap();
         assert_eq!(saved.to_rgba8().get_pixel(0, 0).0, [1, 2, 3, 255]);
 
         let outside_args = json!({
             "projectPath": base.to_string_lossy(),
-            "sourceName": "Original",
+            "sourceName": "",
             "targetName": "Escaped",
             "mode": "copy",
             "imageData": args["imageData"],
