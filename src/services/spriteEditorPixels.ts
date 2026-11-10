@@ -1,9 +1,22 @@
-export type SpriteTool = "brush" | "eraser" | "eyedropper" | "fill" | "pan";
+export type SpriteTool = "brush" | "eraser" | "eyedropper" | "fill" | "select" | "pan";
 
 export interface SpritePixelAction {
   pixels: Uint32Array;
   before: Uint32Array;
   after: Uint32Array;
+}
+
+export interface SpriteSelection {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SpriteClipboardImage {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
 }
 
 const MAX_SPRITE_EDIT_PIXELS = 1_000_000;
@@ -31,6 +44,105 @@ function writePackedPixel(data: Uint8ClampedArray, pixel: number, color: number)
 function parseColor(color: string): number | null {
   if (!/^#[\da-f]{6}$/i.test(color)) return null;
   return (Number.parseInt(color.slice(1), 16) * 0x100 + 0xff) >>> 0;
+}
+
+export function normalizeSpriteSelection(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  imageWidth: number,
+  imageHeight: number,
+): SpriteSelection | null {
+  if (!Number.isSafeInteger(imageWidth) || !Number.isSafeInteger(imageHeight)
+      || imageWidth <= 0 || imageHeight <= 0
+      || ![start.x, start.y, end.x, end.y].every(Number.isInteger)) return null;
+  const startX = Math.max(0, Math.min(imageWidth - 1, start.x));
+  const startY = Math.max(0, Math.min(imageHeight - 1, start.y));
+  const endX = Math.max(0, Math.min(imageWidth - 1, end.x));
+  const endY = Math.max(0, Math.min(imageHeight - 1, end.y));
+  return {
+    x: Math.min(startX, endX),
+    y: Math.min(startY, endY),
+    width: Math.abs(endX - startX) + 1,
+    height: Math.abs(endY - startY) + 1,
+  };
+}
+
+function isValidSpriteSelection(
+  selection: SpriteSelection,
+  imageWidth: number,
+  imageHeight: number,
+): boolean {
+  return [selection.x, selection.y, selection.width, selection.height].every(Number.isSafeInteger)
+    && selection.x >= 0 && selection.y >= 0 && selection.width > 0 && selection.height > 0
+    && selection.x + selection.width <= imageWidth
+    && selection.y + selection.height <= imageHeight;
+}
+
+export function copySpriteSelection(
+  data: Uint8ClampedArray,
+  imageWidth: number,
+  imageHeight: number,
+  selection: SpriteSelection,
+): SpriteClipboardImage | null {
+  if (!isValidImage(data, imageWidth, imageHeight)
+      || !isValidSpriteSelection(selection, imageWidth, imageHeight)) return null;
+  const copied = new Uint8ClampedArray(selection.width * selection.height * 4);
+  for (let y = 0; y < selection.height; y++) {
+    const sourceStart = ((selection.y + y) * imageWidth + selection.x) * 4;
+    const targetStart = y * selection.width * 4;
+    copied.set(data.subarray(sourceStart, sourceStart + selection.width * 4), targetStart);
+  }
+  return { width: selection.width, height: selection.height, data: copied };
+}
+
+export function clearSpriteSelection(
+  data: Uint8ClampedArray,
+  imageWidth: number,
+  imageHeight: number,
+  selection: SpriteSelection,
+): SpritePixelAction | null {
+  if (!isValidImage(data, imageWidth, imageHeight)
+      || !isValidSpriteSelection(selection, imageWidth, imageHeight)) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = selection.y; y < selection.y + selection.height; y++) {
+    for (let x = selection.x; x < selection.x + selection.width; x++) {
+      const pixel = y * imageWidth + x;
+      const before = readPackedPixel(data, pixel);
+      if (before !== 0) changes.set(pixel, { before, after: 0 });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
+export function pasteSpriteSelection(
+  data: Uint8ClampedArray,
+  imageWidth: number,
+  imageHeight: number,
+  clipboard: SpriteClipboardImage,
+  destination: { x: number; y: number },
+): SpritePixelAction | null {
+  if (!isValidImage(data, imageWidth, imageHeight)
+      || !isValidImage(clipboard.data, clipboard.width, clipboard.height)
+      || !Number.isInteger(destination.x) || !Number.isInteger(destination.y)
+      || destination.x < 0 || destination.y < 0
+      || destination.x >= imageWidth || destination.y >= imageHeight) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  const width = Math.min(clipboard.width, imageWidth - destination.x);
+  const height = Math.min(clipboard.height, imageHeight - destination.y);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const targetPixel = (destination.y + y) * imageWidth + destination.x + x;
+      const sourcePixel = y * clipboard.width + x;
+      const before = readPackedPixel(data, targetPixel);
+      const after = readPackedPixel(clipboard.data, sourcePixel);
+      if (before !== after) changes.set(targetPixel, { before, after });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
 }
 
 function createAction(

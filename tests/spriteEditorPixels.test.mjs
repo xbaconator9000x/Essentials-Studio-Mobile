@@ -4,6 +4,10 @@ import {
   fillSpritePixels,
   paintSpritePixels,
   spriteColorAt,
+  normalizeSpriteSelection,
+  copySpriteSelection,
+  clearSpriteSelection,
+  pasteSpriteSelection,
   SpritePixelHistory,
 } from "../src/services/spriteEditorPixels.ts";
 
@@ -70,4 +74,72 @@ test("sprite history stores flood-fill actions directly and supports undo/redo",
   assert.deepEqual([...data], [...image(3, 3)]);
   assert.equal(history.redo(data), true);
   assert.deepEqual([...data.slice(16, 20)], [18, 52, 86, 255]);
+});
+
+test("rectangular sprite selection normalizes drag direction and clips at image edges", () => {
+  assert.deepEqual(
+    normalizeSpriteSelection({ x: 3, y: 2 }, { x: -4, y: 9 }, 4, 3),
+    { x: 0, y: 2, width: 4, height: 1 },
+  );
+  assert.deepEqual(
+    normalizeSpriteSelection({ x: 3, y: 2 }, { x: 1, y: 0 }, 4, 3),
+    { x: 1, y: 0, width: 3, height: 3 },
+  );
+  assert.equal(normalizeSpriteSelection({ x: 0.5, y: 0 }, { x: 1, y: 1 }, 4, 3), null);
+});
+
+test("sprite selection copies, cuts, pastes with alpha, and participates in undo/redo", () => {
+  const data = image(3, 2);
+  data.set([255, 0, 0, 255], 0);
+  data.set([0, 255, 0, 255], 4);
+  data.set([0, 0, 255, 255], 8);
+  const selection = { x: 0, y: 0, width: 2, height: 1 };
+  const copied = copySpriteSelection(data, 3, 2, selection);
+  assert.deepEqual([...copied.data], [255, 0, 0, 255, 0, 255, 0, 255]);
+
+  const history = new SpritePixelHistory();
+  const cut = clearSpriteSelection(data, 3, 2, selection);
+  assert.equal(cut.pixels.length, 2);
+  history.push(cut);
+  assert.deepEqual([...data.slice(0, 8)], [...image(2, 1)]);
+
+  const paste = pasteSpriteSelection(data, 3, 2, copied, { x: 2, y: 1 });
+  assert.equal(paste.pixels.length, 1);
+  history.push(paste);
+  assert.deepEqual([...data.slice(20, 24)], [255, 0, 0, 255]);
+
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data.slice(12, 24)], [...image(3, 1)]);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data.slice(0, 8)], [255, 0, 0, 255, 0, 255, 0, 255]);
+  assert.equal(history.redo(data), true);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(20, 24)], [255, 0, 0, 255]);
+});
+
+test("pasting transparent sprite pixels clears destination pixels and is undoable", () => {
+  const data = image(2, 1, [1, 2, 3, 255]);
+  const clipboard = {
+    width: 2,
+    height: 1,
+    data: new Uint8ClampedArray([0, 0, 0, 0, 9, 8, 7, 255]),
+  };
+  const action = pasteSpriteSelection(data, 2, 1, clipboard, { x: 0, y: 0 });
+  assert.equal(action.pixels.length, 2);
+  assert.deepEqual([...data], [...clipboard.data]);
+  const history = new SpritePixelHistory();
+  history.push(action);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], [...image(2, 1, [1, 2, 3, 255])]);
+});
+
+test("selection operations reject invalid buffers and clipboard dimensions", () => {
+  const data = image(2, 2);
+  assert.equal(copySpriteSelection(data, 2, 2, { x: 1, y: 1, width: 2, height: 1 }), null);
+  assert.equal(clearSpriteSelection(data, 2, 2, { x: -1, y: 0, width: 1, height: 1 }), null);
+  assert.equal(pasteSpriteSelection(data, 2, 2, {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray(3),
+  }, { x: 0, y: 0 }), null);
 });
