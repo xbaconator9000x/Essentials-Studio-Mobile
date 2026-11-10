@@ -151,8 +151,11 @@ try {
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
     "Show Text face graphic must remain unchanged");
-  assert.equal(dialogueAfter.pages[0].list[1].parameters[0], updatedDialogue,
-    "Save All must persist dialogue edited through React in native RMXP event commands");
+  const savedDialogue = dialogueAfter.pages[0].list[1].parameters[0];
+  assert.equal(savedDialogue, updatedDialogue,
+    `Save All must persist dialogue edited through React in native RMXP event commands.\n` +
+    `Observed "${savedDialogue}". Save diagnostics:\n` +
+    pageConsole.filter(message => /\[save-all\]|\[event-save\]/.test(message)).slice(-100).join("\n"));
   await eventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   // Saving the event must not undo the tile edit saved earlier.
