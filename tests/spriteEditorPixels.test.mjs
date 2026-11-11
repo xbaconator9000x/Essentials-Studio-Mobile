@@ -10,6 +10,7 @@ import {
   pasteSpriteSelection,
   SpritePixelHistory,
   flipSpritePixels,
+  rotateSquareSpritePixels,
   extractSpritePalette,
   replaceSpriteColor,
 } from "../src/services/spriteEditorPixels.ts";
@@ -203,4 +204,36 @@ test("rotate 180 degrees affects only selected pixels", () => {
   const action = flipSpritePixels(data, 3, 2, "rotate180", { x: 1, y: 0, width: 2, height: 2 });
   assert.ok(action);
   assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => data[i * 4]), [1, 6, 5, 4, 3, 2]);
+});
+
+test("90-degree square rotations preserve RGBA, selection bounds, and undo", () => {
+  const data = image(4, 3);
+  const values = Array.from({ length: 12 }, (_, i) => [i + 1, i, 255 - i, i * 20]);
+  values.forEach((color, i) => data.set(color, i * 4));
+  const before = [...data];
+  const square = { x: 1, y: 0, width: 2, height: 2 };
+  const action = rotateSquareSpritePixels(data, 4, 3, "clockwise", square);
+  assert.ok(action);
+  const expected = values.map((color) => [...color]);
+  expected[1] = values[5];
+  expected[2] = values[1];
+  expected[5] = values[6];
+  expected[6] = values[2];
+  assert.deepEqual([...data], expected.flat());
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], before);
+  assert.equal(history.redo(data), true);
+  const reverse = rotateSquareSpritePixels(data, 4, 3, "counterclockwise", square);
+  assert.ok(reverse);
+  assert.deepEqual([...data], before);
+});
+
+test("90-degree rotation rejects rectangular regions without modifying pixels", () => {
+  const data = image(3, 2, [10, 20, 30, 255]);
+  const before = [...data];
+  assert.equal(rotateSquareSpritePixels(data, 3, 2, "clockwise"), null);
+  assert.equal(rotateSquareSpritePixels(data, 3, 2, "counterclockwise", { x: 0, y: 0, width: 2, height: 1 }), null);
+  assert.deepEqual([...data], before);
 });
