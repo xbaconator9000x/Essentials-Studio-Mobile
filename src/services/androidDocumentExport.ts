@@ -16,6 +16,7 @@ export async function exportAndroidDocument(
   },
   onProgress?: (percent: number) => void,
   pickerTimeoutMs = 120_000,
+  format = "ZIP",
 ): Promise<"saved" | "cancelled"> {
   // The Android DocumentsUI save sheet can close without resolving the
   // tauri-plugin-dialog callback. Never leave the editor loading forever.
@@ -32,7 +33,7 @@ export async function exportAndroidDocument(
       pickAndroidDocument(() => io.pickDestination(filename)).then(async (uri) => {
         if (pickerTimedOut && uri !== null) {
           await io.discardDestination(exportId, uri).catch((error: unknown) => {
-            console.error("Could not remove late Android ZIP destination:", error);
+            console.error(`Could not remove late Android ${format} destination:`, error);
           });
           return null;
         }
@@ -42,7 +43,7 @@ export async function exportAndroidDocument(
         timer = setTimeout(() => {
           pickerTimedOut = true;
           reject(new Error(
-            "Android document picker did not return a destination. No ZIP bytes were written by the editor; retry export."
+            `Android document picker did not return a destination. No ${format} bytes were written by the editor; retry export.`
           ));
         }, pickerTimeoutMs);
       }),
@@ -57,7 +58,7 @@ export async function exportAndroidDocument(
   onProgress?.(95);
   const verifiedBytes = await io.writeAndVerify(exportId, documentUri);
   if (verifiedBytes !== expectedBytes) {
-    throw new Error("Android ZIP export readback size mismatch");
+    throw new Error(`Android ${format} export readback size mismatch`);
   }
   onProgress?.(100);
   return "saved";

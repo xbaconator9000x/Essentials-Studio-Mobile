@@ -1155,6 +1155,42 @@ pub async fn import_private_project_sprite(
     .map_err(|e| format!("Sprite import worker failed: {e}"))?
 }
 
+#[derive(Serialize)]
+pub struct SpritePngExport {
+    export_id: String,
+    size: u64,
+}
+
+fn stage_sprite_png_export(root: &Path, image_data: &str) -> Result<SpritePngExport, String> {
+    let png = sprite_png_bytes(image_data)?;
+    let export_id = format!("export-sprite-{}", unique_id()?);
+    let path = root.join(format!("{export_id}.png"));
+    write_new_sprite(&path, &png)?;
+    Ok(SpritePngExport { export_id, size: png.len() as u64 })
+}
+
+#[tauri::command]
+pub async fn begin_sprite_png_export(app: AppHandle, image_data: String) -> Result<SpritePngExport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = exports_root(&app)?;
+        stage_sprite_png_export(&root, &image_data)
+    }).await.map_err(|e| format!("Sprite export worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn discard_sprite_png_export(app: AppHandle, export_id: String) -> Result<(), String> {
+    safe_export_id(&export_id)?;
+    if !export_id.starts_with("export-sprite-") {
+        return Err("Invalid sprite export ID".into());
+    }
+    let path = exports_root(&app)?.join(format!("{export_id}.png"));
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod sprite_edit_tests {
     use super::{
@@ -1201,6 +1237,21 @@ mod sprite_edit_tests {
             "data:image/png;base64,{}",
             STANDARD.encode(encoded.into_inner())
         )
+    }
+
+    #[test]
+    fn staged_sprite_export_is_valid_png_and_does_not_modify_project_graphics() {
+        let project = TempProject::new();
+        let source = project.graphics().join("Guide.png");
+        fs::write(&source, b"original").unwrap();
+        let staged = super::stage_sprite_png_export(&project.0, &png_data_url(2, 3)).unwrap();
+        assert!(staged.export_id.starts_with("export-sprite-"));
+        let bytes = fs::read(project.0.join(format!("{}.png", staged.export_id))).unwrap();
+        assert_eq!(staged.size, bytes.len() as u64);
+        let decoded = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (2, 3));
+        assert_eq!(fs::read(source).unwrap(), b"original");
+        assert!(super::stage_sprite_png_export(&project.0, "data:image/png;base64,AA==").is_err());
     }
 
     #[test]

@@ -40,6 +40,7 @@ import {
   writeSpriteTraceTransform,
 } from "../../services/spriteEditorPreferences";
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
+import { exportSpritePng } from "../../services/spriteExport";
 import "./SpriteEditor.css";
 
 interface Props {
@@ -100,6 +101,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [brushSize, setBrushSize] = useState(1);
   const [spritePalette, setSpritePalette] = useState<string[]>([]);
   const [replaceFrom, setReplaceFrom] = useState("#000000");
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [zoom, setZoom] = useState(4);
   const [offsetX, setOffsetX] = useState(12);
   const [offsetY, setOffsetY] = useState(12);
@@ -509,6 +512,24 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, [brushColor, loading, replaceFrom, saving, selection, updateDirty]);
 
+  const exportCurrentSprite = useCallback(async () => {
+    const source = imageCanvasRef.current;
+    if (!source || loading || saving || exporting) return;
+    setExporting(true);
+    setExportStatus(null);
+    setError(null);
+    try {
+      const name = saveMode === "copy" ? targetName.trim() : selectedName;
+      const result = await exportSpritePng(source.toDataURL("image/png"), name || importedSpriteName || selectedName);
+      setExportStatus(result === "saved" ? "PNG saved to selected document"
+        : result === "cancelled" ? "PNG export cancelled" : "PNG download requested");
+    } catch (cause) {
+      setError(`Sprite PNG export failed: ${cause}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, importedSpriteName, loading, saveMode, saving, selectedName, targetName]);
+
   const paintPixel = useCallback((clientX: number, clientY: number, deferRender = false) => {
     const source = imageCanvasRef.current;
     const context = source?.getContext("2d");
@@ -686,6 +707,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     spriteImportUrl.current = null;
     setImportedSpriteName(null);
     setSpritePalette([]);
+    setExportStatus(null);
     setDirty(false);
     updateDirty("sprite-editor", false);
     setSelection(null);
@@ -1066,6 +1088,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setSelection(null);
       setClipboard(null);
       setSpritePalette([]);
+      setExportStatus(null);
       setImportedSpriteName(file.name);
       setTargetName(importedSpriteCopyName(file.name));
       setSaveMode("copy");
@@ -1105,6 +1128,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     pinchStart.current = null;
     setSelection(null);
     setSpritePalette([]);
+    setExportStatus(null);
     setImageRevision((value) => value + 1);
     setSelectedName(name);
     setTargetName(`${name}_copy`);
@@ -1160,9 +1184,12 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <button disabled={!dirty || saving} onClick={() => void saveSprite().catch(() => {})}>
               {saving ? "Saving…" : "Save sprite"}
             </button>
-            <button disabled={saving} onClick={() => void requestClose()}>Close</button>
+            <button type="button" disabled={loading || saving || exporting || (!selectedName && !importedSpriteName)}
+              onClick={() => void exportCurrentSprite()}>{exporting ? "Exporting…" : "Export PNG"}</button>
+            <button disabled={saving || exporting} onClick={() => void requestClose()}>Close</button>
           </div>
         </header>
+        {exportStatus && <span role="status" className="sprite-editor-shortcuts">{exportStatus}</span>}
         {controlsCollapsed && error && <span className="sprite-editor-error" role="alert">{error}</span>}
         {controlsCollapsed && (
           <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">

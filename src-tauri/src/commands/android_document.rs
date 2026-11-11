@@ -95,7 +95,7 @@ fn verify_document_readback_chunk(expected: &[u8], actual: &[i8]) -> std::io::Re
             .any(|(expected, actual)| *expected != *actual as u8)
     {
         return Err(std::io::Error::other(
-            "Android document differs from exported ZIP",
+            "Android document differs from exported file",
         ));
     }
     Ok(())
@@ -291,6 +291,43 @@ pub async fn save_project_archive_to_document(
         .await
         .map_err(|e| format!("Android document worker failed: {e}"))??;
         Ok(written)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (path, document_uri);
+        Err("Android document export is only available on Android".into())
+    }
+}
+
+#[tauri::command]
+pub async fn save_sprite_png_to_document(
+    app: AppHandle,
+    export_id: String,
+    document_uri: String,
+) -> Result<u64, String> {
+    safe_export_id(&export_id)?;
+    if !export_id.starts_with("export-sprite-") {
+        return Err("Invalid sprite export ID".into());
+    }
+    validate_document_uri(&document_uri)?;
+    let path = exports_root(&app)?.join(format!("{export_id}.png"));
+    #[cfg(target_os = "android")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let size = match fs::metadata(&path) {
+                Ok(metadata) if metadata.len() > 0 && metadata.len() <= 32 * 1024 * 1024 => metadata.len(),
+                _ => return Err(document_failure_message(
+                    "Android PNG export", "invalid app-private PNG export size", delete_android_document(&document_uri),
+                )),
+            };
+            let written = write_and_verify_android_document(&path, &document_uri)?;
+            if written != size {
+                return Err(document_failure_message(
+                    "Android PNG export", "byte count mismatch", delete_android_document(&document_uri),
+                ));
+            }
+            Ok(written)
+        }).await.map_err(|e| format!("Android PNG export worker failed: {e}"))?
     }
     #[cfg(not(target_os = "android"))]
     {

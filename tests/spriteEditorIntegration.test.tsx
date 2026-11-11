@@ -11,6 +11,8 @@ const editorApi = vi.hoisted(() => ({
   loadCharacterImage: vi.fn(),
   clearImageCache: vi.fn(),
 }));
+const spriteExport = vi.hoisted(() => ({ exportSpritePng: vi.fn(async () => "saved") }));
+vi.mock("../src/services/spriteExport", () => spriteExport);
 const editorDialogs = vi.hoisted(() => ({
   confirmEditor: vi.fn(async () => true),
 }));
@@ -131,6 +133,20 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("exports the unscaled source PNG without saving or changing the project", async () => {
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const button = screen.getByRole("button", { name: "Export PNG" });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(spriteExport.exportSpritePng).toHaveBeenCalledWith(
+      "data:image/png;base64,cGl4ZWxz", "Guide_copy",
+    ));
+    expect(await screen.findByText("PNG saved to selected document")).toBeTruthy();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    expect(serializedCanvases.at(-1)?.width).toBe(4);
+  });
+
   it("exposes copy naming and original replacement in the collapsed portrait toolbar", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
