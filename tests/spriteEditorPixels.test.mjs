@@ -9,6 +9,7 @@ import {
   copySpriteSelection,
   clearSpriteSelection,
   pasteSpriteSelection,
+  moveSpritePixels,
   SpritePixelHistory,
   flipSpritePixels,
   rotateSquareSpritePixels,
@@ -274,4 +275,31 @@ test("legacy replacement paste still clears destinations beneath transparent cli
   assert.deepEqual([...data.slice(0, 4)], [0, 0, 0, 0]);
   assert.equal(pasteSpriteSelection(data, 2, 1, clipboard, { x: 1, y: 0 }, "invalid"), null);
   assert.deepEqual([...data.slice(4, 8)], [12, 34, 56, 255]);
+});
+
+test("moving sprite pixels handles overlap atomically and restores original on undo", () => {
+  const data = image(4, 1);
+  for (let i = 0; i < 4; i++) data.set([i + 1, 0, 0, 255], i * 4);
+  const before = [...data];
+  const action = moveSpritePixels(data, 4, 1, { x: 0, y: 0, width: 2, height: 1 }, 1, 0);
+  assert.ok(action);
+  assert.deepEqual([0, 1, 2, 3].map(i => data[i * 4]), [0, 1, 2, 4]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], before);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([0, 1, 2, 3].map(i => data[i * 4]), [0, 1, 2, 4]);
+});
+
+test("moving pixels preserves alpha and rejects out-of-bounds edits without mutation", () => {
+  const data = image(3, 2);
+  data.set([20, 40, 60, 128], 0);
+  const before = [...data];
+  assert.equal(moveSpritePixels(data, 3, 2, { x: 0, y: 0, width: 1, height: 1 }, -1, 0), null);
+  assert.equal(moveSpritePixels(data, 3, 2, { x: 0, y: 0, width: 1, height: 1 }, 0, 0), null);
+  assert.deepEqual([...data], before);
+  assert.ok(moveSpritePixels(data, 3, 2, { x: 0, y: 0, width: 1, height: 1 }, 2, 1));
+  assert.deepEqual([...data.slice(20, 24)], [20, 40, 60, 128]);
+  assert.deepEqual([...data.slice(0, 4)], [0, 0, 0, 0]);
 });
