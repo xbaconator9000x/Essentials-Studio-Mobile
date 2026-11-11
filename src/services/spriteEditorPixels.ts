@@ -67,6 +67,22 @@ export function normalizeSpriteSelection(
   };
 }
 
+/** Move the selection rectangle without touching pixels, keeping its full size in bounds.
+ * Useful for accurately positioning paste targets on a touch screen. */
+export function moveSpriteSelection(
+  selection: SpriteSelection, dx: number, dy: number,
+  imageWidth: number, imageHeight: number,
+): SpriteSelection | null {
+  if (!Number.isSafeInteger(dx) || !Number.isSafeInteger(dy)
+      || !Number.isSafeInteger(imageWidth) || !Number.isSafeInteger(imageHeight)
+      || !isValidSpriteSelection(selection, imageWidth, imageHeight)) return null;
+  return {
+    ...selection,
+    x: Math.max(0, Math.min(imageWidth - selection.width, selection.x + dx)),
+    y: Math.max(0, Math.min(imageHeight - selection.height, selection.y + dy)),
+  };
+}
+
 function isValidSpriteSelection(
   selection: SpriteSelection,
   imageWidth: number,
