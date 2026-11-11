@@ -1325,12 +1325,13 @@ mod sprite_edit_tests {
 
 #[cfg(test)]
 mod archive_roundtrip_tests {
-    use super::{extract_archive, export_zip, finish_import, unique_id};
+    use super::{extract_archive, export_zip, finish_import, import_project_sprite, unique_id};
     use crate::marshal::types::{RubyObject, RubyString, RubyValue};
     use crate::models::{
         EventCommand, EventCondition, EventGraphic, EventPage, MapInfo, MoveCommand, MoveRoute,
         RpgEvent, RpgMap, Table,
     };
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     use sha2::{Digest, Sha256};
     use std::fs::{self, File};
     use std::io::{Read, Write};
@@ -2089,6 +2090,16 @@ mod archive_roundtrip_tests {
                 .await
                 .expect("read edited map back");
             assert_eq!(readback.tiles, edited_tiles);
+            let imported_sprite = synthetic_png(32, 32, true);
+            let imported_sprite_data = format!(
+                "data:image/png;base64,{}",
+                STANDARD.encode(&imported_sprite),
+            );
+            assert_eq!(
+                import_project_sprite(&imported, "Imported Mobile", &imported_sprite_data)
+                    .expect("import a valid PNG through the project-scoped native command"),
+                "Imported Mobile",
+            );
             let event_readback =
                 crate::commands::project::load_event(project.path.clone(), 1, 7)
                     .await
@@ -2132,7 +2143,8 @@ mod archive_roundtrip_tests {
         let exported = sandbox.path("exported-rxdata.zip");
         export_zip(&imported, &exported).unwrap();
         let exported_hashes = member_sha256(&exported, "");
-        assert_eq!(original_hashes.keys().collect::<Vec<_>>(), exported_hashes.keys().collect::<Vec<_>>());
+        assert_eq!(exported_hashes.len(), original_hashes.len() + 1);
+        assert_eq!(fs::read(&source_archive).unwrap(), original_zip_bytes);
         for (name, original_hash) in &original_hashes {
             if name == "Data/Map001.rxdata" || name == "PBS/pokemon.txt" {
                 assert_ne!(exported_hashes.get(name), Some(original_hash));
@@ -2140,6 +2152,13 @@ mod archive_roundtrip_tests {
                 assert_eq!(exported_hashes.get(name), Some(original_hash), "SHA-256 mismatch in {name}");
             }
         }
+        let imported_sprite_path = "Graphics/Characters/Imported Mobile.png";
+        let imported_sprite_bytes = fs::read(imported.join(imported_sprite_path)).unwrap();
+        assert_eq!(
+            exported_hashes.get(imported_sprite_path),
+            Some(&format!("{:x}", Sha256::digest(&imported_sprite_bytes))),
+            "ZIP export contains the validated imported sprite"
+        );
         // Re-import through the native app-private publication path rather than
         // only extracting the ZIP, then exercise the project readers on it.
         let staged_export = imports.join("import-rxdata-reimport.zip");
@@ -2154,6 +2173,10 @@ mod archive_roundtrip_tests {
             .expect("reimport exported synthetic project ZIP"),
         );
         assert!(reopened_root.join("Graphics/Empty").is_dir());
+        let reopened_sprite = image::load_from_memory(
+            &fs::read(reopened_root.join(imported_sprite_path)).unwrap(),
+        ).expect("imported sprite remains a valid PNG after ZIP reimport");
+        assert_eq!((reopened_sprite.width(), reopened_sprite.height()), (32, 32));
         drop(runtime);
         let runtime = test_project_runtime();
         assert_eq!(
