@@ -100,6 +100,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [tool, setTool] = useState<SpriteTool>("brush");
   const [selection, setSelection] = useState<SpriteSelection | null>(null);
   const [moveSelectedPixels, setMoveSelectedPixels] = useState(false);
+  const [duplicateSelectedPixels, setDuplicateSelectedPixels] = useState(false);
   const [clipboard, setClipboard] = useState<SpriteClipboardImage | null>(null);
   const [preserveTransparentPaste, setPreserveTransparentPaste] = useState(true);
   const [brushColor, setBrushColor] = useState("#ffffff");
@@ -432,7 +433,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (!next || (next.x === selection.x && next.y === selection.y)) return;
     if (moveSelectedPixels) {
       const action = moveSpritePixels(image.data, source.width, source.height,
-        selection, next.x - selection.x, next.y - selection.y);
+        selection, next.x - selection.x, next.y - selection.y,
+        duplicateSelectedPixels ? "duplicate" : "move");
       if (!action) return;
       if (!historyRef.current.push(action)) {
         applySpritePixelAction(image.data, action, "before");
@@ -448,7 +450,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError(null);
     }
     setSelection(next);
-  }, [loading, moveSelectedPixels, saving, selection, updateDirty]);
+  }, [duplicateSelectedPixels, loading, moveSelectedPixels, saving, selection, updateDirty]);
 
   const copySelection = useCallback((cut = false) => {
     const source = imageCanvasRef.current;
