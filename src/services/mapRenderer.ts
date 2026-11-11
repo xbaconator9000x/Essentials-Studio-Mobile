@@ -268,7 +268,7 @@ export class MapRenderer {
           const tileId = this.getTileId(x, y, layer);
           return {
             tileId,
-            passage: this.passages[tileId] ?? 0x0f,
+            passage: this.passages[tileId] ?? 0,
             priority: this.priorities[tileId] ?? 0,
           };
         });

@@ -135,4 +135,35 @@ describe("map renderer edge tiles", () => {
     expect(overlay[2].args[3]).toBeCloseTo(6.4);
     expect(tiles).toEqual([1, 0, 0]);
   });
+
+  it("uses the native zero default when tileset passage metadata is missing", () => {
+    const fills: string[] = [];
+    const context = {
+      fillStyle: "",
+      globalAlpha: 1,
+      imageSmoothingEnabled: false,
+      fillRect: () => fills.push(context.fillStyle),
+    };
+    const canvas = {
+      width: 32,
+      height: 32,
+      getContext: () => context,
+    } as unknown as HTMLCanvasElement;
+    const renderer = new MapRenderer(canvas);
+    renderer.setMapData([1, 0, 0], 1, 1);
+    renderer.setPassages([]);
+
+    renderer.render(0, {
+      showGrid: false,
+      showEvents: false,
+      showCollisionOverlay: true,
+      showLayer: [true, true, true],
+      activeLayer: 0,
+      zoom: 1,
+      viewportX: 0,
+      viewportY: 0,
+    }, []);
+
+    expect(fills.slice(-4)).toEqual(Array(4).fill("rgba(166, 227, 161, 0.78)"));
+  });
 });

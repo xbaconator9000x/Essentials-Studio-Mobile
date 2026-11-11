@@ -21,7 +21,7 @@ export function effectiveBlockedPassageMask(
     hasBlockingLayer = true;
     blockedDirections &= Number.isFinite(tile.passage)
       ? Math.trunc(tile.passage) & ALL_DIRECTIONS_BLOCKED
-      : ALL_DIRECTIONS_BLOCKED;
+      : 0;
     if (blockedDirections === 0) return 0;
   }
 

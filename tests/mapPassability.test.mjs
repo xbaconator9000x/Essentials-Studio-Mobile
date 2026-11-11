@@ -24,3 +24,9 @@ test("returns fully blocked when there is no non-star tile to provide passage da
     { tileId: 2, passage: 0, priority: 1 },
   ]), 0x0f);
 });
+
+test("treats missing passage values as zero like the native RMXP Table reader", () => {
+  assert.equal(effectiveBlockedPassageMask([
+    { tileId: 7, passage: Number.NaN, priority: 0 },
+  ]), 0);
+});
