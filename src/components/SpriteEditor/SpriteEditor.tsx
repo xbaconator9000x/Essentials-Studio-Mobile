@@ -1416,6 +1416,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </div>}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
               <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
+              <label><input type="checkbox" aria-label="Duplicate selected pixels when nudging" checked={duplicateSelectedPixels} disabled={!moveSelectedPixels} onChange={(event) => setDuplicateSelectedPixels(event.currentTarget.checked)} />Duplicate pixels</label>
               <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
               <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
               <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
@@ -1507,6 +1508,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </div>
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite selection actions">
               <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
+              <label><input type="checkbox" aria-label="Duplicate selected pixels when nudging" checked={duplicateSelectedPixels} disabled={!moveSelectedPixels} onChange={(event) => setDuplicateSelectedPixels(event.currentTarget.checked)} />Duplicate pixels</label>
               <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
               <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
               <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
