@@ -11,17 +11,24 @@ interface Props {
 
 export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, onClose }: Props) {
   const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"id" | "name" | "position">("id");
   const visibleEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return events;
-    return events.filter((event) => (
+    const filtered = normalizedQuery ? events.filter((event) => (
       event.name.toLocaleLowerCase().includes(normalizedQuery)
+      || event.graphic_name.toLocaleLowerCase().includes(normalizedQuery)
       || String(event.id).includes(normalizedQuery)
       || String(event.id).padStart(3, "0").includes(normalizedQuery)
       || `${event.x},${event.y}`.includes(normalizedQuery)
       || `${event.x} ${event.y}`.includes(normalizedQuery)
-    ));
-  }, [events, query]);
+    )) : events;
+    // Never mutate the native map's event order; sorting is presentation only.
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "name") return a.name.localeCompare(b.name) || a.id - b.id;
+      if (sortBy === "position") return a.y - b.y || a.x - b.x || a.id - b.id;
+      return a.id - b.id;
+    });
+  }, [events, query, sortBy]);
 
   return (
     <section id="map-event-list" className="map-event-list" aria-label="Map events">
@@ -44,9 +51,21 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
           </button>
         )}
       </label>
+      <div className="map-event-list-controls">
+        <label>
+          <span>Sort events</span>
+          <select aria-label="Sort map events" value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as "id" | "name" | "position")}>
+            <option value="id">Event ID</option>
+            <option value="name">Name</option>
+            <option value="position">Map position</option>
+          </select>
+        </label>
+        <span role="status" aria-live="polite">{visibleEvents.length} of {events.length} events</span>
+      </div>
       <ul>
         {events.length === 0 ? (
-          <li className="map-event-list-empty" role="status">No events on this map.</li>
+          <li className="map-event-list-empty">No events on this map.</li>
         ) : visibleEvents.length === 0 ? (
           <li className="map-event-list-empty" role="status">No map events match “{query.trim()}”.</li>
         ) : visibleEvents.map((event) => (
