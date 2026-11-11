@@ -91,6 +91,32 @@ describe("map event browser", () => {
     expect(screen.getByRole("button", { name: /002.*Guide/ })).toBeTruthy();
   });
 
+  it("sorts events by name or map position without mutating the source event array", () => {
+    const unsorted = [
+      { ...events[0], id: 30, name: "Zebra", x: 1, y: 8 },
+      { ...events[1], id: 4, name: "Alpha", x: 6, y: 2 },
+      { ...events[0], id: 12, name: "Beta", x: 2, y: 2 },
+    ];
+    const originalOrder = unsorted.map(event => event.id);
+    render(<MapEventList events={unsorted} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
+    const ids = () => [...document.querySelectorAll(".map-event-list-name")].map(node => node.textContent?.match(/\\d+/)?.[0]);
+    expect(ids()).toEqual(["004", "012", "030"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort map events" }), { target: { value: "name" } });
+    expect(ids()).toEqual(["004", "012", "030"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort map events" }), { target: { value: "position" } });
+    expect(ids()).toEqual(["012", "004", "030"]);
+    expect(unsorted.map(event => event.id)).toEqual(originalOrder);
+  });
+
+  it("finds events by character graphic and announces filtered counts", () => {
+    render(<MapEventList events={events} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search map events by name, ID, or location" }), {
+      target: { value: "Guide" },
+    });
+    expect(screen.getByText("1 of 2 events")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
+  });
+
   it("renders a useful empty-map state", () => {
     render(<MapEventList events={[]} onClose={vi.fn()} />);
 
