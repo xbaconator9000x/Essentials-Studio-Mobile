@@ -145,6 +145,7 @@ export function MapEditor({
   const isSelecting = useRef(false);
   const touchSelectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const [tileClipboard, setTileClipboard] = useState<TileClipboard | null>(null);
+  const [preserveEmptyPaste, setPreserveEmptyPaste] = useState(true);
 
   // Force re-render trigger (the value is unused; setting it re-runs the
   // component so the render-params ref and derived UI refresh).
@@ -434,13 +435,13 @@ export function MapEditor({
   const pasteTilesAtCursor = useCallback(() => {
     const origin = cursorTile ?? selectionStart;
     if (!mapData || !tileClipboard || !origin || selectedLayer === 3 || readOnly) return;
-    const changes = pasteTileRegion(mapData, tileClipboard, origin, selectedLayer);
+    const changes = pasteTileRegion(mapData, tileClipboard, origin, selectedLayer, preserveEmptyPaste ? "preserve" : "replace");
     if (changes.length === 0) return;
     undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
     rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
     setRenderTick((tick) => tick + 1);
     onMapDirty();
-  }, [cursorTile, selectionStart, mapData, tileClipboard, selectedLayer, readOnly, onMapDirty]);
+  }, [cursorTile, selectionStart, mapData, tileClipboard, selectedLayer, preserveEmptyPaste, readOnly, onMapDirty]);
 
   // Keyboard shortcuts only apply when the map is the active editor.
   // Never intercept Ctrl/Cmd+Z/C/V inside an event dialogue, PBS field,
@@ -1208,6 +1209,8 @@ export function MapEditor({
           canPasteTiles={canPasteTiles}
           onCopyTiles={copySelectedTiles}
           onPasteTiles={pasteTilesAtCursor}
+          preserveEmptyPaste={preserveEmptyPaste}
+          onPreserveEmptyPasteChange={setPreserveEmptyPaste}
           hasClipboardEvent={hasClipboardEvent}
         />
       )}
