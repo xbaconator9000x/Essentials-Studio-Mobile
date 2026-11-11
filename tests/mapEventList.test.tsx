@@ -109,11 +109,13 @@ describe("map event browser", () => {
   });
 
   it("finds events by character graphic and announces filtered counts", () => {
-    render(<MapEventList events={events} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
+    render(<MapEventList events={[{ ...events[0], name: "Gatekeeper" }, events[1]]}
+      onOpenEvent={vi.fn()} onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole("searchbox", { name: "Search map events by name, ID, or location" }), {
       target: { value: "Guide" },
     });
     expect(screen.getByText("1 of 2 events")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /002.*Gatekeeper/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
   });
 
