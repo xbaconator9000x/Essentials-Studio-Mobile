@@ -12,6 +12,7 @@ interface Props {
 export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"id" | "name" | "position">("id");
+  const [descending, setDescending] = useState(false);
   const visibleEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const filtered = normalizedQuery ? events.filter((event) => (
@@ -24,11 +25,12 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
     )) : events;
     // Never mutate the native map's event order; sorting is presentation only.
     return [...filtered].sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name) || a.id - b.id;
-      if (sortBy === "position") return a.y - b.y || a.x - b.x || a.id - b.id;
-      return a.id - b.id;
+      const direction = descending ? -1 : 1;
+      if (sortBy === "name") return direction * (a.name.localeCompare(b.name) || a.id - b.id);
+      if (sortBy === "position") return direction * (a.y - b.y || a.x - b.x || a.id - b.id);
+      return direction * (a.id - b.id);
     });
-  }, [events, query, sortBy]);
+  }, [events, query, sortBy, descending]);
 
   return (
     <section id="map-event-list" className="map-event-list" aria-label="Map events">
@@ -61,6 +63,7 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
             <option value="position">Map position</option>
           </select>
         </label>
+        <button type="button" aria-label={descending ? "Sort ascending" : "Sort descending"} aria-pressed={descending} onClick={() => setDescending((previous) => !previous)}>{descending ? "Descending" : "Ascending"}</button>
         <span aria-live="polite">{visibleEvents.length} of {events.length} events</span>
       </div>
       <ul>
