@@ -49,7 +49,7 @@ export function rasterizeSpriteLine(
   start: { x: number; y: number },
   end: { x: number; y: number },
 ): { x: number; y: number }[] {
-  if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return [];
+  if (![start.x, start.y, end.x, end.y].every(Number.isSafeInteger) || Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) >= 1_000_000) return [];
   let x = Math.floor(start.x);
   let y = Math.floor(start.y);
   const endX = Math.floor(end.x);
@@ -83,7 +83,7 @@ export function spritePixelAt(
   imageWidth: number,
   imageHeight: number,
 ): { x: number; y: number } | null {
-  if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) return null;
+  if (![screenX, screenY, viewport.zoom, viewport.offsetX, viewport.offsetY, imageWidth, imageHeight].every(Number.isFinite) || viewport.zoom <= 0) return null;
   const x = Math.floor((screenX - viewport.offsetX) / viewport.zoom);
   const y = Math.floor((screenY - viewport.offsetY) / viewport.zoom);
   return x >= 0 && y >= 0 && x < imageWidth && y < imageHeight ? { x, y } : null;
@@ -95,6 +95,7 @@ export function zoomSpriteViewport(
   nextCenter: { x: number; y: number },
   scale: number,
 ): SpriteViewport {
+  if (![viewport.zoom, viewport.offsetX, viewport.offsetY, startCenter.x, startCenter.y, nextCenter.x, nextCenter.y, scale].every(Number.isFinite) || viewport.zoom <= 0 || scale <= 0) return viewport;
   const zoom = Math.max(1, Math.min(32, viewport.zoom * scale));
   const worldX = (startCenter.x - viewport.offsetX) / viewport.zoom;
   const worldY = (startCenter.y - viewport.offsetY) / viewport.zoom;
