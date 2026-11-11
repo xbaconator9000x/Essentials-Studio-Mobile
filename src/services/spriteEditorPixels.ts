@@ -167,6 +167,43 @@ export function pasteSpriteSelection(
   return action;
 }
 
+/** Move the selected pixels and clear their original positions as one atomic undoable edit.
+ * Destination must fit within the image; overlap is handled from a source snapshot.
+ * Transparent pixels in the selection are moved too (replacement semantics). */
+export function moveSpritePixels(
+  data: Uint8ClampedArray, width: number, height: number,
+  selection: SpriteSelection, dx: number, dy: number,
+): SpritePixelAction | null {
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(selection, width, height)
+      || !Number.isSafeInteger(dx) || !Number.isSafeInteger(dy)
+      || (dx === 0 && dy === 0)
+      || selection.width * selection.height > MAX_SPRITE_EDIT_PIXELS
+      || selection.x + dx < 0 || selection.y + dy < 0
+      || selection.x + selection.width + dx > width
+      || selection.y + selection.height + dy > height) return null;
+  const snapshot = copySpriteSelection(data, width, height, selection);
+  if (!snapshot) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  const setAfter = (pixel: number, after: number) => {
+    const current = changes.get(pixel);
+    changes.set(pixel, { before: current?.before ?? readPackedPixel(data, pixel), after });
+  };
+  for (let y = 0; y < selection.height; y++) {
+    for (let x = 0; x < selection.width; x++) {
+      setAfter((selection.y + y) * width + selection.x + x, 0);
+    }
+  }
+  for (let y = 0; y < selection.height; y++) {
+    for (let x = 0; x < selection.width; x++) {
+      const color = readPackedPixel(snapshot.data, y * selection.width + x);
+      setAfter((selection.y + dy + y) * width + selection.x + dx + x, color);
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 /** Flip the selected rectangle (or the entire sprite) without resampling or
  * altering dimensions. The returned action is a single undoable edit. */
 export function flipSpritePixels(
