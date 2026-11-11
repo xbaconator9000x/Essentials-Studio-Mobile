@@ -1155,7 +1155,7 @@ pub async fn import_private_project_sprite(
     .map_err(|e| format!("Sprite import worker failed: {e}"))?
 }
 
-#[derive(Serialize)]
+#[derive(serde::Serialize)]
 pub struct SpritePngExport {
     export_id: String,
     size: u64,
