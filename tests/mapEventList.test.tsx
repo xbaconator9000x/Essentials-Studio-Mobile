@@ -99,7 +99,7 @@ describe("map event browser", () => {
     ];
     const originalOrder = unsorted.map(event => event.id);
     render(<MapEventList events={unsorted} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
-    const ids = () => [...document.querySelectorAll(".map-event-list-name")].map(node => node.textContent?.match(/\\d+/)?.[0]);
+    const ids = () => [...document.querySelectorAll(".map-event-list-name")].map(node => node.textContent?.match(/\d+/)?.[0]);
     expect(ids()).toEqual(["004", "012", "030"]);
     fireEvent.change(screen.getByRole("combobox", { name: "Sort map events" }), { target: { value: "name" } });
     expect(ids()).toEqual(["004", "012", "030"]);
