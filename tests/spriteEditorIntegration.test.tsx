@@ -131,6 +131,34 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("exposes copy naming and original replacement in the collapsed portrait toolbar", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const mode = screen.getByRole("combobox", { name: "Quick sprite save mode" });
+    const name = screen.getByRole("textbox", { name: "Quick sprite copy name" });
+    fireEvent.change(name, { target: { value: "Guide_New" } });
+    expect((name as HTMLInputElement).value).toBe("Guide_New");
+    fireEvent.change(mode, { target: { value: "original" } });
+    expect(screen.queryByRole("textbox", { name: "Quick sprite copy name" })).toBeNull();
+  });
+
+  it("extracts real sprite colors and flips pixels as an undoable dirty edit", async () => {
+    spritePixelFixture = new Uint8ClampedArray(4 * 4 * 4);
+    spritePixelFixture.set([255,0,0,255,0,255,0,128], 0);
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const extract = screen.getByRole("button", { name: "Extract colors" });
+    await waitFor(() => expect((extract as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(extract);
+    expect(screen.getByRole("button", { name: "Use sprite color #ff0000" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Flip H" }));
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("keeps the sprite canvas available with collapsible controls that follow orientation changes", async () => {
     let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
     const mediaQuery = {

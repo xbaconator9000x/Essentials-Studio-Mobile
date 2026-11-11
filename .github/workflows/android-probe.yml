@@ -28,6 +28,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Verify sprite pixel operations and rendered editor integration
+        run: |
+          node --experimental-strip-types --test tests/spriteEditorPixels.test.mjs tests/spriteEditorGeometry.test.mjs tests/spriteEditorPreferences.test.mjs tests/spriteEditorShortcuts.test.mjs
+          npx vitest run tests/spriteEditorIntegration.test.tsx
       - name: Verify project ZIP IPC chunk framing
         run: node --experimental-strip-types --test tests/archiveChunks.test.mjs
       - name: Verify lossless partial script Save All payload

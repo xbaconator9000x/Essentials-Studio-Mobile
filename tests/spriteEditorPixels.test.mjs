@@ -9,6 +9,9 @@ import {
   clearSpriteSelection,
   pasteSpriteSelection,
   SpritePixelHistory,
+  flipSpritePixels,
+  extractSpritePalette,
+  replaceSpriteColor,
 } from "../src/services/spriteEditorPixels.ts";
 
 function image(width, height, color = [0, 0, 0, 0]) {
@@ -149,4 +152,29 @@ test("selection operations reject invalid buffers and clipboard dimensions", () 
   assert.equal(clearSpriteSelection(large, 1001, 1000, {
     x: 0, y: 0, width: 1001, height: 1000,
   }), null);
+});
+
+test("sprite flips preserve alpha, dimensions and pixels outside selection, with undo", () => {
+  const data = new Uint8ClampedArray([1,2,3,255, 4,5,6,128, 7,8,9,0, 10,11,12,255, 13,14,15,255, 16,17,18,255]);
+  const original = [...data];
+  const history = new SpritePixelHistory();
+  const action = flipSpritePixels(data, 3, 2, "horizontal", {x:0,y:0,width:2,height:2});
+  assert.equal(history.push(action), true);
+  assert.deepEqual([...data.slice(0,12)], [4,5,6,128,1,2,3,255,7,8,9,0]);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.ok(flipSpritePixels(data, 3, 2, "vertical"));
+  assert.deepEqual([...data.slice(0,4)], [13,14,15,255]);
+});
+
+test("palette extraction and exact recolor ignore invisible pixels and preserve partial alpha", () => {
+  const data = new Uint8ClampedArray([255,0,0,255, 255,0,0,64, 0,255,0,255, 255,0,0,0]);
+  assert.deepEqual(extractSpritePalette(data, 4, 1), ["#ff0000", "#00ff00"]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(replaceSpriteColor(data, 4, 1, "#ff0000", "#123456", {x:1,y:0,width:3,height:1})), true);
+  assert.deepEqual([...data], [255,0,0,255,18,52,86,64,0,255,0,255,255,0,0,0]);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data.slice(4,8)], [255,0,0,64]);
+  assert.equal(replaceSpriteColor(data, 4, 1, "#ff0000", "#ff0000"), null);
 });

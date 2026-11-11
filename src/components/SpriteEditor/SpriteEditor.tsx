@@ -25,6 +25,9 @@ import {
   clearSpriteSelection,
   normalizeSpriteSelection,
   pasteSpriteSelection,
+  flipSpritePixels,
+  extractSpritePalette,
+  replaceSpriteColor,
   type SpritePixelAction,
   type SpriteClipboardImage,
   type SpriteSelection,
@@ -95,6 +98,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [clipboard, setClipboard] = useState<SpriteClipboardImage | null>(null);
   const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(1);
+  const [spritePalette, setSpritePalette] = useState<string[]>([]);
+  const [replaceFrom, setReplaceFrom] = useState("#000000");
   const [zoom, setZoom] = useState(4);
   const [offsetX, setOffsetX] = useState(12);
   const [offsetY, setOffsetY] = useState(12);
@@ -466,6 +471,44 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     return true;
   }, [clipboard, selection, updateDirty]);
 
+  const refreshSpritePalette = useCallback(() => {
+    const image = imageDataRef.current;
+    if (!image) return;
+    if (image.width * image.height > 1_000_000) {
+      setError("Palette extraction is limited to one million pixels");
+      return;
+    }
+    setSpritePalette(extractSpritePalette(image.data, image.width, image.height));
+    setError(null);
+  }, []);
+
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "replace") => {
+    const source = imageCanvasRef.current;
+    const image = imageDataRef.current;
+    if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
+    const area = selection ?? { x: 0, y: 0, width: source.width, height: source.height };
+    if (area.width * area.height > 1_000_000) {
+      setError("Select at most one million pixels for a bulk edit");
+      return;
+    }
+    const action = operation === "replace"
+      ? replaceSpriteColor(image.data, source.width, source.height, replaceFrom, brushColor, area)
+      : flipSpritePixels(image.data, source.width, source.height, operation, area);
+    if (!action) return;
+    if (!historyRef.current.push(action)) {
+      applySpritePixelAction(image.data, action, "before");
+      setError("This edit exceeds the sprite undo limit");
+      return;
+    }
+    spriteEditRevision.current += 1;
+    source.getContext("2d")?.putImageData(image, 0, 0);
+    setSpritePalette([]);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setImageRevision((value) => value + 1);
+    setError(null);
+  }, [brushColor, loading, replaceFrom, saving, selection, updateDirty]);
+
   const paintPixel = useCallback((clientX: number, clientY: number, deferRender = false) => {
     const source = imageCanvasRef.current;
     const context = source?.getContext("2d");
@@ -642,6 +685,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (spriteImportUrl.current) URL.revokeObjectURL(spriteImportUrl.current);
     spriteImportUrl.current = null;
     setImportedSpriteName(null);
+    setSpritePalette([]);
     setDirty(false);
     updateDirty("sprite-editor", false);
     setSelection(null);
@@ -1021,6 +1065,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       historyRef.current.clear();
       setSelection(null);
       setClipboard(null);
+      setSpritePalette([]);
       setImportedSpriteName(file.name);
       setTargetName(importedSpriteCopyName(file.name));
       setSaveMode("copy");
@@ -1059,6 +1104,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     activeSelection.current = null;
     pinchStart.current = null;
     setSelection(null);
+    setSpritePalette([]);
     setImageRevision((value) => value + 1);
     setSelectedName(name);
     setTargetName(`${name}_copy`);
@@ -1117,6 +1163,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <button disabled={saving} onClick={() => void requestClose()}>Close</button>
           </div>
         </header>
+        {controlsCollapsed && error && <span className="sprite-editor-error" role="alert">{error}</span>}
         {controlsCollapsed && (
           <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite assets">
@@ -1205,6 +1252,20 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </label>
               </>
             )}
+            {importedSpriteName === null && (
+              <div className="sprite-editor-quick-group" role="group" aria-label="Quick sprite save controls">
+                <select aria-label="Quick sprite save mode" value={saveMode} disabled={saving}
+                  onChange={(event) => setSaveMode(event.currentTarget.value === "original" ? "original" : "copy")}>
+                  <option value="copy">Save copy</option>
+                  <option value="original">Replace original</option>
+                </select>
+                {saveMode === "copy" && <label className="sprite-editor-quick-copy-name">
+                  Copy name
+                  <input aria-label="Quick sprite copy name" value={targetName} maxLength={128}
+                    disabled={saving} onChange={(event) => setTargetName(event.currentTarget.value)} />
+                </label>}
+              </div>
+            )}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools">
               {([
                 ["brush", "Brush"],
@@ -1261,6 +1322,21 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 />
               ))}
             </div>
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite transform tools">
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
+              <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
+              <label className="sprite-editor-quick-color">Replace from
+                <input type="color" aria-label="Replace source color" value={replaceFrom}
+                  onChange={(event) => setReplaceFrom(event.currentTarget.value)} />
+              </label>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("replace")}>Replace color</button>
+            </div>
+            {spritePalette.length > 0 && <div className="sprite-editor-swatches" role="group" aria-label="Extracted sprite colors">
+              {spritePalette.map((color) => <button key={color} type="button" aria-label={`Use sprite color ${color}`}
+                aria-pressed={brushColor === color} style={{ backgroundColor: color }}
+                onClick={() => setBrushColor(color)} />)}
+            </div>}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
               <button type="button" disabled={!selection || loading || saving}
                 onClick={() => copySelection()}>Copy</button>
@@ -1355,6 +1431,21 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={!selection}
                 onClick={() => setSelection(null)}>Clear selection</button>
             </div>
+            <div className="sprite-editor-tool-row" role="group" aria-label="Sprite transform tools">
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
+              <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
+              <label className="sprite-editor-quick-color">Replace from
+                <input type="color" aria-label="Replace source color" value={replaceFrom}
+                  onChange={(event) => setReplaceFrom(event.currentTarget.value)} />
+              </label>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("replace")}>Replace color</button>
+            </div>
+            {spritePalette.length > 0 && <div className="sprite-editor-swatches" role="group" aria-label="Extracted sprite colors">
+              {spritePalette.map((color) => <button key={color} type="button" aria-label={`Use sprite color ${color}`}
+                aria-pressed={brushColor === color} style={{ backgroundColor: color }}
+                onClick={() => setBrushColor(color)} />)}
+            </div>}
             {selection && (
               <span role="status" aria-label="Selected sprite pixels">
                 Selected {selection.width} × {selection.height} pixels

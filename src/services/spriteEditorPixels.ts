@@ -148,6 +148,76 @@ export function pasteSpriteSelection(
   return action;
 }
 
+/** Flip the selected rectangle (or the entire sprite) without resampling or
+ * altering dimensions. The returned action is a single undoable edit. */
+export function flipSpritePixels(
+  data: Uint8ClampedArray, width: number, height: number,
+  axis: "horizontal" | "vertical", selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = 0; y < area.height; y++) {
+    for (let x = 0; x < area.width; x++) {
+      const target = (area.y + y) * width + area.x + x;
+      const sourceX = axis === "horizontal" ? area.width - 1 - x : x;
+      const sourceY = axis === "vertical" ? area.height - 1 - y : y;
+      const source = (area.y + sourceY) * width + area.x + sourceX;
+      const before = readPackedPixel(data, target);
+      const after = readPackedPixel(data, source);
+      if (before !== after) changes.set(target, { before, after });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
+/** Extract frequent visible RGB colors; ignore fully transparent pixels. */
+export function extractSpritePalette(
+  data: Uint8ClampedArray, width: number, height: number, limit = 16,
+): string[] {
+  if (!isValidImage(data, width, height) || width * height > MAX_SPRITE_EDIT_PIXELS
+      || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) return [];
+  const counts = new Map<number, number>();
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    const packed = readPackedPixel(data, pixel);
+    if ((packed & 0xff) === 0) continue;
+    const rgb = packed >>> 8;
+    counts.set(rgb, (counts.get(rgb) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .slice(0, limit).map(([rgb]) => "#" + rgb.toString(16).padStart(6, "0"));
+}
+
+/** Exact RGB replacement in the selection or sprite, preserving alpha. */
+export function replaceSpriteColor(
+  data: Uint8ClampedArray, width: number, height: number,
+  from: string, to: string, selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  const source = parseColor(from);
+  const target = parseColor(to);
+  if (source === null || target === null || source === target
+      || !isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = area.y; y < area.y + area.height; y++) {
+    for (let x = area.x; x < area.x + area.width; x++) {
+      const pixel = y * width + x;
+      const before = readPackedPixel(data, pixel);
+      const alpha = before & 0xff;
+      if (alpha === 0 || (before >>> 8) !== (source >>> 8)) continue;
+      const after = ((target & 0xffffff00) | alpha) >>> 0;
+      changes.set(pixel, { before, after });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 function createAction(
   changes: Map<number, { before: number; after: number }>,
 ): SpritePixelAction | null {
