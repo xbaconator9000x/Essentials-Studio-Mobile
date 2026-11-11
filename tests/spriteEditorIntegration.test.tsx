@@ -163,6 +163,80 @@ describe("sprite editor integration", () => {
     expect(reopened.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
   });
 
+  it("keeps project sprite selection and import reachable with the portrait tools collapsed", async () => {
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
+    const importUrl = { createObjectURL: vi.fn(() => "blob:quick-import"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const picker = screen.getByRole("combobox", { name: "Quick select project character sprite" });
+    expect(picker.closest('[hidden]')).toBeNull();
+    fireEvent.change(picker, { target: { value: "Hero" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenLastCalledWith(
+      "/synthetic-project",
+      "Hero",
+    ));
+
+    const input = screen.getByLabelText("Quick import image as sprite copy") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["sprite"], "Visitor.png")] } });
+    expect(await screen.findByText("Imported image: Visitor.png — save as a new copy.")).toBeTruthy();
+    expect(input.value).toBe("");
+    expect((picker as HTMLSelectElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Visitor",
+      "data:image/png;base64,cGl4ZWxz",
+    ));
+  });
+
+  it("exposes non-destructive trace opacity and scale controls in the collapsed toolbar", async () => {
+    const traceUrl = { createObjectURL: vi.fn(() => "blob:trace"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    vi.stubGlobal("URL", traceUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const traceInput = screen.getByLabelText("Quick import trace overlay") as HTMLInputElement;
+    fireEvent.change(traceInput, { target: { files: [new File(["trace"], "reference.png")] } });
+
+    const opacity = await screen.findByRole("slider", { name: "Quick trace opacity" });
+    const scale = screen.getByRole("slider", { name: "Quick trace scale" });
+    fireEvent.change(opacity, { target: { value: "60" } });
+    fireEvent.change(scale, { target: { value: "125" } });
+
+    expect(opacity.getAttribute("value")).toBe("60");
+    expect(scale.getAttribute("value")).toBe("125");
+    expect(screen.getByRole("button", { name: "Position trace with touch" })).toBeTruthy();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
   it("keeps a fit-to-view action available with tools collapsed without dirtying pixels", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const view = renderEditor();

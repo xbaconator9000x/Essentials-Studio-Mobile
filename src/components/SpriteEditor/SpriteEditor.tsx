@@ -1043,6 +1043,27 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     image.src = url;
   };
 
+  const selectProjectSprite = (name: string) => {
+    setLoading(true);
+    imageCanvasRef.current = null;
+    imageDataRef.current = null;
+    historyRef.current.clear();
+    pointerPositions.current.clear();
+    activePaintPointer.current = null;
+    pendingTouchPaint.current = null;
+    lastPaintPixel.current = null;
+    activePan.current = null;
+    activeTracePan.current = null;
+    activeSelection.current = null;
+    pinchStart.current = null;
+    setSelection(null);
+    setImageRevision((value) => value + 1);
+    setSelectedName(name);
+    setTargetName(`${name}_copy`);
+    setDirty(false);
+    setError(null);
+  };
+
   useEffect(() => () => {
     traceLoadId.current += 1;
     if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
@@ -1096,6 +1117,43 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         </header>
         {controlsCollapsed && (
           <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite assets">
+              <select
+                aria-label="Quick select project character sprite"
+                value={selectedName}
+                disabled={!selectedName || importedSpriteName !== null || dirty || loading || saving}
+                onChange={(event) => selectProjectSprite(event.currentTarget.value)}
+              >
+                {names.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <label className={`sprite-editor-quick-import${dirty || loading || saving ? " is-disabled" : ""}`}>
+                Import image
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label="Quick import image as sprite copy"
+                  disabled={dirty || loading || saving}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    handleSpriteImport(file);
+                  }}
+                />
+              </label>
+            </div>
+            <label className="sprite-editor-quick-import">
+              Trace image
+              <input
+                type="file"
+                accept="image/*"
+                aria-label="Quick import trace overlay"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  handleTraceFile(file);
+                }}
+              />
+            </label>
             {traceImage && (
               <button
                 type="button"
@@ -1105,6 +1163,32 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               >
                 {positionTraceWithTouch ? "Trace on" : "Trace"}
               </button>
+            )}
+            {traceImage && (
+              <>
+                <label className="sprite-editor-quick-range">
+                  Opacity {traceOpacity}%
+                  <input
+                    type="range"
+                    aria-label="Quick trace opacity"
+                    min="0"
+                    max="100"
+                    value={traceOpacity}
+                    onChange={(event) => setTraceOpacity(Number(event.target.value))}
+                  />
+                </label>
+                <label className="sprite-editor-quick-range">
+                  Scale {traceScale}%
+                  <input
+                    type="range"
+                    aria-label="Quick trace scale"
+                    min="25"
+                    max="200"
+                    value={traceScale}
+                    onChange={(event) => setTraceScale(Number(event.target.value))}
+                  />
+                </label>
+              </>
             )}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools">
               {([
@@ -1180,7 +1264,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             className={`sprite-editor-tools${controlsCollapsed ? " is-collapsed" : ""}`}
             hidden={controlsCollapsed}
           >
-            <div className="sprite-editor-character-picker">
+            {!controlsCollapsed && <div className="sprite-editor-character-picker">
               <label htmlFor="sprite-character-filter">Character</label>
               <input
                 id="sprite-character-filter"
@@ -1194,25 +1278,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 aria-label="Select project character sprite"
                 value={selectedName}
                 onChange={(event) => {
-                const name = event.target.value;
-                setLoading(true);
-                imageCanvasRef.current = null;
-                imageDataRef.current = null;
-                historyRef.current.clear();
-                pointerPositions.current.clear();
-                activePaintPointer.current = null;
-                pendingTouchPaint.current = null;
-                lastPaintPixel.current = null;
-                activePan.current = null;
-                activeTracePan.current = null;
-                activeSelection.current = null;
-                pinchStart.current = null;
-                setSelection(null);
-                setImageRevision((value) => value + 1);
-                setSelectedName(name);
-                setTargetName(`${name}_copy`);
-                setDirty(false);
-                setError(null);
+                  selectProjectSprite(event.currentTarget.value);
                 }}
                 disabled={!selectedName || importedSpriteName !== null || dirty || loading || saving}
               >
@@ -1226,7 +1292,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                     : `No project sprites match “${spriteSearch.trim()}”.`}
                 </span>
               )}
-            </div>
+            </div>}
             <label>
               Import image as copy
               <input

@@ -38,6 +38,7 @@
 .sprite-editor-header button,
 .sprite-editor-tools button,
 .sprite-editor-quick-tools button,
+.sprite-editor-quick-tools select,
 .sprite-editor-tools select,
 .sprite-editor-tools input:not([type="range"]):not([type="color"]) {
   min-height: 36px;
@@ -103,6 +104,54 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+}
+
+.sprite-editor-quick-tools select,
+.sprite-editor-quick-import {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 9px;
+  color: var(--color-text);
+  background: var(--color-surface0);
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+}
+
+.sprite-editor-quick-import {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sprite-editor-quick-import input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sprite-editor-quick-import.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sprite-editor-quick-range {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 112px;
+  color: var(--color-subtext1);
+  font-size: 11px;
+}
+
+.sprite-editor-quick-range input[type="range"] {
+  width: 112px;
+  min-height: 44px;
 }
 
 .sprite-editor-quick-tools button {
