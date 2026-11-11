@@ -24,6 +24,7 @@ import {
   copySpriteSelection,
   clearSpriteSelection,
   normalizeSpriteSelection,
+  moveSpriteSelection,
   pasteSpriteSelection,
   flipSpritePixels,
   rotateSquareSpritePixels,
@@ -412,6 +413,21 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       y: Math.max(0, Math.min(source.height - 1, Math.floor((clientY - rect.top - offsetY) / zoom))),
     };
   }, [offsetX, offsetY, zoom]);
+
+  const selectEntireSprite = useCallback(() => {
+    const source = imageCanvasRef.current;
+    if (!source || loading || saving) return;
+    setSelection({ x: 0, y: 0, width: source.width, height: source.height });
+    setTool("select");
+  }, [loading, saving]);
+
+  const nudgeSelection = useCallback((dx: number, dy: number) => {
+    const source = imageCanvasRef.current;
+    if (!source || loading || saving) return;
+    setSelection((current) => current
+      ? moveSpriteSelection(current, dx, dy, source.width, source.height)
+      : null);
+  }, [loading, saving]);
 
   const copySelection = useCallback((cut = false) => {
     const source = imageCanvasRef.current;
@@ -1375,6 +1391,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onClick={() => setBrushColor(color)} />)}
             </div>}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
+              <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
+              <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
+              <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
+              <button type="button" aria-label="Move sprite selection down" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, 1)}>↓</button>
+              <button type="button" aria-label="Move sprite selection right" disabled={!selection || loading || saving} onClick={() => nudgeSelection(1, 0)}>→</button>
               <button type="button" disabled={!selection || loading || saving}
                 onClick={() => copySelection()}>Copy</button>
               <button type="button" disabled={!selection || loading || saving}
@@ -1459,6 +1480,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               ))}
             </div>
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite selection actions">
+              <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
+              <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
+              <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
+              <button type="button" aria-label="Move sprite selection down" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, 1)}>↓</button>
+              <button type="button" aria-label="Move sprite selection right" disabled={!selection || loading || saving} onClick={() => nudgeSelection(1, 0)}>→</button>
               <button type="button" disabled={!selection || loading || saving}
                 onClick={() => copySelection()}>Copy selection</button>
               <button type="button" disabled={!selection || loading || saving}
