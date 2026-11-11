@@ -460,17 +460,17 @@ export function floodFill(
 
   // Phase 1: BFS to find all cells to fill (match by same tile ID or same autotile slot)
   const filled: [number, number][] = [];
-  const visited = new Set<string>();
-  const queue: [number, number][] = [[startX, startY]];
+  // Mark cells when enqueued, not when dequeued. The previous algorithm
+  // repeatedly enqueued boundary/nonmatching cells, inflating the queue on
+  // large XP maps and causing avoidable Android WebView stalls.
+  const seen = new Uint8Array(mapData.width * mapData.height);
+  const queue: number[] = [startY * mapData.width + startX];
+  seen[queue[0]] = 1;
 
-  // shift() is O(n) and freezes WebView on large map fills.
   for (let head = 0; head < queue.length; head++) {
-    const [x, y] = queue[head];
-    const key = `${x},${y}`;
-
-    if (visited.has(key)) continue;
-    if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) continue;
-
+    const index = queue[head];
+    const x = index % mapData.width;
+    const y = Math.floor(index / mapData.width);
     const currentId = getTile(mapData.tiles, x, y, layer, mapData.width, mapData.height);
 
     // Match: for autotiles match by slot, for regular tiles match by exact ID
@@ -482,11 +482,22 @@ export function floodFill(
     }
     if (!matches) continue;
 
-    visited.add(key);
     filled.push([x, y]);
 
-    // Add 4-directional neighbors
-    queue.push([x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]);
+    // Each in-bounds cell enters the queue at most once, even if it
+    // borders many matching cells. This bounds queue memory to map area.
+    const neighbors = [
+      x > 0 ? index - 1 : -1,
+      x + 1 < mapData.width ? index + 1 : -1,
+      y > 0 ? index - mapData.width : -1,
+      y + 1 < mapData.height ? index + mapData.width : -1,
+    ];
+    for (const next of neighbors) {
+      if (next >= 0 && !seen[next]) {
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
   }
 
   if (filled.length === 0) return [];
