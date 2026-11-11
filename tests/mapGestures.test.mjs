@@ -6,7 +6,14 @@ import {
   rasterizeTileLine,
   resolveMapTapTarget,
   TouchGestureMachine,
+  clampContextMenuPosition,
 } from "../src/services/mapGestures.ts";
+
+test("context menu position stays within the viewport with a safe margin", () => {
+  assert.deepEqual(clampContextMenuPosition({ x: 900, y: 700 }, 1000, 800), { x: 792, y: 592 });
+  assert.deepEqual(clampContextMenuPosition({ x: 0, y: 0 }, 320, 240), { x: 8, y: 8 });
+  assert.deepEqual(clampContextMenuPosition({ x: 100, y: 100 }, 100, 80), { x: 8, y: 8 });
+});
 
 test("tap stays a tap below the movement threshold; dragging pans without tapping", () => {
   const gestures = new TouchGestureMachine();

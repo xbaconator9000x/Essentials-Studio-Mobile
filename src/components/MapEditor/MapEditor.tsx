@@ -16,6 +16,7 @@ import {
 import {
   resolveMapTapTarget,
   TouchGestureMachine,
+  clampContextMenuPosition,
   clampMapViewport,
   centerMapViewportOnTile,
   rasterizeTileLine,
@@ -879,10 +880,17 @@ export function MapEditor({
         if (!tile) return;
         if (tile.x < 0 || tile.x >= mapData.width || tile.y < 0 || tile.y >= mapData.height) return;
         const event = mapData.events.find((candidate) => candidate.x === tile.x && candidate.y === tile.y);
+        const menuPoint = clampContextMenuPosition(
+          action.point,
+          window.innerWidth,
+          window.innerHeight,
+          200,
+          event ? 200 : hasClipboardEvent ? 140 : 90,
+        );
         suppressTouchClickUntilRef.current = Date.now() + 700;
         setContextMenu({
-          x: action.point.x,
-          y: action.point.y,
+          x: menuPoint.x,
+          y: menuPoint.y,
           tileX: tile.x,
           tileY: tile.y,
           event: event ? { id: event.id, name: event.name } : null,
@@ -937,7 +945,7 @@ export function MapEditor({
         nextZoom,
       );
     },
-    [doPaint, handleTouchTap, mapData, onOpenEvent, paintTool, readOnly, screenToTile, selectedLayer, viewportX, viewportY, zoom, setClampedViewport],
+    [doPaint, handleTouchTap, hasClipboardEvent, mapData, onOpenEvent, paintTool, readOnly, screenToTile, selectedLayer, viewportX, viewportY, zoom, setClampedViewport],
   );
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1157,9 +1165,16 @@ export function MapEditor({
             if (!pos) return;
             if (pos.x < 0 || pos.x >= mapData.width || pos.y < 0 || pos.y >= mapData.height) return;
             const evt = mapData.events.find(ev => ev.x === pos.x && ev.y === pos.y);
+            const menuPoint = clampContextMenuPosition(
+              { x: e.clientX, y: e.clientY },
+              window.innerWidth,
+              window.innerHeight,
+              200,
+              evt ? 200 : hasClipboardEvent ? 140 : 90,
+            );
             setContextMenu({
-              x: e.clientX,
-              y: e.clientY,
+              x: menuPoint.x,
+              y: menuPoint.y,
               tileX: pos.x,
               tileY: pos.y,
               event: evt ? { id: evt.id, name: evt.name } : null,

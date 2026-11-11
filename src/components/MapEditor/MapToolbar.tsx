@@ -281,6 +281,7 @@ export function MapToolbar({
           Event copied; long-press a map tile to paste
         </span>
       )}
+      <span className="toolbar-label map-touch-hint">Long-press a map tile for event actions</span>
 
       <button
         className="toolbar-btn"

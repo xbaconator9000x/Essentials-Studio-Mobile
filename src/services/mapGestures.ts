@@ -5,6 +5,25 @@ export interface GesturePoint {
   y: number;
 }
 
+export function clampContextMenuPosition(
+  point: GesturePoint,
+  viewportWidth: number,
+  viewportHeight: number,
+  menuWidth = 200,
+  menuHeight = 200,
+  margin = 8,
+): GesturePoint {
+  if (![point.x, point.y, viewportWidth, viewportHeight, menuWidth, menuHeight, margin].every(Number.isFinite)) {
+    return { x: margin, y: margin };
+  }
+  const maxX = Math.max(margin, viewportWidth - menuWidth - margin);
+  const maxY = Math.max(margin, viewportHeight - menuHeight - margin);
+  return {
+    x: Math.max(margin, Math.min(point.x, maxX)),
+    y: Math.max(margin, Math.min(point.y, maxY)),
+  };
+}
+
 export function clampMapViewport(
   viewportX: number,
   viewportY: number,

@@ -61,13 +61,18 @@ function renderMap({
   );
 }
 
-function dispatchTouch(canvas: Element, type: "pointerdown" | "pointerup", timeStamp: number) {
+function dispatchTouch(
+  canvas: Element,
+  type: "pointerdown" | "pointerup",
+  timeStamp: number,
+  point = { x: 48, y: 48 },
+) {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
     pointerId: { value: 1 },
     pointerType: { value: "touch" },
-    clientX: { value: 48 },
-    clientY: { value: 48 },
+    clientX: { value: point.x },
+    clientY: { value: point.y },
     timeStamp: { value: timeStamp },
   });
   fireEvent(canvas, event);
@@ -132,6 +137,25 @@ describe("touch map context actions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Paste Event" }));
     await waitFor(() => expect(onPasteEvent).toHaveBeenCalledWith(2, 0));
     expect(onSetStartPosition).not.toHaveBeenCalled();
+  });
+
+  it("keeps a long-press event menu inside the phone viewport", async () => {
+    const view = renderMap();
+    HTMLElement.prototype.getBoundingClientRect = vi.fn(() => ({
+      x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 800,
+      width: 400, height: 800, toJSON: () => ({}),
+    }));
+    vi.stubGlobal("innerWidth", 400);
+    vi.stubGlobal("innerHeight", 800);
+    const canvas = view.container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+
+    dispatchTouch(canvas!, "pointerdown", 100, { x: 380, y: 780 });
+    dispatchTouch(canvas!, "pointerup", 600, { x: 380, y: 780 });
+
+    const menu = await screen.findByRole("menu", { name: "Event actions" });
+    expect(Number.parseFloat((menu as HTMLElement).style.left)).toBeLessThanOrEqual(192);
+    expect(Number.parseFloat((menu as HTMLElement).style.top)).toBeLessThanOrEqual(592);
   });
 
   it("keeps a short touch tap on the Events layer opening the event directly", async () => {
