@@ -656,10 +656,12 @@ export function pasteTileRegion(
   mapData: MapRenderData,
   clipboard: TileClipboard,
   origin: { x: number; y: number },
-  activeLayer: number
+  activeLayer: number,
+  emptyTileMode: "replace" | "preserve" = "replace",
 ): TileChange[] {
   const { tiles, width, height } = mapData;
-  if (!validMapShape(mapData) || !Number.isInteger(activeLayer)
+  if ((emptyTileMode !== "replace" && emptyTileMode !== "preserve")
+    || !validMapShape(mapData) || !Number.isInteger(activeLayer)
     || (activeLayer !== -1 && !validLayer(activeLayer))
     || !Number.isInteger(origin.x) || !Number.isInteger(origin.y)
     || !Number.isSafeInteger(clipboard.width) || !Number.isSafeInteger(clipboard.height)
@@ -692,6 +694,7 @@ export function pasteTileRegion(
         const ty = origin.y + dy;
         if (tx < 0 || tx >= width || ty < 0 || ty >= height) continue;
         const newTileId = layerData[dy * clipboard.width + dx] ?? 0;
+        if (emptyTileMode === "preserve" && newTileId === 0) continue;
         const offset = l * width * height + ty * width + tx;
         const oldTileId = tiles[offset] ?? 0;
         if (oldTileId === newTileId) continue;
