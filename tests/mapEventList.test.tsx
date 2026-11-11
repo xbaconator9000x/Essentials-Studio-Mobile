@@ -119,6 +119,21 @@ describe("map event browser", () => {
     expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
   });
 
+  it("reverses ID and position sort without changing native event order", () => {
+    const originalOrder = events.map((event) => event.id);
+    render(<MapEventList events={events} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
+    const ids = () => Array.from(document.querySelectorAll(".map-event-list-name"))
+      .map((element) => element.textContent?.match(/\\[(\\d+)\\]/)?.[1]);
+    expect(ids()).toEqual(["002", "009"]);
+    fireEvent.click(screen.getByRole("button", { name: "Sort descending" }));
+    expect(ids()).toEqual(["009", "002"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort map events" }), { target: { value: "position" } });
+    expect(ids()).toEqual(["009", "002"]);
+    fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
+    expect(ids()).toEqual(["002", "009"]);
+    expect(events.map((event) => event.id)).toEqual(originalOrder);
+  });
+
   it("renders a useful empty-map state", () => {
     render(<MapEventList events={[]} onClose={vi.fn()} />);
 
