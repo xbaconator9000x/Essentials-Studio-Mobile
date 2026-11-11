@@ -152,7 +152,7 @@ export function pasteSpriteSelection(
  * altering dimensions. The returned action is a single undoable edit. */
 export function flipSpritePixels(
   data: Uint8ClampedArray, width: number, height: number,
-  axis: "horizontal" | "vertical", selection?: SpriteSelection | null,
+  axis: "horizontal" | "vertical" | "rotate180", selection?: SpriteSelection | null,
 ): SpritePixelAction | null {
   const area = selection ?? { x: 0, y: 0, width, height };
   if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
@@ -161,8 +161,8 @@ export function flipSpritePixels(
   for (let y = 0; y < area.height; y++) {
     for (let x = 0; x < area.width; x++) {
       const target = (area.y + y) * width + area.x + x;
-      const sourceX = axis === "horizontal" ? area.width - 1 - x : x;
-      const sourceY = axis === "vertical" ? area.height - 1 - y : y;
+      const sourceX = axis !== "vertical" ? area.width - 1 - x : x;
+      const sourceY = axis !== "horizontal" ? area.height - 1 - y : y;
       const source = (area.y + sourceY) * width + area.x + sourceX;
       const before = readPackedPixel(data, target);
       const after = readPackedPixel(data, source);
