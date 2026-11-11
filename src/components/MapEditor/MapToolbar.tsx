@@ -26,6 +26,8 @@ interface MapToolbarProps {
   canPasteTiles: boolean;
   onCopyTiles: () => void;
   onPasteTiles: () => void;
+  preserveEmptyPaste: boolean;
+  onPreserveEmptyPasteChange: (value: boolean) => void;
   hasClipboardEvent?: boolean;
   showEventPins: boolean;
   setShowEventPins: (show: boolean) => void;
@@ -77,6 +79,8 @@ export function MapToolbar({
   canPasteTiles,
   onCopyTiles,
   onPasteTiles,
+  preserveEmptyPaste,
+  onPreserveEmptyPasteChange,
   hasClipboardEvent = false,
   showEventPins,
   setShowEventPins,
@@ -247,6 +251,12 @@ export function MapToolbar({
           >
             Paste
           </button>
+          <label className="toolbar-check">
+            <input type="checkbox" aria-label="Preserve existing tiles under empty clipboard cells"
+              checked={preserveEmptyPaste}
+              onChange={(event) => onPreserveEmptyPasteChange(event.currentTarget.checked)} />
+            Keep underlying tiles
+          </label>
           {tileClipboard && tileClipboard.width > 0 && (
             <span className="toolbar-label" role="status">
               Clipboard {tileClipboard.width}×{tileClipboard.height}
