@@ -158,4 +158,14 @@ describe("touch map context actions", () => {
 
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("makes event copying directly available from the map's event browser", async () => {
+    const onCopyEvent = vi.fn(async () => {});
+    renderMap({ onCopyEvent });
+    fireEvent.click(screen.getByRole("button", { name: "Events (1)" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Copy event 004 Guide" }));
+
+    await waitFor(() => expect(onCopyEvent).toHaveBeenCalledWith(4));
+  });
 });

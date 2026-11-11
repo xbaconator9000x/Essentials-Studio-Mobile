@@ -24,6 +24,7 @@ interface MapToolbarProps {
   canPasteTiles: boolean;
   onCopyTiles: () => void;
   onPasteTiles: () => void;
+  hasClipboardEvent?: boolean;
   showEventPins: boolean;
   setShowEventPins: (show: boolean) => void;
   showCollisionOverlay: boolean;
@@ -71,6 +72,7 @@ export function MapToolbar({
   canPasteTiles,
   onCopyTiles,
   onPasteTiles,
+  hasClipboardEvent = false,
   showEventPins,
   setShowEventPins,
   showCollisionOverlay,
@@ -273,6 +275,11 @@ export function MapToolbar({
         >
           Events ({eventCount})
         </button>
+      )}
+      {hasClipboardEvent && (
+        <span className="toolbar-label" role="status">
+          Event copied; long-press a map tile to paste
+        </span>
       )}
 
       <button

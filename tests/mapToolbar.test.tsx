@@ -62,6 +62,41 @@ describe("mobile map toolbar", () => {
     expect(onMediaChange).toBeDefined();
   });
 
+  it("explains how to paste a copied event using touch", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+
+    render(
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={vi.fn()}
+        tileClipboard={null}
+        selectedLayer={0}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        {...noTileClipboardActions}
+        hasClipboardEvent
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={1}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("long-press a map tile to paste");
+  });
+
   it("keeps layers directly usable in portrait and respects orientation changes", () => {
     let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
     const mediaQuery = {

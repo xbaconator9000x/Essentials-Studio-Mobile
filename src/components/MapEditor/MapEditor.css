@@ -150,7 +150,8 @@
 }
 
 .map-event-list-header button,
-.map-event-list-item {
+.map-event-list-item,
+.map-event-list-copy {
   min-height: 44px;
   border: 1px solid var(--color-surface1);
   border-radius: 4px;
@@ -226,6 +227,14 @@
   padding: 6px;
   border: 1px solid var(--color-surface1);
   border-radius: 4px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+
+.map-event-list-copy {
+  min-width: 60px;
+  min-height: 44px;
+  padding: 6px;
   background: var(--color-surface0);
   color: var(--color-text);
 }

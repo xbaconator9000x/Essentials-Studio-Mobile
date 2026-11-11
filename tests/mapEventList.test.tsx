@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapEventList } from "../src/components/MapEditor/MapEventList";
 import type { EventInfo } from "../src/types";
@@ -46,6 +46,23 @@ describe("map event browser", () => {
     expect(onFocusEvent).toHaveBeenCalledWith(9);
     expect(onOpenEvent).not.toHaveBeenCalled();
     expect(order).toEqual(["close", "focus"]);
+  });
+
+  it("copies an event from its visible touch action without closing the browser", async () => {
+    const onCopyEvent = vi.fn(async () => {});
+    render(
+      <MapEventList
+        events={events}
+        onOpenEvent={vi.fn()}
+        onCopyEvent={onCopyEvent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy event 002 Guide" }));
+
+    await waitFor(() => expect(onCopyEvent).toHaveBeenCalledWith(2));
+    expect(screen.getByRole("region", { name: "Map events" })).toBeTruthy();
   });
 
   it("keeps event information visible but prevents editing in read-only preview", () => {

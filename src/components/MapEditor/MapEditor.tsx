@@ -1083,6 +1083,7 @@ export function MapEditor({
           canPasteTiles={canPasteTiles}
           onCopyTiles={copySelectedTiles}
           onPasteTiles={pasteTilesAtCursor}
+          hasClipboardEvent={hasClipboardEvent}
         />
       )}
 
@@ -1169,6 +1170,7 @@ export function MapEditor({
           <MapEventList
             events={mapData.events}
             onOpenEvent={handleOpenEventFromList}
+            onCopyEvent={onCopyEvent}
             onFocusEvent={focusEventOnMap}
             onClose={() => setShowEventList(false)}
           />

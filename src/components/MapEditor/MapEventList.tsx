@@ -4,11 +4,12 @@ import type { EventInfo } from "../../types";
 interface Props {
   events: EventInfo[];
   onOpenEvent?: (eventId: number, eventName: string) => void;
+  onCopyEvent?: (eventId: number) => Promise<void>;
   onFocusEvent?: (eventId: number) => void;
   onClose: () => void;
 }
 
-export function MapEventList({ events, onOpenEvent, onFocusEvent, onClose }: Props) {
+export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, onClose }: Props) {
   const [query, setQuery] = useState("");
   const visibleEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -66,6 +67,16 @@ export function MapEventList({ events, onOpenEvent, onFocusEvent, onClose }: Pro
                 <span className="map-event-list-position">({event.x}, {event.y})</span>
                 <span className="map-event-list-pages">{event.page_count} pages</span>
               </button>
+              {onCopyEvent && (
+                <button
+                  type="button"
+                  className="map-event-list-copy"
+                  aria-label={`Copy event ${String(event.id).padStart(3, "0")} ${event.name || "Unnamed event"}`}
+                  onClick={() => { void onCopyEvent(event.id); }}
+                >
+                  Copy
+                </button>
+              )}
               {onFocusEvent && (
                 <button
                   type="button"
