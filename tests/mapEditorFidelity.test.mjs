@@ -202,3 +202,36 @@ test("clipboard paste preserves zero tiles at clipped destination edges", () => 
   assert.deepEqual(data.tiles.slice(0, 4), [111, 222, 900, 444]);
   assert.deepEqual(data.tiles.slice(4), new Array(8).fill(900));
 });
+
+test("large autotile rectangle updates exterior perimeter only and remains undoable", () => {
+  const data = map(32, 24);
+  const size = data.width * data.height;
+  // Surround the rectangle with an existing autotile of the same XP slot.
+  for (let y = 3; y <= 20; y++) {
+    for (let x = 3; x <= 28; x++) data.tiles[y * data.width + x] = 48;
+  }
+  data.tiles[size + 5 * data.width + 5] = 1024;
+  const before = data.tiles.slice();
+  const changes = paintRectangle(data, 5, 5, 26, 18, 0, 48);
+  assert.ok(changes.length >= 22 * 14);
+  assert.ok(changes.some(c => c.x === 4 && c.y === 5));
+  assert.ok(changes.some(c => c.x === 27 && c.y === 18));
+  assert.ok(changes.every(c => c.layer === 0));
+  assert.equal(data.tiles[size + 5 * data.width + 5], 1024);
+  revertAction(data, { type: "rectangle", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+  applyAction(data, { type: "rectangle", changes, timestamp: 0 });
+  assert.equal(data.tiles[size + 5 * data.width + 5], 1024);
+});
+
+test("thin autotile rectangles handle shared corners and preserve undo", () => {
+  for (const [width, height] of [[1, 6], [6, 1], [1, 1]]) {
+    const data = map(8, 8);
+    const before = data.tiles.slice();
+    const changes = paintRectangle(data, 2, 2, 1 + width, 1 + height, 2, 48);
+    assert.ok(changes.length > 0);
+    assert.ok(changes.every(c => c.layer === 2));
+    revertAction(data, { type: "rectangle", changes, timestamp: 0 });
+    assert.deepEqual(data.tiles, before);
+  }
+});
