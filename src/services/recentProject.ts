@@ -1,8 +1,11 @@
 const LAST_PROJECT_KEY = "essentials-studio:last-project";
 const RECENT_PROJECTS_KEY = "essentials-studio:recent-projects";
+const RECENT_MAP_SELECTIONS_KEY = "essentials-studio:recent-map-selections";
 const MAX_RECENT_PROJECTS = 8;
+const MAX_RECENT_MAP_SELECTIONS = 8;
 
 type ProjectPathStorage = Pick<Storage, "getItem" | "setItem">;
+type RecentMapSelection = { projectPath: string; mapId: number };
 
 function browserStorage(): ProjectPathStorage | null {
   try {
@@ -67,4 +70,52 @@ export function rememberRecentProjectPath(
     // Project opening must work even when browser storage is unavailable.
   }
   rememberLastProjectPath(path, storage);
+}
+
+function readRecentMapSelections(storage: ProjectPathStorage): RecentMapSelection[] {
+  try {
+    const stored = storage.getItem(RECENT_MAP_SELECTIONS_KEY);
+    if (!stored) return [];
+    const entries: unknown = JSON.parse(stored);
+    if (!Array.isArray(entries)) return [];
+    const valid = entries.filter((entry): entry is RecentMapSelection =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "projectPath" in entry &&
+      typeof entry.projectPath === "string" &&
+      validProjectPath(entry.projectPath) &&
+      "mapId" in entry &&
+      Number.isSafeInteger(entry.mapId) &&
+      entry.mapId > 0
+    );
+    return valid.slice(0, MAX_RECENT_MAP_SELECTIONS);
+  } catch {
+    return [];
+  }
+}
+
+export function getLastMapId(
+  projectPath: string,
+  storage: ProjectPathStorage | null = browserStorage(),
+): number | null {
+  if (!storage || !validProjectPath(projectPath)) return null;
+  return readRecentMapSelections(storage).find((entry) => entry.projectPath === projectPath)?.mapId ?? null;
+}
+
+export function rememberLastMapId(
+  projectPath: string,
+  mapId: number,
+  storage: ProjectPathStorage | null = browserStorage(),
+): void {
+  if (!storage || !validProjectPath(projectPath) || !Number.isSafeInteger(mapId) || mapId <= 0) return;
+  try {
+    const recent = readRecentMapSelections(storage)
+      .filter((entry) => entry.projectPath !== projectPath);
+    storage.setItem(RECENT_MAP_SELECTIONS_KEY, JSON.stringify([
+      { projectPath, mapId },
+      ...recent,
+    ].slice(0, MAX_RECENT_MAP_SELECTIONS)));
+  } catch {
+    // Map selection persistence must not block opening or editing a project.
+  }
 }

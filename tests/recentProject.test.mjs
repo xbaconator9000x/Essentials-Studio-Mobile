@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   getLastProjectPath,
+  getLastMapId,
   getRecentProjectPaths,
   rememberLastProjectPath,
+  rememberLastMapId,
   rememberRecentProjectPath,
 } from "../src/services/recentProject.ts";
 
@@ -81,4 +83,43 @@ test("ignores malformed paths and storage failures without blocking project open
   assert.doesNotThrow(() => rememberLastProjectPath("/project", unavailableStorage));
   assert.equal(getLastProjectPath(null), null);
   assert.doesNotThrow(() => rememberLastProjectPath("/project", null));
+});
+
+test("remembers a bounded map selection independently for each recent project", () => {
+  const projectStorage = storage();
+  for (let index = 0; index < 10; index++) {
+    rememberLastMapId(`/private/projects/${index}`, index + 1, projectStorage);
+  }
+  rememberLastMapId("/private/projects/5", 42, projectStorage);
+
+  assert.equal(getLastMapId("/private/projects/5", projectStorage), 42);
+  assert.equal(getLastMapId("/private/projects/9", projectStorage), 10);
+  assert.equal(getLastMapId("/private/projects/0", projectStorage), null);
+});
+
+test("ignores invalid map IDs and safely handles malformed or unavailable map storage", () => {
+  for (const mapId of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    const projectStorage = storage();
+    rememberLastMapId("/private/project", mapId, projectStorage);
+    assert.equal(getLastMapId("/private/project", projectStorage), null);
+  }
+  const projectStorage = storage({
+    "essentials-studio:recent-map-selections": JSON.stringify([
+      { projectPath: "/private/project", mapId: 2 },
+      { projectPath: "/private/project", mapId: 0 },
+      { projectPath: " /bad ", mapId: 3 },
+      { projectPath: "/private/other", mapId: Number.MAX_SAFE_INTEGER + 1 },
+    ]),
+  });
+  assert.equal(getLastMapId("/private/project", projectStorage), 2);
+  assert.equal(getLastMapId("/private/project", storage({
+    "essentials-studio:recent-map-selections": "{",
+  })), null);
+  const unavailableStorage = {
+    getItem: () => { throw new Error("storage denied"); },
+    setItem: () => { throw new Error("storage quota"); },
+  };
+  assert.equal(getLastMapId("/private/project", unavailableStorage), null);
+  assert.doesNotThrow(() => rememberLastMapId("/private/project", 2, unavailableStorage));
+  assert.equal(getLastMapId("/private/project", null), null);
 });
