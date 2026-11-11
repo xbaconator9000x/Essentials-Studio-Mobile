@@ -149,9 +149,16 @@ try {
   const before = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(before.width, 2);
   assert.equal(before.height, 2);
-  const targetTile = before.tiles[0] === 48 ? 96 : 48;
-  await page.getByRole("button", { name: "Auto", exact: true }).click();
-  await page.locator(".autotile-item").nth(targetTile === 48 ? 0 : 1).click();
+  // The synthetic project intentionally declares no autotile graphics. Empty
+  // autotile slots are disabled in the real editor, so exercise a valid regular
+  // tileset tile instead of attempting to click a nonexistent resource.
+  const targetTile = before.tiles[0] === 384 ? 385 : 384;
+  await page.getByRole("button", { name: "Tiles", exact: true }).click();
+  const tilesetPicker = page.getByRole("button", { name: "Tiles", exact: true });
+  await tilesetPicker.waitFor({ state: "visible" });
+  const tilesetCanvas = page.locator(".tileset-canvas");
+  await tilesetCanvas.waitFor({ state: "visible", timeout: 15_000 });
+  await tilesetCanvas.click({ position: { x: targetTile === 385 ? 48 : 16, y: 16 } });
   await page.locator(".map-editor-canvas").click({ position: { x: 16, y: 16 } });
   await page.getByRole("button", { name: "Save All" }).waitFor({ state: "visible" });
   await page.waitForFunction(() => {
@@ -169,14 +176,11 @@ try {
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
   assert.equal(differences.length, 1, "One UI-painted tile must persist to native RXDATA");
-  // XP autotiles have 48 shape variants per selected palette entry.
-  // Painting recalculates the shape from neighbouring tiles (48 -> 95 in
-  // the synthetic fixture), so compare the autotile family, not shape ID.
+  // Regular RMXP tile IDs are stable; verify the exact tile selected in
+  // the rendered React palette was persisted to the native RXDATA map.
   const savedTile = differences[0].tile;
-  assert.ok(Number.isInteger(savedTile) && savedTile >= 48 && savedTile < 48 + 7 * 48,
-    "Painted tile must remain a valid XP autotile ID");
-  assert.equal(Math.floor((savedTile - 48) / 48), Math.floor((targetTile - 48) / 48),
-    "The selected UI autotile family must be saved");
+  assert.equal(savedTile, targetTile,
+    "The regular tileset tile selected in React must persist exactly");
   await page.screenshot({ path: join(evidence, "browser-map-saved.png"), fullPage: true });
   // Exercise the actual React event editor, not a direct HTTP save_event call.
   // Its native save writes to the same Map001.rxdata as the painted tile.
