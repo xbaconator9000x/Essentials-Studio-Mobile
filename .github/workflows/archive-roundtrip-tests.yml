@@ -54,7 +54,10 @@ jobs:
           # Never mask a persistent dependency failure as a passing test.
           for attempt in 1 2 3; do
             if sudo apt-get update -o Acquire::Retries=3 && \
-               sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev build-essential curl wget file \; then
+               sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 \
+                 libwebkit2gtk-4.1-dev build-essential curl wget file \
+                 libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
+                 patchelf libasound2-dev; then
               exit 0
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -64,8 +67,6 @@ jobs:
             sudo rm -rf /var/lib/apt/lists/*
             sleep $((attempt * 15))
           done
-            libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
-            patchelf libasound2-dev
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
