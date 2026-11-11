@@ -140,6 +140,7 @@ export function pasteSpriteSelection(
   imageHeight: number,
   clipboard: SpriteClipboardImage,
   destination: { x: number; y: number },
+  transparentMode: "replace" | "preserve" = "replace",
 ): SpritePixelAction | null {
   if (!isValidImage(data, imageWidth, imageHeight)
       || !isValidImage(clipboard.data, clipboard.width, clipboard.height)
@@ -147,6 +148,7 @@ export function pasteSpriteSelection(
       || !Number.isInteger(destination.x) || !Number.isInteger(destination.y)
       || destination.x < 0 || destination.y < 0
       || destination.x >= imageWidth || destination.y >= imageHeight) return null;
+  if (transparentMode !== "replace" && transparentMode !== "preserve") return null;
   const changes = new Map<number, { before: number; after: number }>();
   const width = Math.min(clipboard.width, imageWidth - destination.x);
   const height = Math.min(clipboard.height, imageHeight - destination.y);
@@ -156,6 +158,7 @@ export function pasteSpriteSelection(
       const sourcePixel = y * clipboard.width + x;
       const before = readPackedPixel(data, targetPixel);
       const after = readPackedPixel(clipboard.data, sourcePixel);
+      if (transparentMode === "preserve" && (after & 0xff) === 0) continue;
       if (before !== after) changes.set(targetPixel, { before, after });
     }
   }
