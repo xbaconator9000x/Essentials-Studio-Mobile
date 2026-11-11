@@ -26,6 +26,7 @@ import {
   normalizeSpriteSelection,
   moveSpriteSelection,
   pasteSpriteSelection,
+  moveSpritePixels,
   flipSpritePixels,
   rotateSquareSpritePixels,
   extractSpritePalette,
@@ -98,6 +99,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [saveMode, setSaveMode] = useState<"original" | "copy">("copy");
   const [tool, setTool] = useState<SpriteTool>("brush");
   const [selection, setSelection] = useState<SpriteSelection | null>(null);
+  const [moveSelectedPixels, setMoveSelectedPixels] = useState(false);
   const [clipboard, setClipboard] = useState<SpriteClipboardImage | null>(null);
   const [preserveTransparentPaste, setPreserveTransparentPaste] = useState(true);
   const [brushColor, setBrushColor] = useState("#ffffff");
@@ -424,11 +426,29 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   const nudgeSelection = useCallback((dx: number, dy: number) => {
     const source = imageCanvasRef.current;
-    if (!source || loading || saving) return;
-    setSelection((current) => current
-      ? moveSpriteSelection(current, dx, dy, source.width, source.height)
-      : null);
-  }, [loading, saving]);
+    const image = imageDataRef.current;
+    if (!source || !image || !selection || loading || saving || activePaintPointer.current !== null) return;
+    const next = moveSpriteSelection(selection, dx, dy, source.width, source.height);
+    if (!next || (next.x === selection.x && next.y === selection.y)) return;
+    if (moveSelectedPixels) {
+      const action = moveSpritePixels(image.data, source.width, source.height,
+        selection, next.x - selection.x, next.y - selection.y);
+      if (!action) return;
+      if (!historyRef.current.push(action)) {
+        applySpritePixelAction(image.data, action, "before");
+        setError("This move exceeds the sprite undo limit");
+        return;
+      }
+      spriteEditRevision.current += 1;
+      source.getContext("2d")?.putImageData(image, 0, 0);
+      setSpritePalette([]);
+      setDirty(true);
+      updateDirty("sprite-editor", true);
+      setImageRevision((value) => value + 1);
+      setError(null);
+    }
+    setSelection(next);
+  }, [loading, moveSelectedPixels, saving, selection, updateDirty]);
 
   const copySelection = useCallback((cut = false) => {
     const source = imageCanvasRef.current;
@@ -1393,6 +1413,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onClick={() => setBrushColor(color)} />)}
             </div>}
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
+              <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
               <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
               <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
               <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
@@ -1483,6 +1504,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               ))}
             </div>
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite selection actions">
+              <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
               <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
               <button type="button" aria-label="Move sprite selection left" disabled={!selection || loading || saving} onClick={() => nudgeSelection(-1, 0)}>←</button>
               <button type="button" aria-label="Move sprite selection up" disabled={!selection || loading || saving} onClick={() => nudgeSelection(0, -1)}>↑</button>
