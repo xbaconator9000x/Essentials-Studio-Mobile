@@ -674,7 +674,7 @@ export function pasteTileRegion(
   if ((emptyTileMode !== "replace" && emptyTileMode !== "preserve")
     || !validMapShape(mapData) || !Number.isInteger(activeLayer)
     || (activeLayer !== -1 && !validLayer(activeLayer))
-    || !Number.isInteger(origin.x) || !Number.isInteger(origin.y)
+    || !Number.isSafeInteger(origin.x) || !Number.isSafeInteger(origin.y)
     || !Number.isSafeInteger(clipboard.width) || !Number.isSafeInteger(clipboard.height)
     || clipboard.width <= 0 || clipboard.height <= 0
     || !Number.isSafeInteger(clipboard.width * clipboard.height)
@@ -695,15 +695,21 @@ export function pasteTileRegion(
       || !values.every(validStoredTileId))) return [];
   }
 
+  // Clip iteration to the destination map. A large or mostly off-screen
+  // clipboard must not consume time proportional to its full dimensions.
+  const startX = Math.max(0, -origin.x);
+  const startY = Math.max(0, -origin.y);
+  const endX = Math.min(clipboard.width, width - origin.x);
+  const endY = Math.min(clipboard.height, height - origin.y);
+  if (startX >= endX || startY >= endY) return [];
   const changes: TileChange[] = [];
   for (const { source, destination: l } of mappings) {
     const layerData = clipboard.layers[source];
     if (!layerData || layerData.length === 0) continue;
-    for (let dy = 0; dy < clipboard.height; dy++) {
-      for (let dx = 0; dx < clipboard.width; dx++) {
+    for (let dy = startY; dy < endY; dy++) {
+      for (let dx = startX; dx < endX; dx++) {
         const tx = origin.x + dx;
         const ty = origin.y + dy;
-        if (tx < 0 || tx >= width || ty < 0 || ty >= height) continue;
         const newTileId = layerData[dy * clipboard.width + dx] ?? 0;
         if (emptyTileMode === "preserve" && newTileId === 0) continue;
         const offset = l * width * height + ty * width + tx;
