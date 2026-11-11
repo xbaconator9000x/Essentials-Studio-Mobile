@@ -161,7 +161,7 @@ try {
   const desiredY = Math.min(probe.y, Math.max(1, Math.floor(bounds.height / 96)));
   const panX = probe.x - desiredX;
   const panY = probe.y - desiredY;
-  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  await page.getByRole("button", { name: "Events layer", exact: true }).click();
   if (panX || panY) {
     await page.mouse.move(bounds.x + 32, bounds.y + 32);
     await page.mouse.wheel(panX * 32, panY * 32);
