@@ -14,6 +14,43 @@ const noTileClipboardActions = {
   onToggleLayerVisibility: vi.fn(),
 };
 
+describe("collapsed XP layer visibility", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("allows hiding other layers while keeping the active layer visible", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onToggleLayerVisibility = vi.fn();
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 1, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(),
+      ...noTileClipboardActions,
+      showLayers: [true, true, false] as [boolean, boolean, boolean],
+      onToggleLayerVisibility,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    const active = screen.getByRole("checkbox", { name: "Show tile layer 2" }) as HTMLInputElement;
+    expect(active.disabled).toBe(true);
+    expect(active.checked).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show tile layer 1" }));
+    expect(onToggleLayerVisibility).toHaveBeenCalledWith(0, false);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show tile layer 3" }));
+    expect(onToggleLayerVisibility).toHaveBeenCalledWith(2, true);
+    view.rerender(<MapToolbar {...props} selectedLayer={2} />);
+    expect((screen.getByRole("checkbox", { name: "Show tile layer 3" }) as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
 describe("mobile map toolbar", () => {
   afterEach(() => {
     cleanup();
