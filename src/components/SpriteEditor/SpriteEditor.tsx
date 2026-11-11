@@ -485,7 +485,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, []);
 
-  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "replace") => {
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "replace") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -1352,6 +1352,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite transform tools">
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
@@ -1461,6 +1462,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite transform tools">
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
