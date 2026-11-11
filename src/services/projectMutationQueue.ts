@@ -27,6 +27,7 @@ export const SERIAL_PROJECT_COMMANDS = new Set([
   "save_pbs_file",
   "write_raw_pbs_file",
   "save_private_project_sprite",
+  "import_private_project_sprite",
   // Archive creation must snapshot a quiescent project. The subsequent
   // provider write reads an immutable ZIP and does not need the project lock.
   "begin_project_archive_export",

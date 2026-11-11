@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmEditor } from "../../services/editorDialog";
 import { clearImageCache, loadCharacterImage } from "../../services/imageLoader";
-import { listAssetFiles, savePrivateProjectSprite } from "../../services/tauriApi";
+import {
+  importPrivateProjectSprite,
+  listAssetFiles,
+  savePrivateProjectSprite,
+} from "../../services/tauriApi";
 import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import {
   fitSpriteViewport,
@@ -597,13 +601,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const savedName = await savePrivateProjectSprite(
-        projectPath,
-        selectedName || "",
-        saveMode === "copy" ? targetName.trim() : selectedName,
-        saveMode,
-        source.toDataURL("image/png"),
-      );
+      const imageData = source.toDataURL("image/png");
+      const savedName = importedCandidate
+        ? await importPrivateProjectSprite(projectPath, targetName.trim(), imageData)
+        : await savePrivateProjectSprite(
+            projectPath,
+            selectedName,
+            saveMode === "copy" ? targetName.trim() : selectedName,
+            saveMode,
+            imageData,
+          );
       setNames((current) => current.includes(savedName) ? current : [...current, savedName].sort((a, b) => a.localeCompare(b)));
       const hasNewerEdits = spriteEditRevision.current !== savedRevision;
       if (!hasNewerEdits && activePaintPointer.current === null) {

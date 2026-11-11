@@ -266,6 +266,18 @@ export async function savePrivateProjectSprite(
   });
 }
 
+export async function importPrivateProjectSprite(
+  projectPath: string,
+  targetName: string,
+  imageData: string,
+): Promise<string> {
+  return invoke<string>("import_private_project_sprite", {
+    projectPath,
+    targetName,
+    imageData,
+  });
+}
+
 /**
  * Get full map properties for the properties dialog.
  */

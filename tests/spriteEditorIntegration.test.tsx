@@ -6,6 +6,7 @@ import { SpriteEditor } from "../src/components/SpriteEditor/SpriteEditor";
 
 const editorApi = vi.hoisted(() => ({
   listAssetFiles: vi.fn(),
+  importPrivateProjectSprite: vi.fn(),
   savePrivateProjectSprite: vi.fn(),
   loadCharacterImage: vi.fn(),
   clearImageCache: vi.fn(),
@@ -77,6 +78,9 @@ beforeEach(() => {
   editorApi.savePrivateProjectSprite.mockImplementation(
     async (_path: string, _source: string, target: string, mode: string) =>
       mode === "copy" ? target : _source,
+  );
+  editorApi.importPrivateProjectSprite.mockImplementation(
+    async (_path: string, target: string) => target,
   );
   HTMLCanvasElement.prototype.getContext = vi.fn(() => context);
   serializedCanvases.length = 0;
@@ -1056,12 +1060,10 @@ describe("sprite editor integration", () => {
     expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:sprite-import");
 
     fireEvent.click(screen.getByRole("button", { name: "Save All" }));
-    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
-    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledWith(
       "/synthetic-project",
-      "Guide",
       "Field Hero",
-      "copy",
       "data:image/png;base64,cGl4ZWxz",
     );
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -1098,16 +1100,15 @@ describe("sprite editor integration", () => {
 
     expect(await screen.findByText("Imported image: New.png — save as a new copy.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save All" }));
-    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
-    expect(editorApi.savePrivateProjectSprite.mock.calls[0].slice(1, 4)).toEqual([
-      "",
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(editorApi.importPrivateProjectSprite.mock.calls[0].slice(0, 2)).toEqual([
+      "/synthetic-project",
       "New",
-      "copy",
     ]);
   });
 
   it("keeps an imported sprite dirty after a copy collision until a safe name is saved", async () => {
-    editorApi.savePrivateProjectSprite.mockRejectedValueOnce(
+    editorApi.importPrivateProjectSprite.mockRejectedValueOnce(
       new Error("Character graphic already exists: Existing"),
     );
     const importUrl = {
@@ -1136,20 +1137,16 @@ describe("sprite editor integration", () => {
     );
     expect(screen.getByText("Unsaved imported sprite")).toBeTruthy();
     expect(screen.getByText("Imported image: Existing.png — save as a new copy.")).toBeTruthy();
-    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1);
+    expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText("Copy name"), {
       target: { value: "Existing_safe_copy" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
-    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(2));
-    expect(editorApi.savePrivateProjectSprite.mock.calls[0].slice(2, 4)).toEqual([
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(2));
+    expect(editorApi.importPrivateProjectSprite.mock.calls.map((call) => call[1])).toEqual([
       "Existing",
-      "copy",
-    ]);
-    expect(editorApi.savePrivateProjectSprite.mock.calls[1].slice(2, 4)).toEqual([
       "Existing_safe_copy",
-      "copy",
     ]);
     await waitFor(() => {
       expect((screen.getByRole("combobox", {

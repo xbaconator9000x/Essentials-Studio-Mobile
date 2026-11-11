@@ -25,6 +25,7 @@ pub fn run() {
             discard_project_archive_export,
             read_private_project_image,
             save_private_project_sprite,
+            import_private_project_sprite,
             load_map,
             load_tileset,
             get_asset_path,

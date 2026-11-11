@@ -1098,6 +1098,20 @@ pub fn save_project_sprite(
     )
 }
 
+pub fn import_project_sprite(
+    project_path: &Path,
+    target_name: &str,
+    image_data: &str,
+) -> Result<String, String> {
+    let project = project_path.canonicalize().map_err(|e| e.to_string())?;
+    if !project.is_dir() || !project.join("Game.rxproj").is_file() {
+        return Err("Not an RPG Maker XP project directory".into());
+    }
+    let directory = character_graphics_directory(&project)?;
+    let png = sprite_png_bytes(image_data)?;
+    save_sprite_in_directory(&directory, &project, "", target_name, "copy", &png)
+}
+
 #[tauri::command]
 pub async fn save_private_project_sprite(
     app: AppHandle,
@@ -1124,11 +1138,28 @@ pub async fn save_private_project_sprite(
     .map_err(|e| format!("Sprite save worker failed: {e}"))?
 }
 
+#[tauri::command]
+pub async fn import_private_project_sprite(
+    app: AppHandle,
+    project_path: String,
+    target_name: String,
+    image_data: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = sprite_project_directory(&app, Path::new(&project_path))?;
+        let directory = character_graphics_directory(&project)?;
+        let png = sprite_png_bytes(&image_data)?;
+        save_sprite_in_directory(&directory, &project, "", &target_name, "copy", &png)
+    })
+    .await
+    .map_err(|e| format!("Sprite import worker failed: {e}"))?
+}
+
 #[cfg(test)]
 mod sprite_edit_tests {
     use super::{
-        save_sprite_in_directory, sprite_png_bytes, validate_sprite_stem, MAX_IMAGE_BYTES,
-        MAX_SPRITE_PIXELS,
+        import_project_sprite, save_sprite_in_directory, sprite_png_bytes, validate_sprite_stem,
+        MAX_IMAGE_BYTES, MAX_SPRITE_PIXELS,
     };
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     use std::fs;
@@ -1143,6 +1174,8 @@ mod sprite_edit_tests {
                 "essentials-sprite-edit-{}",
                 super::unique_id().unwrap(),
             ));
+            fs::create_dir_all(&root).unwrap();
+            fs::write(root.join("Game.rxproj"), b"fixture").unwrap();
             fs::create_dir_all(root.join("Graphics/Characters")).unwrap();
             Self(root)
         }
@@ -1238,6 +1271,34 @@ mod sprite_edit_tests {
             fs::read(project.graphics().join("Guide_copy.png")).unwrap(),
             edited
         );
+    }
+
+    #[test]
+    fn sprite_import_creates_only_a_valid_new_project_asset() {
+        let project = TempProject::new();
+        let encoded = png_data_url(2, 2);
+
+        assert_eq!(
+            import_project_sprite(&project.0, "New Hero", &encoded).unwrap(),
+            "New Hero",
+        );
+        let saved = fs::read(project.graphics().join("New Hero.png")).unwrap();
+        assert!(image::load_from_memory_with_format(&saved, image::ImageFormat::Png).is_ok());
+        assert!(import_project_sprite(&project.0, "new hero", &encoded)
+            .unwrap_err()
+            .contains("already exists"));
+        assert!(import_project_sprite(&project.0, "../outside", &encoded).is_err());
+        assert!(import_project_sprite(&project.0, "Broken", "data:image/png;base64,AA==").is_err());
+        assert!(!project.0.join("outside.png").exists());
+    }
+
+    #[test]
+    fn sprite_import_rejects_non_project_directories() {
+        let project = TempProject::new();
+        fs::remove_file(project.0.join("Game.rxproj")).unwrap();
+        assert!(import_project_sprite(&project.0, "New Hero", &png_data_url(2, 2))
+            .unwrap_err()
+            .contains("Not an RPG Maker XP project"));
     }
 
     #[test]

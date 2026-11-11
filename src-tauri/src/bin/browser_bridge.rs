@@ -329,6 +329,17 @@ async fn dispatch(command: &str, args: &Value, root: &Path) -> Result<Value, Str
             .map_err(|e| format!("Sprite save worker failed: {e}"))??;
             Ok(json!(saved_name))
         }
+        "import_private_project_sprite" => {
+            let project = PathBuf::from(path);
+            let target_name: String = required(args, "targetName")?;
+            let image_data: String = required(args, "imageData")?;
+            let saved_name = tokio::task::spawn_blocking(move || {
+                project_archive::import_project_sprite(&project, &target_name, &image_data)
+            })
+            .await
+            .map_err(|e| format!("Sprite import worker failed: {e}"))??;
+            Ok(json!(saved_name))
+        }
         _ => Err(format!(
             "Browser bridge does not support {command}. Use native Tauri for ZIP import/export or other operations."
         )),
@@ -597,14 +608,28 @@ mod tests {
         let saved = image::open(project.join("Graphics/Characters/Imported_Sprite.png")).unwrap();
         assert_eq!(saved.to_rgba8().get_pixel(0, 0).0, [1, 2, 3, 255]);
 
-        let outside_args = json!({
-            "projectPath": base.to_string_lossy(),
-            "sourceName": "",
-            "targetName": "Escaped",
-            "mode": "copy",
+        let import_args = json!({
+            "projectPath": root.to_string_lossy(),
+            "targetName": "Picker_Import",
             "imageData": args["imageData"],
         });
-        assert!(rt.block_on(dispatch("save_private_project_sprite", &outside_args, &root)).is_err());
+        assert_eq!(
+            rt.block_on(dispatch("import_private_project_sprite", &import_args, &root)).unwrap(),
+            json!("Picker_Import")
+        );
+        assert!(project.join("Graphics/Characters/Picker_Import.png").is_file());
+        assert!(rt
+            .block_on(dispatch("import_private_project_sprite", &import_args, &root))
+            .is_err());
+
+        let outside_args = json!({
+            "projectPath": base.to_string_lossy(),
+            "targetName": "Escaped",
+            "imageData": args["imageData"],
+        });
+        assert!(rt
+            .block_on(dispatch("import_private_project_sprite", &outside_args, &root))
+            .is_err());
         assert!(!base.join("Graphics/Characters/Escaped.png").exists());
         fs::remove_dir_all(base).unwrap();
     }
