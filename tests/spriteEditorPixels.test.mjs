@@ -5,6 +5,7 @@ import {
   paintSpritePixels,
   spriteColorAt,
   normalizeSpriteSelection,
+  moveSpriteSelection,
   copySpriteSelection,
   clearSpriteSelection,
   pasteSpriteSelection,
@@ -236,4 +237,14 @@ test("90-degree rotation rejects rectangular regions without modifying pixels", 
   assert.equal(rotateSquareSpritePixels(data, 3, 2, "clockwise"), null);
   assert.equal(rotateSquareSpritePixels(data, 3, 2, "counterclockwise", { x: 0, y: 0, width: 2, height: 1 }), null);
   assert.deepEqual([...data], before);
+});
+
+test("touch selection nudges preserve rectangle size and clamp all image edges", () => {
+  const start = { x: 2, y: 1, width: 3, height: 2 };
+  assert.deepEqual(moveSpriteSelection(start, 1, 1, 6, 4), { x: 3, y: 2, width: 3, height: 2 });
+  assert.deepEqual(moveSpriteSelection(start, -100, -100, 6, 4), { x: 0, y: 0, width: 3, height: 2 });
+  assert.deepEqual(moveSpriteSelection(start, 100, 100, 6, 4), { x: 3, y: 2, width: 3, height: 2 });
+  assert.deepEqual(start, { x: 2, y: 1, width: 3, height: 2 });
+  assert.equal(moveSpriteSelection(start, 1.5, 0, 6, 4), null);
+  assert.equal(moveSpriteSelection({ ...start, width: 7 }, 1, 0, 6, 4), null);
 });
