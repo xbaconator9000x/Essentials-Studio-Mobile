@@ -267,6 +267,10 @@ describe("mobile map toolbar", () => {
         canPasteTiles={canPasteTiles}
         onCopyTiles={onCopyTiles}
         onPasteTiles={onPasteTiles}
+        showLayers={[true, true, true]}
+        onToggleLayerVisibility={vi.fn()}
+        showCollisionOverlay={false}
+        setShowCollisionOverlay={vi.fn()}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible

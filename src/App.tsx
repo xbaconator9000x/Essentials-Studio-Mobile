@@ -1276,6 +1276,7 @@ function AppContent() {
           autotileImages={autotileImages}
           projectPath={project.path}
           selectedTileId={selectedTileId}
+          onSelectTile={setSelectedTileId}
           currentMapId={currentMapId ?? undefined}
           startPosition={startPosition ?? undefined}
           hasClipboardEvent={clipboardEvent !== null}
@@ -1316,7 +1317,7 @@ function AppContent() {
           <h1>Preview settings</h1>
           <p>Current project: <strong>{project.name}</strong></p>
           <div className="app-mobile-safety-note" role="alert">
-            Saving, editing and export have not passed Android persistence acceptance. Keep the original ZIP and work only on a disposable copy.
+            This is an experimental Android build. Keep the original ZIP and work only on a disposable copy until you have verified this build on your device.
           </div>
           {canOpenProjectFolder && (
             <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>

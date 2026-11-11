@@ -15,6 +15,25 @@ interface Props {
 
 type PaletteTab = "tiles" | "autotiles" | "properties";
 
+const TILESET_COLUMNS = 8;
+function regularTileIdAt(
+  canvas: HTMLCanvasElement,
+  image: HTMLImageElement,
+  clientX: number,
+  clientY: number,
+): number | null {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0 ||
+      clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) return null;
+  const x = Math.floor((clientX - rect.left) * canvas.width / rect.width / TILE_SIZE);
+  const y = Math.floor((clientY - rect.top) * canvas.height / rect.height / TILE_SIZE);
+  const cols = Math.min(TILESET_COLUMNS, Math.floor((image.naturalWidth || image.width) / TILE_SIZE));
+  const rows = Math.floor((image.naturalHeight || image.height) / TILE_SIZE);
+  if (x < 0 || x >= cols || y < 0 || y >= rows) return null;
+  const tileId = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
+  return tileId <= 32767 ? tileId : null;
+}
+
 /**
  * Tileset palette panel.
  *
@@ -87,46 +106,47 @@ export function TilesetPalette({
     }
   }, [tilesetImage, selectedTileId, hoverTileId, activeTab]);
 
-  // Handle click on tileset canvas
+  // Use one bounds-checked hit test for mouse, touch-generated click and hover.
   const handleTilesetClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = Math.floor(((e.clientX - rect.left) * scaleX) / TILE_SIZE);
-      const y = Math.floor(((e.clientY - rect.top) * scaleY) / TILE_SIZE);
-
-      if (x >= 0 && x < 8) {
-        const tileId = FIRST_REGULAR_TILE + y * 8 + x;
-        onSelectTile(tileId);
-      }
+      if (!canvas || !tilesetImage) return;
+      const tileId = regularTileIdAt(canvas, tilesetImage, e.clientX, e.clientY);
+      if (tileId !== null) onSelectTile(tileId);
     },
-    [onSelectTile]
+    [onSelectTile, tilesetImage],
   );
 
-  // Handle hover for tile info
   const handleTilesetMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = Math.floor(((e.clientX - rect.left) * scaleX) / TILE_SIZE);
-      const y = Math.floor(((e.clientY - rect.top) * scaleY) / TILE_SIZE);
-
-      if (x >= 0 && x < 8) {
-        setHoverTileId(FIRST_REGULAR_TILE + y * 8 + x);
-      } else {
-        setHoverTileId(null);
-      }
+      setHoverTileId(canvas && tilesetImage ? regularTileIdAt(canvas, tilesetImage, e.clientX, e.clientY) : null);
     },
-    []
+    [tilesetImage],
   );
+
+  const handleTilesetKey = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (!tilesetImage || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+    const cols = Math.min(TILESET_COLUMNS, Math.floor((tilesetImage.naturalWidth || tilesetImage.width) / TILE_SIZE));
+    const rows = Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE);
+    if (cols < 1 || rows < 1) return;
+    e.preventDefault();
+    const index = selectedTileId - FIRST_REGULAR_TILE;
+    let x = index >= 0 ? index % TILESET_COLUMNS : 0;
+    let y = index >= 0 ? Math.floor(index / TILESET_COLUMNS) : 0;
+    x = Math.max(0, Math.min(cols - 1, x));
+    y = Math.max(0, Math.min(rows - 1, y));
+    if (e.key === "ArrowLeft") x--;
+    if (e.key === "ArrowRight") x++;
+    if (e.key === "ArrowUp") y--;
+    if (e.key === "ArrowDown") y++;
+    if (e.key === "Home") { x = 0; y = 0; }
+    if (e.key === "End") { x = cols - 1; y = rows - 1; }
+    x = Math.max(0, Math.min(cols - 1, x));
+    y = Math.max(0, Math.min(rows - 1, y));
+    const tileId = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
+    if (tileId <= 32767) onSelectTile(tileId);
+  }, [onSelectTile, selectedTileId, tilesetImage]);
 
   // Handle autotile selection
   const handleAutotileClick = useCallback(
@@ -202,6 +222,9 @@ export function TilesetPalette({
             <canvas
               ref={canvasRef}
               className="tileset-canvas"
+              tabIndex={0}
+              aria-label="Tileset tile picker; use arrow keys to select a tile"
+              onKeyDown={handleTilesetKey}
               onClick={handleTilesetClick}
               onMouseMove={handleTilesetMove}
               onMouseLeave={() => setHoverTileId(null)}
@@ -220,8 +243,12 @@ export function TilesetPalette({
         <div className="palette-scroll">
           <div className="autotile-list">
             {tilesetInfo.autotile_names.map((name, idx) => (
-              <div
+              <button
+                type="button"
                 key={idx}
+                disabled={!name}
+                aria-label={`Autotile ${idx + 1}: ${name || "empty"}`}
+                aria-pressed={selectedTileId >= (idx + 1) * 48 && selectedTileId < (idx + 2) * 48}
                 className={`autotile-item ${
                   selectedTileId >= (idx + 1) * 48 &&
                   selectedTileId < (idx + 2) * 48
@@ -243,7 +270,7 @@ export function TilesetPalette({
                     {name || "(empty)"}
                   </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

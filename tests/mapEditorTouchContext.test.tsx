@@ -30,6 +30,7 @@ function renderMap({
   onSetStartPosition = vi.fn(async () => {}),
   tiles = Array(27).fill(0) as number[],
   onMapDirty = vi.fn(),
+  onSelectTile = vi.fn(),
 }: {
   events?: { id: number; name: string; x: number; y: number; page_count: number; graphic_name: string; graphic_direction: number; graphic_pattern: number }[];
   hasClipboardEvent?: boolean;
@@ -41,6 +42,7 @@ function renderMap({
   onSetStartPosition?: (x: number, y: number) => Promise<void>;
   tiles?: number[];
   onMapDirty?: () => void;
+  onSelectTile?: (tileId: number) => void;
 } = {}) {
   return render(
     <MapEditor
@@ -49,6 +51,7 @@ function renderMap({
       tilesetImage={null}
       autotileImages={[]}
       selectedTileId={1}
+      onSelectTile={onSelectTile}
       currentMapId={1}
       hasClipboardEvent={hasClipboardEvent}
       readOnly={readOnly}
@@ -106,6 +109,25 @@ afterEach(() => {
 });
 
 describe("touch map context actions", () => {
+  it("picks the exact topmost tile from All Layers and returns to pencil without dirtying the map", () => {
+    const tiles = Array(27).fill(0);
+    tiles[4] = 384;
+    tiles[13] = 385;
+    tiles[22] = 386;
+    const onSelectTile = vi.fn();
+    const onMapDirty = vi.fn();
+    const view = renderMap({ events: [], tiles, onSelectTile, onMapDirty });
+    fireEvent.click(screen.getByRole("button", { name: "All layers" }));
+    fireEvent.click(screen.getByTitle("pick"));
+    const canvas = view.container.querySelector("canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100);
+    dispatchTouch(canvas, "pointerup", 120);
+    expect(onSelectTile).toHaveBeenCalledWith(386);
+    expect(screen.getByRole("button", { name: "Layer 3" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTitle("pencil").getAttribute("aria-pressed")).toBe("true");
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ x: 1, y: 1 }, { x: 95, y: 95 }],
     [{ x: 95, y: 95 }, { x: 1, y: 1 }],

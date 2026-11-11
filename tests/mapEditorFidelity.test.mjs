@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  paintTile, paintRectangle, floodFill, copyTileRegion, pasteTileRegion,
+  paintTile, paintRectangle, floodFill, copyTileRegion, pasteTileRegion, sampleMapTile,
   applyAction, revertAction,
 } from "../src/services/mapEditor.ts";
 
@@ -108,4 +108,17 @@ test("a single-layer tile clipboard pastes into the chosen destination layer and
   assert.equal(changes.length, 4);
   revertAction(destination, { type: "paste", changes, timestamp: 0 });
   assert.deepEqual(destination.tiles, Array(12).fill(0));
+});
+
+
+test("map tile sampling respects active layer, visible XP layers, and bounds", () => {
+  const data = { id: 1, width: 1, height: 1, tileset_id: 1, tiles: [384, 385, 0], events: [] };
+  assert.deepEqual(sampleMapTile(data, 0, 0, 0), { tileId: 384, layer: 0 });
+  assert.deepEqual(sampleMapTile(data, 0, 0, -1), { tileId: 385, layer: 1 });
+  assert.deepEqual(sampleMapTile(data, 0, 0, -1, [true, false, true]), { tileId: 384, layer: 0 });
+  assert.deepEqual(sampleMapTile(data, 0, 0, 2), { tileId: 0, layer: 2 });
+  assert.equal(sampleMapTile(data, 1, 0, -1), null);
+  assert.equal(sampleMapTile(data, 0, 0, 3), null);
+  data.tiles[2] = -1;
+  assert.equal(sampleMapTile(data, 0, 0, 2), null);
 });

@@ -45,6 +45,7 @@ const PAINT_TOOLS: { tool: PaintTool; label: string }[] = [
   { tool: "rectangle", label: "Rect" },
   { tool: "bucket", label: "Fill" },
   { tool: "eraser", label: "Erase" },
+  { tool: "pick", label: "Pick" },
   { tool: "select", label: "Sel" },
   { tool: "pan", label: "Pan" },
 ];

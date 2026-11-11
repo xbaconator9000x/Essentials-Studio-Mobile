@@ -46,6 +46,24 @@ function canPaint(map: MapRenderData, x: number, y: number, layer: number, tileI
     && validCell(map, x, y);
 }
 
+/** Sample the exact stored tile on the active layer, or the topmost visible
+ * non-empty tile in All Layers. Signed sentinel values are not paintable. */
+export function sampleMapTile(map: MapRenderData, x: number, y: number, activeLayer: number, visible: readonly boolean[] = [true, true, true]): { tileId: number; layer: number } | null {
+  if (!validMapShape(map) || !validCell(map, x, y)) return null;
+  if (validLayer(activeLayer)) {
+    const tileId = getTile(map.tiles, x, y, activeLayer, map.width, map.height);
+    return validTileId(tileId) ? { tileId, layer: activeLayer } : null;
+  }
+  if (activeLayer !== -1) return null;
+  for (let layer = 2; layer >= 0; layer--) {
+    if (!visible[layer]) continue;
+    const tileId = getTile(map.tiles, x, y, layer, map.width, map.height);
+    if (validTileId(tileId) && tileId > 0) return { tileId, layer };
+  }
+  const layer = visible.findIndex(Boolean);
+  return layer >= 0 && layer < 3 ? { tileId: 0, layer } : null;
+}
+
 /** A single tile change for undo/redo. */
 export interface TileChange {
   x: number;

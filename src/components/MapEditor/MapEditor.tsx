@@ -9,6 +9,7 @@ import {
   eraseTile,
   copyTileRegion,
   pasteTileRegion,
+  sampleMapTile,
   UndoStack,
   type MapAction,
   type TileClipboard,
@@ -48,6 +49,7 @@ interface Props {
   autotileImages: (HTMLImageElement | null)[];
   projectPath?: string;
   selectedTileId: number;
+  onSelectTile?: (tileId: number) => void;
   currentMapId?: number;
   startPosition?: { mapId: number; x: number; y: number };
   hasClipboardEvent?: boolean;
@@ -72,6 +74,7 @@ export function MapEditor({
   autotileImages,
   projectPath,
   selectedTileId,
+  onSelectTile,
   currentMapId,
   startPosition,
   hasClipboardEvent,
@@ -560,6 +563,16 @@ export function MapEditor({
     };
   }, [mapData]);
 
+  const pickMapTile = useCallback((point: { x: number; y: number }) => {
+    if (!mapData || !onSelectTile) return;
+    const sample = sampleMapTile(mapData, point.x, point.y, selectedLayer, showLayers);
+    if (!sample) return;
+    onSelectTile(sample.tileId);
+    if (selectedLayer === -1) chooseLayer(sample.layer);
+    setPaintTool("pencil");
+    setCursorTile(point);
+  }, [mapData, onSelectTile, selectedLayer, showLayers, chooseLayer]);
+
   const commitRectangle = useCallback((start: { x: number; y: number }, end: { x: number; y: number }) => {
     if (!mapData || readOnly || selectedLayer < 0 || selectedLayer > 2) return;
     const changes = paintRectangle(mapData, start.x, start.y, end.x, end.y, selectedLayer, selectedTileId);
@@ -681,7 +694,13 @@ export function MapEditor({
           return;
         }
 
+        if (paintTool === "pick") {
+          pickMapTile(pos);
+          return;
+        }
+
         if (paintTool === "select") {
+          if (pos.x < 0 || pos.x >= mapData.width || pos.y < 0 || pos.y >= mapData.height) return;
           setSelectionStart(pos);
           setSelectionEnd(pos);
           isSelecting.current = true;
@@ -739,6 +758,7 @@ export function MapEditor({
       doPaint,
       onMapDirty,
       readOnly,
+      pickMapTile,
     ]
   );
 
@@ -834,7 +854,6 @@ export function MapEditor({
     [
       mapData,
       paintTool,
-      selectedLayer,
       screenToTile,
       onMapDirty,
       clampTile,
@@ -866,6 +885,11 @@ export function MapEditor({
         return;
       }
       if (target.type !== "map") return;
+
+      if (paintTool === "pick") {
+        pickMapTile(tile);
+        return;
+      }
 
       if (paintTool === "select") {
         setSelectionStart(tile);
@@ -913,6 +937,7 @@ export function MapEditor({
       selectedTileId,
       readOnly,
       commitRectangle,
+      pickMapTile,
     ],
   );
 
