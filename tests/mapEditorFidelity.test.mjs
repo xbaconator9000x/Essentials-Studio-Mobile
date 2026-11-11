@@ -210,6 +210,10 @@ test("large autotile rectangle updates exterior perimeter only and remains undoa
   for (let y = 3; y <= 20; y++) {
     for (let x = 3; x <= 28; x++) data.tiles[y * data.width + x] = 48;
   }
+  // Keep one genuinely empty target cell: repainting an already resolved
+  // autotile region can correctly be a no-op, so the edit ledger needs a
+  // deliberately changed pixel to exercise undo and neighbour updates.
+  data.tiles[10 * data.width + 10] = 0;
   data.tiles[size + 5 * data.width + 5] = 1024;
   const before = data.tiles.slice();
   const changes = paintRectangle(data, 5, 5, 26, 18, 0, 48);
