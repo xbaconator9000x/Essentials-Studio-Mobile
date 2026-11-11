@@ -178,3 +178,29 @@ test("palette extraction and exact recolor ignore invisible pixels and preserve 
   assert.deepEqual([...data.slice(4,8)], [255,0,0,64]);
   assert.equal(replaceSpriteColor(data, 4, 1, "#ff0000", "#ff0000"), null);
 });
+
+test("rotate 180 degrees preserves exact RGBA pixels and is one undoable operation", () => {
+  const data = image(3, 2);
+  const colors = [[1, 2, 3, 255], [4, 5, 6, 128], [7, 8, 9, 0],
+    [10, 11, 12, 255], [13, 14, 15, 255], [16, 17, 18, 64]];
+  colors.forEach((color, i) => data.set(color, i * 4));
+  const before = [...data];
+  const action = flipSpritePixels(data, 3, 2, "rotate180");
+  assert.equal(action?.pixels.length, 6);
+  const expected = colors.slice().reverse().flat();
+  assert.deepEqual([...data], expected);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], before);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data], expected);
+});
+
+test("rotate 180 degrees affects only selected pixels", () => {
+  const data = image(3, 2);
+  for (let i = 0; i < 6; i++) data.set([i + 1, 0, 0, 255], i * 4);
+  const action = flipSpritePixels(data, 3, 2, "rotate180", { x: 1, y: 0, width: 2, height: 2 });
+  assert.ok(action);
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => data[i * 4]), [1, 6, 5, 4, 3, 2]);
+});
