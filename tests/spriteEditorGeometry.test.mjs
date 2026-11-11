@@ -123,3 +123,21 @@ test("trace pinch clamps scale and offsets and ignores invalid gestures", () => 
   const transform = { scale: 100, offsetX: 4, offsetY: -5 };
   assert.equal(zoomSpriteTraceTransform(transform, viewport, 4, 4, center, center, 0), transform);
 });
+
+test("invalid pointer gestures cannot allocate unbounded sprite strokes", () => {
+  assert.deepEqual(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 1_000_000, y: 0 }), []);
+  assert.deepEqual(rasterizeSpriteLine({ x: NaN, y: 0 }, { x: 1, y: 1 }), []);
+  assert.deepEqual(rasterizeSpriteLine({ x: 0.5, y: 0 }, { x: 1, y: 1 }), []);
+  assert.equal(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 3, y: 0 }).length, 4);
+});
+
+test("invalid pinch and coordinate inputs leave viewport unchanged", () => {
+  const viewport = { zoom: 2, offsetX: 4, offsetY: 8 };
+  const center = { x: 20, y: 30 };
+  for (const scale of [0, -1, NaN, Infinity]) {
+    assert.equal(zoomSpriteViewport(viewport, center, center, scale), viewport);
+  }
+  assert.equal(zoomSpriteViewport(viewport, { x: Infinity, y: 0 }, center, 2), viewport);
+  assert.equal(spritePixelAt(NaN, 10, viewport, 16, 16), null);
+  assert.equal(spritePixelAt(10, 10, { ...viewport, offsetX: Infinity }, 16, 16), null);
+});
