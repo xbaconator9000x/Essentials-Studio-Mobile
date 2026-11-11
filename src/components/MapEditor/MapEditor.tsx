@@ -348,6 +348,32 @@ export function MapEditor({
     return true;
   }, [mapData, shortcutsDisabled, onMapDirty]);
 
+  const canCopyTiles = !!selectionStart && !!selectionEnd && selectedLayer !== 3;
+  const pasteOrigin = cursorTile ?? selectionStart;
+  const canPasteTiles = !!tileClipboard && tileClipboard.width > 0 &&
+    !!pasteOrigin && selectedLayer !== 3 && !readOnly;
+
+  const copySelectedTiles = useCallback(() => {
+    if (!mapData || !selectionStart || !selectionEnd || selectedLayer === 3) return;
+    const clipboard = copyTileRegion(
+      mapData,
+      { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
+      selectedLayer,
+    );
+    if (clipboard.width > 0) setTileClipboard(clipboard);
+  }, [mapData, selectionStart, selectionEnd, selectedLayer]);
+
+  const pasteTilesAtCursor = useCallback(() => {
+    const origin = cursorTile ?? selectionStart;
+    if (!mapData || !tileClipboard || !origin || selectedLayer === 3 || readOnly) return;
+    const changes = pasteTileRegion(mapData, tileClipboard, origin, selectedLayer);
+    if (changes.length === 0) return;
+    undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick((tick) => tick + 1);
+    onMapDirty();
+  }, [cursorTile, selectionStart, mapData, tileClipboard, selectedLayer, readOnly, onMapDirty]);
+
   // Keyboard shortcuts only apply when the map is the active editor.
   // Never intercept Ctrl/Cmd+Z/C/V inside an event dialogue, PBS field,
   // script textarea or any other text-editing surface.
@@ -366,11 +392,7 @@ export function MapEditor({
 
       if (key === "c" && selectionStart && selectionEnd) {
         e.preventDefault();
-        setTileClipboard(copyTileRegion(
-          mapData,
-          { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
-          selectedLayer,
-        ));
+        copySelectedTiles();
         return;
       }
 
@@ -378,20 +400,15 @@ export function MapEditor({
         const origin = cursorTile ?? selectionStart;
         if (!origin) return;
         e.preventDefault();
-        const changes = pasteTileRegion(mapData, tileClipboard, origin, selectedLayer);
-        if (changes.length > 0) {
-          undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
-          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
-          setRenderTick((t) => t + 1);
-          onMapDirty();
-        }
+        pasteTilesAtCursor();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mapData, selectedLayer, onMapDirty, shortcutsDisabled, readOnly,
-      selectionStart, selectionEnd, cursorTile, tileClipboard, handleHistory]);
+      selectionStart, selectionEnd, cursorTile, tileClipboard, handleHistory,
+      copySelectedTiles, pasteTilesAtCursor]);
 
   // Convert screen position to tile coordinates
   const screenToTile = useCallback(
@@ -1035,6 +1052,10 @@ export function MapEditor({
           onRedo={() => { handleHistory("redo"); }}
           historyDisabled={shortcutsDisabled}
           readOnly={readOnly}
+          canCopyTiles={canCopyTiles}
+          canPasteTiles={canPasteTiles}
+          onCopyTiles={copySelectedTiles}
+          onPasteTiles={pasteTilesAtCursor}
         />
       )}
 

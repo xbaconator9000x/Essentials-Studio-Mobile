@@ -355,7 +355,8 @@
   }
 
   .map-toolbar-quick-tools,
-  .map-toolbar-quick-layers {
+  .map-toolbar-quick-layers,
+  .map-toolbar-selection-actions {
     width: 100%;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -364,7 +365,8 @@
   }
 
   .map-toolbar-quick-tools .toolbar-btn,
-  .map-toolbar-quick-layers .toolbar-btn {
+  .map-toolbar-quick-layers .toolbar-btn,
+  .map-toolbar-selection-actions .toolbar-btn {
     flex: 0 0 auto;
   }
 

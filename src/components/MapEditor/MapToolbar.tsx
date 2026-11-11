@@ -20,6 +20,10 @@ interface MapToolbarProps {
   onRedo: () => void;
   historyDisabled?: boolean;
   readOnly?: boolean;
+  canCopyTiles: boolean;
+  canPasteTiles: boolean;
+  onCopyTiles: () => void;
+  onPasteTiles: () => void;
   showEventPins: boolean;
   setShowEventPins: (show: boolean) => void;
   paletteVisible: boolean;
@@ -61,6 +65,10 @@ export function MapToolbar({
   onRedo,
   historyDisabled = false,
   readOnly = false,
+  canCopyTiles,
+  canPasteTiles,
+  onCopyTiles,
+  onPasteTiles,
   showEventPins,
   setShowEventPins,
   paletteVisible,
@@ -190,6 +198,32 @@ export function MapToolbar({
           />
           Grid
         </label>
+      )}
+
+      {!readOnly && (toolsCollapsed || paintTool === "select") && (
+        <div className="toolbar-group map-toolbar-selection-actions" role="group" aria-label="Tile selection actions">
+          <button
+            className="toolbar-btn"
+            onClick={onCopyTiles}
+            disabled={!canCopyTiles}
+            aria-label="Copy selected tiles"
+          >
+            Copy
+          </button>
+          <button
+            className="toolbar-btn"
+            onClick={onPasteTiles}
+            disabled={!canPasteTiles}
+            aria-label="Paste tiles at cursor"
+          >
+            Paste
+          </button>
+          {tileClipboard && tileClipboard.width > 0 && (
+            <span className="toolbar-label" role="status">
+              Clipboard {tileClipboard.width}×{tileClipboard.height}
+            </span>
+          )}
+        </div>
       )}
 
       <div className="toolbar-separator" />

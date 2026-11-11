@@ -3,6 +3,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapToolbar } from "../src/components/MapEditor/MapToolbar";
 
+const noTileClipboardActions = {
+  canCopyTiles: false,
+  canPasteTiles: false,
+  onCopyTiles: vi.fn(),
+  onPasteTiles: vi.fn(),
+};
+
 describe("mobile map toolbar", () => {
   afterEach(() => {
     cleanup();
@@ -36,6 +43,7 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        {...noTileClipboardActions}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible
@@ -79,6 +87,7 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        {...noTileClipboardActions}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible
@@ -127,6 +136,7 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        {...noTileClipboardActions}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible
@@ -143,10 +153,12 @@ describe("mobile map toolbar", () => {
     expect(setPaintTool).toHaveBeenCalledWith("pan");
   });
 
-  it("keeps paint tools, layers and grid toggle usable while collapsed", () => {
+  it("keeps paint, layer, grid and selection actions usable while collapsed", () => {
     const setPaintTool = vi.fn();
     const setSelectedLayer = vi.fn();
     const setShowGrid = vi.fn();
+    const onCopyTiles = vi.fn();
+    const onPasteTiles = vi.fn();
     const mediaQuery = {
       matches: true,
       addEventListener: vi.fn(),
@@ -154,11 +166,13 @@ describe("mobile map toolbar", () => {
     };
     vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
 
-    const toolbar = (selectedLayer: number) => (
+    const toolbar = (selectedLayer: number, canPasteTiles: boolean, tileClipboard: {
+      width: number; height: number; layers: number[][];
+    } | null) => (
       <MapToolbar
         paintTool="pencil"
         setPaintTool={setPaintTool}
-        tileClipboard={null}
+        tileClipboard={tileClipboard}
         selectedLayer={selectedLayer}
         setSelectedLayer={setSelectedLayer}
         showGrid
@@ -167,6 +181,10 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        canCopyTiles={selectedLayer !== 3}
+        canPasteTiles={canPasteTiles}
+        onCopyTiles={onCopyTiles}
+        onPasteTiles={onPasteTiles}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible
@@ -176,7 +194,7 @@ describe("mobile map toolbar", () => {
         onToggleEventList={vi.fn()}
       />
     );
-    const view = render(toolbar(0));
+    const view = render(toolbar(0, false, null));
 
     expect(screen.getByRole("button", { name: "Use pen map tool" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Use erase map tool" }));
@@ -185,6 +203,20 @@ describe("mobile map toolbar", () => {
     expect(setShowGrid).toHaveBeenCalledWith(false);
     fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(3);
+
+    view.rerender(toolbar(3, false, null));
+    expect((screen.getByRole("button", { name: "Copy selected tiles" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(true);
+
+    view.rerender(toolbar(0, false, null));
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected tiles" }));
+    expect(onCopyTiles).toHaveBeenCalledOnce();
+    expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(true);
+
+    view.rerender(toolbar(0, true, { width: 2, height: 1, layers: [[1, 2], [], []] }));
+    fireEvent.click(screen.getByRole("button", { name: "Paste tiles at cursor" }));
+    expect(onPasteTiles).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status").textContent).toContain("Clipboard 2×1");
 
     view.unmount();
   });
@@ -211,6 +243,7 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        {...noTileClipboardActions}
         showEventPins={showEventPins}
         setShowEventPins={setShowEventPins}
         paletteVisible
@@ -248,6 +281,7 @@ describe("mobile map toolbar", () => {
         setZoom={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        {...noTileClipboardActions}
         showEventPins
         setShowEventPins={vi.fn()}
         paletteVisible
