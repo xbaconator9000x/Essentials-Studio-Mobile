@@ -99,6 +99,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [tool, setTool] = useState<SpriteTool>("brush");
   const [selection, setSelection] = useState<SpriteSelection | null>(null);
   const [clipboard, setClipboard] = useState<SpriteClipboardImage | null>(null);
+  const [preserveTransparentPaste, setPreserveTransparentPaste] = useState(true);
   const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(1);
   const [spritePalette, setSpritePalette] = useState<string[]>([]);
@@ -467,6 +468,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       source.height,
       clipboard,
       { x: selection.x, y: selection.y },
+      preserveTransparentPaste ? "preserve" : "replace",
     );
     if (!action) return true;
     if (!historyRef.current.push(action)) {
@@ -489,7 +491,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
     return true;
-  }, [clipboard, selection, updateDirty]);
+  }, [clipboard, preserveTransparentPaste, selection, updateDirty]);
 
   const refreshSpritePalette = useCallback(() => {
     const image = imageDataRef.current;
@@ -1402,6 +1404,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onClick={() => copySelection(true)}>Cut</button>
               <button type="button" disabled={!selection || !clipboard || loading || saving}
                 onClick={() => pasteSelection()}>Paste</button>
+              <label><input type="checkbox" aria-label="Preserve destination under transparent clipboard pixels" checked={preserveTransparentPaste} onChange={(event) => setPreserveTransparentPaste(event.currentTarget.checked)} />Transparent pixels keep background</label>
               <button type="button" disabled={!selection}
                 onClick={() => setSelection(null)}>Clear</button>
             </div>
@@ -1491,6 +1494,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onClick={() => copySelection(true)}>Cut selection</button>
               <button type="button" disabled={!selection || !clipboard || loading || saving}
                 onClick={() => pasteSelection()}>Paste selection</button>
+              <label><input type="checkbox" aria-label="Preserve destination under transparent clipboard pixels" checked={preserveTransparentPaste} onChange={(event) => setPreserveTransparentPaste(event.currentTarget.checked)} />Transparent pixels keep background</label>
               <button type="button" disabled={!selection}
                 onClick={() => setSelection(null)}>Clear selection</button>
             </div>
