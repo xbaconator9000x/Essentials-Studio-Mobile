@@ -123,10 +123,14 @@ try {
   result.dialogueMapId = mapId;
 
   stage = "React map paint and save";
-  // Choose an XP autotile family different from the first cell's family.
-  const target = before.tiles[0] >= 48 && before.tiles[0] < 96 ? 96 : 48;
-  await page.getByRole("button", { name: "Auto", exact: true }).click();
-  await page.locator(".autotile-item").nth(target === 48 ? 0 : 1).click();
+  // The rights-cleared compatibility fixture can declare empty autotile
+  // slots. Those are correctly disabled by the production palette; use a
+  // visible, real regular tile instead of clicking a missing asset.
+  const target = before.tiles[0] === 384 ? 385 : 384;
+  await page.getByRole("button", { name: "Tiles", exact: true }).click();
+  const picker = page.locator(".tileset-canvas");
+  await picker.waitFor({ state: "visible", timeout: 30_000 });
+  await picker.click({ position: { x: target === 385 ? 48 : 16, y: 16 } });
   await page.locator(".map-editor-canvas").click({ position: { x: 16, y: 16 } });
   const save = page.getByRole("button", { name: "Save All" });
   await save.waitFor({ state: "visible" });
@@ -144,9 +148,8 @@ try {
   const changes = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
   assert.equal(changes.length, 1, "React map paint must persist exactly one cell");
-  assert.ok(changes[0].tile >= 48 && changes[0].tile < 48 + 7 * 48, "Saved tile is not an XP autotile");
-  assert.equal(Math.floor((changes[0].tile - 48) / 48), Math.floor((target - 48) / 48),
-    "Saved tile is from the wrong selected autotile family");
+  assert.equal(changes[0].tile, target,
+    "React must persist the exact selected regular RMXP tile to native RXDATA");
   const mapPath = "Data/Map" + String(mapId).padStart(3, "0") + ".rxdata";
   result.stages.reactMapSave = "passed";
   await page.screenshot({ path: join(evidence, "private-react-map-saved.png"), fullPage: true });
