@@ -1229,7 +1229,7 @@ function AppContent() {
         <section className="app-mobile-project-summary">
           <div>
             <h1>{project.name}</h1>
-            <p>{Object.keys(project.map_infos).length} maps · read-only preview</p>
+            <p>{Object.keys(project.map_infos).length} maps · {mobileEditEnabled ? "experimental editing enabled" : "read-only preview"}</p>
           </div>
           <p>Choose a map below to inspect its layers and events. The imported archive remains untouched.</p>
           <label className="app-mobile-import-btn">
@@ -1270,6 +1270,7 @@ function AppContent() {
 
         {/* Center: Map editor */}
         <MapEditor
+          key={project.path}
           mapData={mapData}
           tilesetInfo={tilesetInfo}
           tilesetImage={tilesetImage}
@@ -1301,6 +1302,7 @@ function AppContent() {
         {/* Right: Tileset palette */}
         {showTilesetPalette && (
           <TilesetPalette
+            key={`${project.path}:${currentMapId ?? "none"}`}
             tilesetInfo={tilesetInfo}
             tilesetImage={tilesetImage}
             autotileImages={autotileImages}
@@ -1342,7 +1344,7 @@ function AppContent() {
         {mobileLayout && mobileSection === "sprites" && (
           <section className="app-mobile-sprite-preview">
             <h1>Sprite tools</h1>
-            <p>Browse the project without editing. Sprite changes are experimental and may write project files.</p>
+            <p>Browse and edit project sprites using touch controls. Saving a sprite writes to the disposable working project, not the imported source ZIP.</p>
             <div className="app-mobile-safety-note" role="alert">
               Keep the original ZIP and open the editor only on a disposable project copy.
             </div>
@@ -1403,6 +1405,7 @@ function AppContent() {
 
       {showSprites && (
         <SpriteEditor
+          key={project.path}
           projectPath={project.path}
           onClose={() => {
             setShowSprites(false);
