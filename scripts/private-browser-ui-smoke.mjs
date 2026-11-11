@@ -176,18 +176,18 @@ try {
   const updatedDialogue = "PrivateUiRoundtripProbeDialogue";
   assert.notEqual(probe.event.pages[probe.pageIndex].list[probe.commandIndex].parameters[0],
     updatedDialogue, "Dialogue probe must make a real change");
+  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first()
+    .getByRole("button", { name: "Edit dialogue" }).click();
   if (probe.hasContinuation) {
     const originalList = probe.event.pages[probe.pageIndex].list;
     const lines = [updatedDialogue];
     for (let i = probe.commandIndex + 2; originalList[i]?.code === 401; i++) {
       lines.push(String(originalList[i].parameters[0] ?? ""));
     }
-    await eventEditor.locator(".event-command-block").filter({ hasText: "Show Text" }).first().dblclick();
     const textarea = eventEditor.locator(".event-command-edit-textarea");
     await textarea.waitFor({ timeout: 15_000 });
     await textarea.fill(lines.join("\n"));
   } else {
-    await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
     const field = eventEditor.locator(".event-command-edit-input");
     await field.waitFor({ timeout: 15_000 });
     await field.fill(updatedDialogue);
