@@ -213,7 +213,10 @@ test("large autotile rectangle updates exterior perimeter only and remains undoa
   data.tiles[size + 5 * data.width + 5] = 1024;
   const before = data.tiles.slice();
   const changes = paintRectangle(data, 5, 5, 26, 18, 0, 48);
-  assert.ok(changes.length >= 22 * 14);
+  // The rectangle starts filled with the same autotile slot: only tiles
+  // whose resolved neighbour mask changes should appear in the undo delta.
+  assert.ok(changes.length > 0);
+  assert.ok(changes.length < 22 * 14);
   assert.ok(changes.some(c => c.x === 4 && c.y === 5));
   assert.ok(changes.some(c => c.x === 27 && c.y === 18));
   assert.ok(changes.every(c => c.layer === 0));
