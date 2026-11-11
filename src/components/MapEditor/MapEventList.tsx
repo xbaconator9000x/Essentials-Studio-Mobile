@@ -61,11 +61,11 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
             <option value="position">Map position</option>
           </select>
         </label>
-        <span role="status" aria-live="polite">{visibleEvents.length} of {events.length} events</span>
+        <span aria-live="polite">{visibleEvents.length} of {events.length} events</span>
       </div>
       <ul>
         {events.length === 0 ? (
-          <li className="map-event-list-empty">No events on this map.</li>
+          <li className="map-event-list-empty" role="status">No events on this map.</li>
         ) : visibleEvents.length === 0 ? (
           <li className="map-event-list-empty" role="status">No map events match “{query.trim()}”.</li>
         ) : visibleEvents.map((event) => (
