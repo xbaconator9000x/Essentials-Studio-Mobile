@@ -168,3 +168,37 @@ test("flood fill respects an irregular barrier and preserves other XP layers", (
   applyAction(data, { type: "fill", changes, timestamp: 0 });
   assert.equal(data.tiles[39], 384);
 });
+
+test("clipboard paste clips negative origins and right/bottom edges without layer aliasing", () => {
+  const data = map(3, 2);
+  const clipboard = { width: 4, height: 3, layers: [
+    Array.from({ length: 12 }, (_, i) => 1000 + i),
+    [], [],
+  ] };
+  const left = pasteTileRegion(data, clipboard, { x: -2, y: -1 }, 2);
+  assert.equal(left.length, 4);
+  assert.equal(data.tiles[12], 1006);
+  assert.equal(data.tiles[13], 1007);
+  assert.equal(data.tiles[15], 1010);
+  assert.equal(data.tiles[16], 1011);
+  assert.deepEqual(data.tiles.slice(0, 12), new Array(12).fill(0));
+  const before = data.tiles.slice();
+  revertAction(data, { type: "paste", changes: left, timestamp: 0 });
+  assert.deepEqual(data.tiles, new Array(18).fill(0));
+  applyAction(data, { type: "paste", changes: left, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+  assert.deepEqual(pasteTileRegion(data, clipboard, { x: 3, y: 2 }, 2), []);
+  assert.deepEqual(data.tiles, before);
+  assert.deepEqual(pasteTileRegion(data, clipboard, { x: Number.MAX_SAFE_INTEGER + 1, y: 0 }, 2), []);
+  assert.deepEqual(data.tiles, before);
+});
+
+test("clipboard paste preserves zero tiles at clipped destination edges", () => {
+  const data = map(2, 2);
+  data.tiles.fill(900);
+  const clipboard = { width: 3, height: 2, layers: [[0, 111, 222, 333, 0, 444], [], []] };
+  const changes = pasteTileRegion(data, clipboard, { x: -1, y: 0 }, 0, "preserve");
+  assert.equal(changes.length, 2);
+  assert.deepEqual(data.tiles.slice(0, 4), [111, 222, 900, 900]);
+  assert.deepEqual(data.tiles.slice(4), new Array(8).fill(900));
+});
