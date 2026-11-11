@@ -424,6 +424,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("This cut exceeds the one-million-pixel undo limit");
       return false;
     }
+    spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setDirty(true);
     updateDirty("sprite-editor", true);
@@ -448,6 +449,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("This paste exceeds the one-million-pixel undo limit");
       return false;
     }
+    spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setSelection(normalizeSpriteSelection(
       { x: selection.x, y: selection.y },
