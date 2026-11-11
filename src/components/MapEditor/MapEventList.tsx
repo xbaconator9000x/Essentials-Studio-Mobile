@@ -22,6 +22,8 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
       || String(event.id).padStart(3, "0").includes(normalizedQuery)
       || `${event.x},${event.y}`.includes(normalizedQuery)
       || `${event.x} ${event.y}`.includes(normalizedQuery)
+      || `${event.x}, ${event.y}`.includes(normalizedQuery)
+      || `${event.x}:${event.y}`.includes(normalizedQuery)
     )) : events;
     // Never mutate the native map's event order; sorting is presentation only.
     return [...filtered].sort((a, b) => {
