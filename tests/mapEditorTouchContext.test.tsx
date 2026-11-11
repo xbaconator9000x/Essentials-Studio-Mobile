@@ -63,7 +63,7 @@ function renderMap({
 
 function dispatchTouch(
   canvas: Element,
-  type: "pointerdown" | "pointerup",
+  type: "pointerdown" | "pointermove" | "pointerup",
   timeStamp: number,
   point = { x: 48, y: 48 },
 ) {
@@ -101,6 +101,43 @@ afterEach(() => {
 });
 
 describe("touch map context actions", () => {
+  it.each([
+    ["forward", { x: 32, y: 32 }, { x: 64, y: 64 }],
+    ["reverse", { x: 64, y: 64 }, { x: 32, y: 32 }],
+  ])("selects and copies a multi-tile region on a %s touch drag", async (_direction, start, end) => {
+    rendererApi.screenToTile.mockImplementation((x: number, y: number) => ({
+      x: Math.floor(x / 32),
+      y: Math.floor(y / 32),
+    }));
+    const view = renderMap({ events: [] });
+    fireEvent.click(screen.getByTitle("select"));
+    const canvas = view.container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+
+    dispatchTouch(canvas!, "pointerdown", 100, start);
+    dispatchTouch(canvas!, "pointermove", 120, end);
+    dispatchTouch(canvas!, "pointerup", 140, end);
+
+    const copyButton = screen.getByRole("button", { name: "Copy selected tiles" });
+    expect((copyButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(copyButton);
+    expect(await screen.findByText(/Copied \(2×2\)/)).toBeTruthy();
+  });
+
+  it("does not turn event-layer drags into tile selections", () => {
+    const view = renderMap({ events: [] });
+    fireEvent.click(screen.getByTitle("select"));
+    fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
+    const canvas = view.container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+
+    dispatchTouch(canvas!, "pointerdown", 100);
+    dispatchTouch(canvas!, "pointermove", 120, { x: 80, y: 80 });
+    dispatchTouch(canvas!, "pointerup", 140, { x: 80, y: 80 });
+
+    expect((screen.getByRole("button", { name: "Copy selected tiles" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("opens existing event actions on long press and routes copy without changing tap behavior", async () => {
     const onCopyEvent = vi.fn(async () => {});
     const onOpenEvent = vi.fn();

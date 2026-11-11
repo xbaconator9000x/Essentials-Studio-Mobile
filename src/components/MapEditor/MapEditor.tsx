@@ -138,6 +138,7 @@ export function MapEditor({
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
   const isSelecting = useRef(false);
+  const touchSelectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const [tileClipboard, setTileClipboard] = useState<TileClipboard | null>(null);
 
   // Force re-render trigger (the value is unused; setting it re-runs the
@@ -901,6 +902,20 @@ export function MapEditor({
         if (
           action.paint &&
           !readOnly &&
+          selectedLayer !== 3 &&
+          paintTool === "select"
+        ) {
+          touchSelectionStartRef.current ??= screenToTile(action.from.x, action.from.y);
+          const to = screenToTile(action.point.x, action.point.y);
+          if (touchSelectionStartRef.current && to) {
+            setSelectionStart(touchSelectionStartRef.current);
+            setSelectionEnd(to);
+          }
+          return;
+        }
+        if (
+          action.paint &&
+          !readOnly &&
           selectedLayer >= 0 &&
           selectedLayer <= 2 &&
             (paintTool === "pencil" || paintTool === "eraser")) {
@@ -952,6 +967,7 @@ export function MapEditor({
     if (e.pointerType !== "touch") return;
     e.preventDefault();
     e.stopPropagation();
+    touchSelectionStartRef.current = null;
     touchGesturesRef.current.pointerDown(
       e.pointerId,
       { x: e.clientX, y: e.clientY },
@@ -988,6 +1004,7 @@ export function MapEditor({
           e.timeStamp,
         ),
       );
+      touchSelectionStartRef.current = null;
       finishTouchStroke();
     },
     [finishTouchStroke, handleTouchGesture],
@@ -998,6 +1015,7 @@ export function MapEditor({
     e.preventDefault();
     e.stopPropagation();
     finishTouchStroke();
+    touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
   }, [finishTouchStroke]);
 
@@ -1005,6 +1023,7 @@ export function MapEditor({
     if ("PointerEvent" in window) return;
     e.preventDefault();
     e.stopPropagation();
+    touchSelectionStartRef.current = null;
     for (const touch of Array.from(e.changedTouches)) {
       touchGesturesRef.current.pointerDown(
         touch.identifier,
@@ -1044,6 +1063,7 @@ export function MapEditor({
             e.timeStamp,
           ),
         );
+        touchSelectionStartRef.current = null;
         finishTouchStroke();
       }
     },
@@ -1055,6 +1075,7 @@ export function MapEditor({
     e.preventDefault();
     e.stopPropagation();
     finishTouchStroke();
+    touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
   }, [finishTouchStroke]);
 
