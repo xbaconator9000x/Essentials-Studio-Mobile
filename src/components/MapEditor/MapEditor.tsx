@@ -110,7 +110,7 @@ export function MapEditor({
     () => readMapEventPinsVisible(projectPath, currentMapId),
   );
   const [showEventList, setShowEventList] = useState(false);
-  const [showLayers, _setShowLayers] = useState<[boolean, boolean, boolean]>([
+  const [showLayers, setShowLayers] = useState<[boolean, boolean, boolean]>([
     true,
     true,
     true,
@@ -128,6 +128,8 @@ export function MapEditor({
   const paintChanges = useRef<MapAction["changes"]>([]);
   const mousePaintLastTile = useRef<{ x: number; y: number } | null>(null);
   const rectStart = useRef<{ x: number; y: number } | null>(null);
+  const touchRectangle = useRef<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+  const [rectanglePreview, setRectanglePreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   // Panning state
   const isPanning = useRef(false);
@@ -171,6 +173,50 @@ export function MapEditor({
       setSelectionEnd(null);
     }
   }, [paintTool]);
+
+  // A pending shape is only a preview. Never carry it to a different tool,
+  // layer, map, or project, or commit it after a second finger begins a pinch.
+  const cancelRectangle = useCallback(() => {
+    rectStart.current = null;
+    touchRectangle.current = null;
+    setRectanglePreview(null);
+  }, []);
+
+  useEffect(() => {
+    cancelRectangle();
+  }, [paintTool, selectedLayer, currentMapId, projectPath, readOnly, cancelRectangle]);
+
+  useEffect(() => {
+    setSelectionStart(null);
+    setSelectionEnd(null);
+    setCursorTile(null);
+    touchSelectionStartRef.current = null;
+    touchGesturesRef.current.cancel();
+    isPainting.current = false;
+    isTouchPainting.current = false;
+    paintChanges.current = [];
+    cancelRectangle();
+  }, [currentMapId, projectPath, cancelRectangle]);
+
+  const chooseLayer = useCallback((layer: number) => {
+    setSelectedLayer(layer);
+    if (layer >= 0 && layer <= 2) {
+      setShowLayers((previous) => {
+        const next: [boolean, boolean, boolean] = [...previous];
+        next[layer] = true;
+        return next;
+      });
+    }
+  }, []);
+
+  const toggleLayerVisibility = useCallback((layer: number, visible: boolean) => {
+    if (layer < 0 || layer > 2 || (!visible && layer === selectedLayer)) return;
+    setShowLayers((previous) => {
+      const next: [boolean, boolean, boolean] = [...previous];
+      next[layer] = visible;
+      return next;
+    });
+  }, [selectedLayer]);
 
   // Update renderer with map data
   useEffect(() => {
@@ -320,7 +366,7 @@ export function MapEditor({
       viewportX: constrainedViewport.x,
       viewportY: constrainedViewport.y,
       startMarker,
-      selectionRect,
+      selectionRect: rectanglePreview ?? selectionRect,
     },
     events,
   };
@@ -506,6 +552,33 @@ export function MapEditor({
     onOpenEvent?.(eventId, eventName);
   }, [focusEventOnMap, onOpenEvent]);
 
+  const clampTile = useCallback((point: { x: number; y: number }) => {
+    if (!mapData || mapData.width < 1 || mapData.height < 1) return null;
+    return {
+      x: Math.max(0, Math.min(mapData.width - 1, point.x)),
+      y: Math.max(0, Math.min(mapData.height - 1, point.y)),
+    };
+  }, [mapData]);
+
+  const commitRectangle = useCallback((start: { x: number; y: number }, end: { x: number; y: number }) => {
+    if (!mapData || readOnly || selectedLayer < 0 || selectedLayer > 2) return;
+    const changes = paintRectangle(mapData, start.x, start.y, end.x, end.y, selectedLayer, selectedTileId);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "rectangle", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick((tick) => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, selectedLayer, selectedTileId, onMapDirty]);
+
+  const finishTouchRectangle = useCallback((point: { x: number; y: number }) => {
+    const pending = touchRectangle.current;
+    if (!pending) return;
+    const tile = screenToTile(point.x, point.y);
+    const end = tile ? clampTile(tile) ?? pending.end : pending.end;
+    cancelRectangle();
+    commitRectangle(pending.start, end);
+  }, [screenToTile, clampTile, cancelRectangle, commitRectangle]);
+
   // Apply a paint operation at a position
   const doPaint = useCallback(
     (x: number, y: number) => {
@@ -641,7 +714,10 @@ export function MapEditor({
         }
 
         if (paintTool === "rectangle") {
+          if (selectedLayer < 0 || selectedLayer > 2 ||
+              pos.x < 0 || pos.x >= mapData.width || pos.y < 0 || pos.y >= mapData.height) return;
           rectStart.current = pos;
+          setRectanglePreview({ x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
           isPainting.current = true;
           return;
         }
@@ -690,7 +766,11 @@ export function MapEditor({
         }
 
         if (isSelecting.current && paintTool === "select") {
-          setSelectionEnd(pos);
+          setSelectionEnd(clampTile(pos));
+        }
+        if (isPainting.current && paintTool === "rectangle" && rectStart.current) {
+          const end = clampTile(pos);
+          if (end) setRectanglePreview({ x1: rectStart.current.x, y1: rectStart.current.y, x2: end.x, y2: end.y });
         }
 
         if (
@@ -714,7 +794,7 @@ export function MapEditor({
         }
       }
     },
-    [mapData, zoom, screenToTile, paintTool, doPaint, setClampedViewport]
+    [mapData, zoom, screenToTile, paintTool, doPaint, setClampedViewport, clampTile]
   );
 
   // Mouse up: finish painting
@@ -735,33 +815,11 @@ export function MapEditor({
         mousePaintLastTile.current = null;
 
         if (paintTool === "rectangle" && rectStart.current) {
+          const start = rectStart.current;
           const pos = screenToTile(e.clientX, e.clientY);
-          if (pos) {
-            const changes = paintRectangle(
-              mapData,
-              rectStart.current.x,
-              rectStart.current.y,
-              pos.x,
-              pos.y,
-              selectedLayer,
-              selectedTileId
-            );
-            if (changes.length > 0) {
-              undoStackRef.current.push({
-                type: "rectangle",
-                changes,
-                timestamp: Date.now(),
-              });
-              rendererRef.current?.setMapData(
-                mapData.tiles,
-                mapData.width,
-                mapData.height
-              );
-              setRenderTick((t) => t + 1);
-              onMapDirty();
-            }
-          }
-          rectStart.current = null;
+          const end = pos && clampTile(pos);
+          cancelRectangle();
+          if (end) commitRectangle(start, end);
         } else if (paintChanges.current.length > 0) {
           undoStackRef.current.push({
             type: paintTool === "eraser" ? "erase" : "paint",
@@ -777,9 +835,11 @@ export function MapEditor({
       mapData,
       paintTool,
       selectedLayer,
-      selectedTileId,
       screenToTile,
       onMapDirty,
+      clampTile,
+      cancelRectangle,
+      commitRectangle,
     ]
   );
 
@@ -825,21 +885,7 @@ export function MapEditor({
       }
 
       if (paintTool === "rectangle") {
-        const changes = paintRectangle(
-          mapData,
-          tile.x,
-          tile.y,
-          tile.x,
-          tile.y,
-          selectedLayer,
-          selectedTileId,
-        );
-        if (changes.length > 0) {
-          undoStackRef.current.push({ type: "rectangle", changes, timestamp: Date.now() });
-          rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
-          setRenderTick((tick) => tick + 1);
-          onMapDirty();
-        }
+        commitRectangle(tile, tile);
         return;
       }
 
@@ -865,6 +911,8 @@ export function MapEditor({
       screenToTile,
       selectedLayer,
       selectedTileId,
+      readOnly,
+      commitRectangle,
     ],
   );
 
@@ -899,6 +947,20 @@ export function MapEditor({
         return;
       }
       if (action.type === "pan") {
+        if (action.paint && !readOnly && mapData && selectedLayer >= 0 && selectedLayer <= 2 && paintTool === "rectangle") {
+          const from = screenToTile(action.from.x, action.from.y);
+          const to = screenToTile(action.point.x, action.point.y);
+          if (!touchRectangle.current && from && from.x >= 0 && from.x < mapData.width && from.y >= 0 && from.y < mapData.height) {
+            touchRectangle.current = { start: from, end: from };
+          }
+          const pending = touchRectangle.current;
+          const end = to && clampTile(to);
+          if (pending && end) {
+            pending.end = end;
+            setRectanglePreview({ x1: pending.start.x, y1: pending.start.y, x2: end.x, y2: end.y });
+          }
+          return;
+        }
         if (
           action.paint &&
           !readOnly &&
@@ -907,9 +969,10 @@ export function MapEditor({
         ) {
           touchSelectionStartRef.current ??= screenToTile(action.from.x, action.from.y);
           const to = screenToTile(action.point.x, action.point.y);
-          if (touchSelectionStartRef.current && to) {
-            setSelectionStart(touchSelectionStartRef.current);
-            setSelectionEnd(to);
+          const start = touchSelectionStartRef.current;
+          if (start && to && mapData && start.x >= 0 && start.x < mapData.width && start.y >= 0 && start.y < mapData.height) {
+            setSelectionStart(start);
+            setSelectionEnd(clampTile(to));
           }
           return;
         }
@@ -960,7 +1023,7 @@ export function MapEditor({
         nextZoom,
       );
     },
-    [doPaint, handleTouchTap, hasClipboardEvent, mapData, onOpenEvent, paintTool, readOnly, screenToTile, selectedLayer, viewportX, viewportY, zoom, setClampedViewport],
+    [doPaint, handleTouchTap, hasClipboardEvent, mapData, paintTool, readOnly, screenToTile, selectedLayer, viewportX, viewportY, zoom, setClampedViewport, clampTile],
   );
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -968,6 +1031,7 @@ export function MapEditor({
     e.preventDefault();
     e.stopPropagation();
     touchSelectionStartRef.current = null;
+    cancelRectangle();
     touchGesturesRef.current.pointerDown(
       e.pointerId,
       { x: e.clientX, y: e.clientY },
@@ -978,7 +1042,7 @@ export function MapEditor({
     } catch {
       // Pointer capture is unavailable in some WebViews; touch-action still prevents browser panning.
     }
-  }, []);
+  }, [cancelRectangle]);
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1004,10 +1068,11 @@ export function MapEditor({
           e.timeStamp,
         ),
       );
+      finishTouchRectangle({ x: e.clientX, y: e.clientY });
       touchSelectionStartRef.current = null;
       finishTouchStroke();
     },
-    [finishTouchStroke, handleTouchGesture],
+    [finishTouchStroke, finishTouchRectangle, handleTouchGesture],
   );
 
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1017,13 +1082,15 @@ export function MapEditor({
     finishTouchStroke();
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
-  }, [finishTouchStroke]);
+    cancelRectangle();
+  }, [finishTouchStroke, cancelRectangle]);
 
   const handleTouchStartFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     if ("PointerEvent" in window) return;
     e.preventDefault();
     e.stopPropagation();
     touchSelectionStartRef.current = null;
+    cancelRectangle();
     for (const touch of Array.from(e.changedTouches)) {
       touchGesturesRef.current.pointerDown(
         touch.identifier,
@@ -1031,7 +1098,7 @@ export function MapEditor({
         e.timeStamp,
       );
     }
-  }, []);
+  }, [cancelRectangle]);
 
   const handleTouchMoveFallback = useCallback(
     (e: React.TouchEvent<HTMLCanvasElement>) => {
@@ -1063,11 +1130,12 @@ export function MapEditor({
             e.timeStamp,
           ),
         );
+        finishTouchRectangle({ x: touch.clientX, y: touch.clientY });
         touchSelectionStartRef.current = null;
         finishTouchStroke();
       }
     },
-    [finishTouchStroke, handleTouchGesture],
+    [finishTouchStroke, finishTouchRectangle, handleTouchGesture],
   );
 
   const handleTouchCancelFallback = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
@@ -1077,7 +1145,8 @@ export function MapEditor({
     finishTouchStroke();
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
-  }, [finishTouchStroke]);
+    cancelRectangle();
+  }, [finishTouchStroke, cancelRectangle]);
 
   // ALWAYS render the full layout — the canvas must exist at mount time
   // for the renderer creation and ResizeObserver effects to work.
@@ -1090,7 +1159,9 @@ export function MapEditor({
           setPaintTool={setPaintTool}
           tileClipboard={tileClipboard}
           selectedLayer={selectedLayer}
-          setSelectedLayer={setSelectedLayer}
+          setSelectedLayer={chooseLayer}
+          showLayers={showLayers}
+          onToggleLayerVisibility={toggleLayerVisibility}
           showGrid={showGrid}
           setShowGrid={setShowGrid}
           showEventPins={showEventPins}
@@ -1165,6 +1236,8 @@ export function MapEditor({
           onMouseLeave={() => {
             setCursorTile(null);
             isPanning.current = false;
+            isSelecting.current = false;
+            cancelRectangle();
             if (isPainting.current) {
               isPainting.current = false;
               mousePaintLastTile.current = null;

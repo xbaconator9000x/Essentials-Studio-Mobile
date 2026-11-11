@@ -97,3 +97,15 @@ test("signed i16 sentinel cells survive undo and clipboard without being paintab
   assert.equal(dest.tiles[5], -1);
   assert.deepEqual(paintTile(dest, 2, 1, 0, -1), []);
 });
+
+
+test("a single-layer tile clipboard pastes into the chosen destination layer and undoes exactly", () => {
+  const source = { id: 1, width: 2, height: 2, tileset_id: 1, tiles: [384, 385, 386, 387, ...Array(8).fill(0)], events: [] };
+  const destination = { id: 2, width: 2, height: 2, tileset_id: 1, tiles: Array(12).fill(0), events: [] };
+  const clip = copyTileRegion(source, { x1: 0, y1: 0, x2: 1, y2: 1 }, 0);
+  const changes = pasteTileRegion(destination, clip, { x: 0, y: 0 }, 2);
+  assert.deepEqual(destination.tiles, [...Array(8).fill(0), 384, 385, 386, 387]);
+  assert.equal(changes.length, 4);
+  revertAction(destination, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(destination.tiles, Array(12).fill(0));
+});

@@ -648,19 +648,25 @@ export function pasteTileRegion(
     || clipboard.width <= 0 || clipboard.height <= 0
     || !Number.isSafeInteger(clipboard.width * clipboard.height)
     || !Array.isArray(clipboard.layers)) return [];
-  const layerIndices = activeLayer >= 0 ? [activeLayer] : [0, 1, 2];
+  // A single-layer selection may be pasted into another active tile layer.
+  // Multi-layer selections retain their original XP layer mapping.
+  if (clipboard.layers.length !== 3 || !clipboard.layers.every(Array.isArray)) return [];
+  const sourceLayers = [0, 1, 2].filter((layer) => clipboard.layers[layer].length > 0);
+  const mappings = activeLayer >= 0
+    ? sourceLayers.length === 1
+      ? [{ source: sourceLayers[0], destination: activeLayer }]
+      : [{ source: activeLayer, destination: activeLayer }]
+    : [0, 1, 2].map((layer) => ({ source: layer, destination: layer }));
 
-  // Validate all selected layers before any write; no partial paste.
-  for (const l of layerIndices) {
-    const values = clipboard.layers[l];
-    if (!Array.isArray(values)) return [];
+  // Validate the entire clipboard before any write; no partial paste.
+  for (const values of clipboard.layers) {
     if (values.length > 0 && (values.length !== clipboard.width * clipboard.height
       || !values.every(validStoredTileId))) return [];
   }
 
   const changes: TileChange[] = [];
-  for (const l of layerIndices) {
-    const layerData = clipboard.layers[l];
+  for (const { source, destination: l } of mappings) {
+    const layerData = clipboard.layers[source];
     if (!layerData || layerData.length === 0) continue;
     for (let dy = 0; dy < clipboard.height; dy++) {
       for (let dx = 0; dx < clipboard.width; dx++) {

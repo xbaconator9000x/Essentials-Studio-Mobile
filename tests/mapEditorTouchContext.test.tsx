@@ -28,6 +28,8 @@ function renderMap({
   onOpenEvent = vi.fn(),
   onPasteEvent = vi.fn(async () => {}),
   onSetStartPosition = vi.fn(async () => {}),
+  tiles = Array(27).fill(0) as number[],
+  onMapDirty = vi.fn(),
 }: {
   events?: { id: number; name: string; x: number; y: number; page_count: number; graphic_name: string; graphic_direction: number; graphic_pattern: number }[];
   hasClipboardEvent?: boolean;
@@ -37,10 +39,12 @@ function renderMap({
   onOpenEvent?: (id: number, name: string) => void;
   onPasteEvent?: (x: number, y: number) => Promise<void>;
   onSetStartPosition?: (x: number, y: number) => Promise<void>;
+  tiles?: number[];
+  onMapDirty?: () => void;
 } = {}) {
   return render(
     <MapEditor
-      mapData={{ id: 1, width: 3, height: 3, tileset_id: 1, tiles: Array(27).fill(0), events }}
+      mapData={{ id: 1, width: 3, height: 3, tileset_id: 1, tiles, events }}
       tilesetInfo={{ id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
       tilesetImage={null}
       autotileImages={[]}
@@ -48,7 +52,7 @@ function renderMap({
       currentMapId={1}
       hasClipboardEvent={hasClipboardEvent}
       readOnly={readOnly}
-      onMapDirty={vi.fn()}
+      onMapDirty={onMapDirty}
       onOpenEvent={onOpenEvent}
       onDeleteEvent={onDeleteEvent}
       onCopyEvent={onCopyEvent}
@@ -63,13 +67,14 @@ function renderMap({
 
 function dispatchTouch(
   canvas: Element,
-  type: "pointerdown" | "pointermove" | "pointerup",
+  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
   timeStamp: number,
   point = { x: 48, y: 48 },
+  pointerId = 1,
 ) {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
-    pointerId: { value: 1 },
+    pointerId: { value: pointerId },
     pointerType: { value: "touch" },
     clientX: { value: point.x },
     clientY: { value: point.y },
@@ -101,6 +106,59 @@ afterEach(() => {
 });
 
 describe("touch map context actions", () => {
+  it.each([
+    [{ x: 1, y: 1 }, { x: 95, y: 95 }],
+    [{ x: 95, y: 95 }, { x: 1, y: 1 }],
+  ])("previews a touch rectangle and paints every edge cell once on release", (start, end) => {
+    rendererApi.screenToTile.mockImplementation((x: number, y: number) => ({ x: Math.floor(x / 32), y: Math.floor(y / 32) }));
+    const tiles = Array(27).fill(0);
+    const onMapDirty = vi.fn();
+    const view = renderMap({ events: [], tiles, onMapDirty });
+    fireEvent.click(screen.getByTitle("rectangle"));
+    const canvas = view.container.querySelector("canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100, start);
+    dispatchTouch(canvas, "pointermove", 120, end);
+    expect(tiles).toEqual(Array(27).fill(0));
+    expect(onMapDirty).not.toHaveBeenCalled();
+    dispatchTouch(canvas, "pointerup", 140, end);
+    expect(tiles.slice(0, 9)).toEqual(Array(9).fill(1));
+    expect(tiles.slice(9)).toEqual(Array(18).fill(0));
+    expect(onMapDirty).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Undo tile edit" }));
+    expect(tiles).toEqual(Array(27).fill(0));
+    fireEvent.click(screen.getByRole("button", { name: "Redo tile edit" }));
+    expect(tiles.slice(0, 9)).toEqual(Array(9).fill(1));
+  });
+
+  it("cancels a pending rectangle on pinch and pointer cancellation", () => {
+    rendererApi.screenToTile.mockImplementation((x: number, y: number) => ({ x: Math.floor(x / 32), y: Math.floor(y / 32) }));
+    const tiles = Array(27).fill(0);
+    const onMapDirty = vi.fn();
+    const view = renderMap({ events: [], tiles, onMapDirty });
+    fireEvent.click(screen.getByTitle("rectangle"));
+    const canvas = view.container.querySelector("canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100, { x: 1, y: 1 });
+    dispatchTouch(canvas, "pointermove", 120, { x: 65, y: 65 });
+    dispatchTouch(canvas, "pointerdown", 130, { x: 40, y: 40 }, 2);
+    dispatchTouch(canvas, "pointerup", 150, { x: 65, y: 65 });
+    dispatchTouch(canvas, "pointerup", 160, { x: 40, y: 40 }, 2);
+    dispatchTouch(canvas, "pointerdown", 200, { x: 1, y: 1 });
+    dispatchTouch(canvas, "pointermove", 220, { x: 65, y: 65 });
+    dispatchTouch(canvas, "pointercancel", 240, { x: 65, y: 65 });
+    expect(tiles).toEqual(Array(27).fill(0));
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+
+  it("keeps a hidden tile layer visible when it becomes the active editing layer", () => {
+    renderMap({ events: [] });
+    const layer2 = screen.getByRole("checkbox", { name: "Show tile layer 2" }) as HTMLInputElement;
+    fireEvent.click(layer2);
+    expect(layer2.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
+    expect(layer2.checked).toBe(true);
+    expect(layer2.disabled).toBe(true);
+  });
+
   it.each([
     ["forward", { x: 32, y: 32 }, { x: 64, y: 64 }],
     ["reverse", { x: 64, y: 64 }, { x: 32, y: 32 }],

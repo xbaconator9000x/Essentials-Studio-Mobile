@@ -12,6 +12,8 @@ interface MapToolbarProps {
   tileClipboard: TileClipboard | null;
   selectedLayer: number;
   setSelectedLayer: (layer: number) => void;
+  showLayers: [boolean, boolean, boolean];
+  onToggleLayerVisibility: (layer: number, visible: boolean) => void;
   showGrid: boolean;
   setShowGrid: (show: boolean) => void;
   zoom: number;
@@ -60,6 +62,8 @@ export function MapToolbar({
   tileClipboard,
   selectedLayer,
   setSelectedLayer,
+  showLayers,
+  onToggleLayerVisibility,
   showGrid,
   setShowGrid,
   zoom,
@@ -194,6 +198,24 @@ export function MapToolbar({
         </div>
       )}
 
+      {!toolsCollapsed && (
+        <div className="toolbar-group map-layer-visibility" role="group" aria-label="Visible tile layers">
+          <span className="toolbar-label">Visible:</span>
+          {([0, 1, 2] as const).map((layer) => (
+            <label className="toolbar-check" key={layer}>
+              <input
+                type="checkbox"
+                aria-label={`Show tile layer ${layer + 1}`}
+                checked={showLayers[layer]}
+                disabled={selectedLayer === layer}
+                onChange={(event) => onToggleLayerVisibility(layer, event.target.checked)}
+              />
+              L{layer + 1}
+            </label>
+          ))}
+        </div>
+      )}
+
       {toolsCollapsed && (
         <label className="toolbar-check map-toolbar-quick-grid">
           <input
@@ -281,7 +303,9 @@ export function MapToolbar({
           Event copied; long-press a map tile to paste
         </span>
       )}
-      <span className="toolbar-label map-touch-hint">Long-press a map tile for event actions</span>
+      <span className="toolbar-label map-touch-hint">
+        {paintTool === "rectangle" ? "Drag to preview a rectangle; release to paint. Two fingers cancel and zoom." : "Long-press a map tile for event actions"}
+      </span>
 
       <button
         className="toolbar-btn"

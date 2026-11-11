@@ -432,3 +432,14 @@
     margin-left: 0;
   }
 }
+
+.map-layer-visibility .toolbar-check {
+  min-height: 32px;
+  padding: 4px 8px;
+  background: var(--color-surface0);
+  border-radius: 4px;
+}
+@media (max-width: 700px) {
+  .map-layer-visibility .toolbar-check { min-height: 44px; }
+  .map-layer-visibility input { width: 20px; height: 20px; }
+}

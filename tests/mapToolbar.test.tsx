@@ -10,6 +10,8 @@ const noTileClipboardActions = {
   onPasteTiles: vi.fn(),
   showCollisionOverlay: false,
   setShowCollisionOverlay: vi.fn(),
+  showLayers: [true, true, true] as [boolean, boolean, boolean],
+  onToggleLayerVisibility: vi.fn(),
 };
 
 describe("mobile map toolbar", () => {
