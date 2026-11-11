@@ -173,8 +173,10 @@ export function pasteSpriteSelection(
 export function moveSpritePixels(
   data: Uint8ClampedArray, width: number, height: number,
   selection: SpriteSelection, dx: number, dy: number,
+  mode: "move" | "duplicate" = "move",
 ): SpritePixelAction | null {
   if (!isValidImage(data, width, height) || !isValidSpriteSelection(selection, width, height)
+      || (mode !== "move" && mode !== "duplicate")
       || !Number.isSafeInteger(dx) || !Number.isSafeInteger(dy)
       || (dx === 0 && dy === 0)
       || selection.width * selection.height > MAX_SPRITE_EDIT_PIXELS
@@ -188,9 +190,11 @@ export function moveSpritePixels(
     const current = changes.get(pixel);
     changes.set(pixel, { before: current?.before ?? readPackedPixel(data, pixel), after });
   };
-  for (let y = 0; y < selection.height; y++) {
-    for (let x = 0; x < selection.width; x++) {
-      setAfter((selection.y + y) * width + selection.x + x, 0);
+  if (mode === "move") {
+    for (let y = 0; y < selection.height; y++) {
+      for (let x = 0; x < selection.width; x++) {
+        setAfter((selection.y + y) * width + selection.x + x, 0);
+      }
     }
   }
   for (let y = 0; y < selection.height; y++) {
