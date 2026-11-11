@@ -390,23 +390,30 @@ export function paintRectangle(
     }
   }
 
-  // Update neighbors along the border of the rectangle (same autotile slot)
-  const borderNeighbors = new Set<string>();
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      for (const [dx, dy] of NEIGHBOR_OFFSETS) {
-        const nx = x + dx;
-        const ny = y + dy;
-        // Only external neighbors (not inside the rectangle)
-        if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
-        if (nx < 0 || nx >= mapData.width || ny < 0 || ny >= mapData.height) continue;
-        borderNeighbors.add(`${nx},${ny}`);
-      }
+  // Only perimeter cells can touch an external neighbor. Avoid visiting
+  // every interior tile again on large filled rectangles.
+  const borderNeighbors = new Set<number>();
+  const addExternalNeighbors = (x: number, y: number) => {
+    for (const [dx, dy] of NEIGHBOR_OFFSETS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
+      if (nx < 0 || nx >= mapData.width || ny < 0 || ny >= mapData.height) continue;
+      borderNeighbors.add(ny * mapData.width + nx);
     }
+  };
+  for (let x = minX; x <= maxX; x++) {
+    addExternalNeighbors(x, minY);
+    if (maxY !== minY) addExternalNeighbors(x, maxY);
+  }
+  for (let y = minY + 1; y < maxY; y++) {
+    addExternalNeighbors(minX, y);
+    if (maxX !== minX) addExternalNeighbors(maxX, y);
   }
 
-  for (const key of borderNeighbors) {
-    const [nx, ny] = key.split(",").map(Number);
+  for (const index of borderNeighbors) {
+    const nx = index % mapData.width;
+    const ny = Math.floor(index / mapData.width);
     const neighborTile = getTile(mapData.tiles, nx, ny, layer, mapData.width, mapData.height);
     if (isAutotile(neighborTile) && getAutotileIndex(neighborTile) === atSlot) {
       const change = resolveAutotile(mapData, nx, ny, layer, atSlot);
