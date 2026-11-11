@@ -26,6 +26,7 @@ import {
   normalizeSpriteSelection,
   pasteSpriteSelection,
   flipSpritePixels,
+  rotateSquareSpritePixels,
   extractSpritePalette,
   replaceSpriteColor,
   type SpritePixelAction,
@@ -485,7 +486,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, []);
 
-  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "replace") => {
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -494,9 +495,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("Select at most one million pixels for a bulk edit");
       return;
     }
+    if ((operation === "clockwise" || operation === "counterclockwise") && area.width !== area.height) {
+      setError("90° rotation requires a square selection or square sprite; select a square region first");
+      return;
+    }
     const action = operation === "replace"
       ? replaceSpriteColor(image.data, source.width, source.height, replaceFrom, brushColor, area)
-      : flipSpritePixels(image.data, source.width, source.height, operation, area);
+      : operation === "clockwise" || operation === "counterclockwise"
+        ? rotateSquareSpritePixels(image.data, source.width, source.height, operation, area)
+        : flipSpritePixels(image.data, source.width, source.height, operation, area);
     if (!action) return;
     if (!historyRef.current.push(action)) {
       applySpritePixelAction(image.data, action, "before");
@@ -1353,6 +1360,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("clockwise")}>Rotate 90° ↻</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("counterclockwise")}>Rotate 90° ↺</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
@@ -1463,6 +1472,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("clockwise")}>Rotate 90° ↻</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("counterclockwise")}>Rotate 90° ↺</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
