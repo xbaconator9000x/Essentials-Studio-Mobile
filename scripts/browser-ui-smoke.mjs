@@ -281,7 +281,7 @@ try {
   const restartEvent = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(restartEvent.pages[0].list[1].parameters[0], updatedDialogue,
     "Dialogue edits must remain on disk and reload after React and Rust process restart");
-  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  await page.getByRole("button", { name: "Events layer", exact: true }).click();
   await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
   });
