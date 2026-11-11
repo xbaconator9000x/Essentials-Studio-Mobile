@@ -188,7 +188,7 @@ try {
   assert.deepEqual(dialogueBefore.pages[0].list[0].parameters, ["", 0, 0, 2]);
   assert.equal(dialogueBefore.pages[0].list[1].code, 401);
   assert.equal(dialogueBefore.pages[0].list[1].parameters[0], "Synthetic dialogue");
-  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  await page.getByRole("button", { name: "Events layer", exact: true }).click();
   await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
   });
