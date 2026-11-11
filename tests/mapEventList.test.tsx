@@ -85,6 +85,14 @@ describe("map event browser", () => {
     expect(screen.getByRole("button", { name: /002.*Guide/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
 
+    fireEvent.change(search, { target: { value: "8, 4" } });
+    expect(screen.getByRole("button", { name: /002.*Guide/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /009.*Hidden switch/ })).toBeNull();
+
+    fireEvent.change(search, { target: { value: "11:5" } });
+    expect(screen.getByRole("button", { name: /009.*Hidden switch/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /002.*Guide/ })).toBeNull();
+
     fireEvent.change(search, { target: { value: "nobody" } });
     expect(screen.getByRole("status").textContent).toContain("No map events match");
     fireEvent.click(screen.getByRole("button", { name: "Clear event search" }));
