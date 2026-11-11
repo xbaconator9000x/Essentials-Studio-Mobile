@@ -150,3 +150,21 @@ test("map paste replace mode still clears zero tiles and invalid mode is atomic"
   assert.equal(changes.length, 2);
   assert.deepEqual(destination.tiles.slice(0, 2), [0, 384]);
 });
+
+test("flood fill respects an irregular barrier and preserves other XP layers", () => {
+  const data = map(80, 60);
+  const area = data.width * data.height;
+  for (let y = 0; y < data.height; y++) data.tiles[y * data.width + 40] = 1024;
+  data.tiles[area + 20] = -1;
+  const original = data.tiles.slice();
+  const changes = floodFill(data, 0, 0, 0, 384);
+  assert.equal(changes.length, 40 * 60);
+  assert.equal(data.tiles[39], 384);
+  assert.equal(data.tiles[40], 1024);
+  assert.equal(data.tiles[41], 0);
+  assert.deepEqual(data.tiles.slice(area), original.slice(area));
+  revertAction(data, { type: "fill", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, original);
+  applyAction(data, { type: "fill", changes, timestamp: 0 });
+  assert.equal(data.tiles[39], 384);
+});
