@@ -91,4 +91,48 @@ describe("map renderer edge tiles", () => {
       graphicPattern: 0,
     }]);
   });
+
+  it("draws green passable and red blocked edges from three-layer RMXP passage data", () => {
+    const fills: { color: string; args: number[] }[] = [];
+    const context = {
+      fillStyle: "",
+      globalAlpha: 1,
+      imageSmoothingEnabled: false,
+      fillRect: (...args: number[]) => fills.push({ color: context.fillStyle, args }),
+    };
+    const canvas = {
+      width: 32,
+      height: 32,
+      getContext: () => context,
+    } as unknown as HTMLCanvasElement;
+    const renderer = new MapRenderer(canvas);
+    const tiles = [1, 0, 0];
+    renderer.setMapData(tiles, 1, 1);
+    renderer.setPassages([0, 0x01]);
+    renderer.setPriorities([0, 0]);
+
+    renderer.render(0, {
+      showGrid: false,
+      showEvents: false,
+      showCollisionOverlay: true,
+      showLayer: [true, true, true],
+      activeLayer: 0,
+      zoom: 1,
+      viewportX: 0,
+      viewportY: 0,
+    }, []);
+
+    const overlay = fills.slice(-4);
+    expect(overlay.map(({ color }) => color)).toEqual([
+      "rgba(166, 227, 161, 0.78)",
+      "rgba(166, 227, 161, 0.78)",
+      "rgba(243, 139, 168, 0.88)",
+      "rgba(166, 227, 161, 0.78)",
+    ]);
+    expect(overlay[2].args[0]).toBe(2);
+    expect(overlay[2].args[1]).toBeCloseTo(23.6);
+    expect(overlay[2].args[2]).toBe(28);
+    expect(overlay[2].args[3]).toBeCloseTo(6.4);
+    expect(tiles).toEqual([1, 0, 0]);
+  });
 });

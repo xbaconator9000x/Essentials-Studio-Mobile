@@ -8,6 +8,8 @@ const noTileClipboardActions = {
   canPasteTiles: false,
   onCopyTiles: vi.fn(),
   onPasteTiles: vi.fn(),
+  showCollisionOverlay: false,
+  setShowCollisionOverlay: vi.fn(),
 };
 
 describe("mobile map toolbar", () => {
@@ -15,6 +17,49 @@ describe("mobile map toolbar", () => {
     cleanup();
     window.localStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps the collision overlay toggle reachable in collapsed tools", () => {
+    let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        onMediaChange = listener;
+      }),
+      removeEventListener: vi.fn(),
+    })));
+    const setShowCollisionOverlay = vi.fn();
+
+    render(
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={vi.fn()}
+        tileClipboard={null}
+        selectedLayer={0}
+        setSelectedLayer={vi.fn()}
+        showGrid
+        setShowGrid={vi.fn()}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        {...noTileClipboardActions}
+        showCollisionOverlay={false}
+        setShowCollisionOverlay={setShowCollisionOverlay}
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={0}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Tools ▸" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show collision overlay" }));
+    expect(setShowCollisionOverlay).toHaveBeenCalledWith(true);
+    expect(onMediaChange).toBeDefined();
   });
 
   it("keeps layers directly usable in portrait and respects orientation changes", () => {

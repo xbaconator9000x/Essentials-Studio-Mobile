@@ -15,6 +15,7 @@ import {
   getTile,
 } from "../types";
 import { AUTOTILE_RECTS } from "./autotileData";
+import { effectiveBlockedPassageMask } from "./mapPassability";
 
 /**
  * Debug instrumentation toggle. Off by default so production builds carry no
@@ -26,6 +27,7 @@ const DEBUG = false;
 export interface RenderOptions {
   showGrid: boolean;
   showEvents: boolean;
+  showCollisionOverlay?: boolean;
   showLayer: [boolean, boolean, boolean];
   activeLayer: number;
   zoom: number;
@@ -67,6 +69,7 @@ export class MapRenderer {
   private mapWidth = 0;
   private mapHeight = 0;
   public priorities: number[] = [];
+  private passages: number[] = [];
 
   // Animation
   private autotileFrame = 0;
@@ -109,6 +112,10 @@ export class MapRenderer {
 
   setPriorities(priorities: number[]) {
     this.priorities = priorities;
+  }
+
+  setPassages(passages: number[]) {
+    this.passages = passages;
   }
 
   private getTileId(x: number, y: number, layer: number): number {
@@ -179,6 +186,10 @@ export class MapRenderer {
       }
     }
 
+    if (options.showCollisionOverlay) {
+      this.renderCollisionOverlay(startX, startY, endX, endY, viewportX, viewportY, tileSize);
+    }
+
     // Render event markers — visible on Events layer (3), All (-1), or when showEvents is on
     // They are dimmed when a tile layer (0-2) is active
     const eventsVisible = showEvents;
@@ -235,6 +246,49 @@ export class MapRenderer {
       }
       if (this.frameCount % 60 === 1) {
         console.log(`[MapRenderer] f=${this.frameCount} canvas=${canvasW}x${canvasH} drawn=${tilesDrawn} tileset=${this.tilesetImage ? "OK" : "null"} map=${this.mapWidth}x${this.mapHeight}`);
+      }
+    }
+  }
+
+  private renderCollisionOverlay(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    viewportX: number,
+    viewportY: number,
+    tileSize: number,
+  ) {
+    const edge = Math.max(2, Math.min(7, tileSize * 0.2));
+    const inset = Math.min(2, tileSize * 0.08);
+
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const layers = [2, 1, 0].map((layer) => {
+          const tileId = this.getTileId(x, y, layer);
+          return {
+            tileId,
+            passage: this.passages[tileId] ?? 0x0f,
+            priority: this.priorities[tileId] ?? 0,
+          };
+        });
+        const blocked = effectiveBlockedPassageMask(layers);
+        const screenX = (x - viewportX) * tileSize;
+        const screenY = (y - viewportY) * tileSize;
+        const span = Math.max(0, tileSize - inset * 2);
+
+        const edges = [
+          { bit: 0x08, x: screenX + inset, y: screenY + inset, width: span, height: edge },
+          { bit: 0x04, x: screenX + tileSize - inset - edge, y: screenY + inset, width: edge, height: span },
+          { bit: 0x01, x: screenX + inset, y: screenY + tileSize - inset - edge, width: span, height: edge },
+          { bit: 0x02, x: screenX + inset, y: screenY + inset, width: edge, height: span },
+        ];
+        for (const direction of edges) {
+          this.ctx.fillStyle = blocked & direction.bit
+            ? "rgba(243, 139, 168, 0.88)"
+            : "rgba(166, 227, 161, 0.78)";
+          this.ctx.fillRect(direction.x, direction.y, direction.width, direction.height);
+        }
       }
     }
   }

@@ -28,11 +28,17 @@ import {
   readMapEventPinsVisible,
   writeMapEventPinsVisible,
 } from "../../services/mapEditorPreferences";
+import {
+  readBooleanPanelPreference,
+  writeBooleanPanelPreference,
+} from "../../services/panelPreferences";
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
 import { MapEventList } from "./MapEventList";
 import { MapContextMenu } from "./MapContextMenu";
 import "./MapEditor.css";
+
+const COLLISION_OVERLAY_PREFERENCE = "essentials-studio:map-editor:collision-overlay-visible";
 
 interface Props {
   mapData: MapRenderData | null;
@@ -95,6 +101,9 @@ export function MapEditor({
 
   // Editor state
   const [showGrid, setShowGrid] = useState(true);
+  const [showCollisionOverlay, setShowCollisionOverlay] = useState(
+    () => readBooleanPanelPreference(COLLISION_OVERLAY_PREFERENCE) ?? false,
+  );
   const [showEventPins, setShowEventPins] = useState(
     () => readMapEventPinsVisible(projectPath, currentMapId),
   );
@@ -193,6 +202,7 @@ export function MapEditor({
   useEffect(() => {
     if (!rendererRef.current || !tilesetInfo) return;
     rendererRef.current.setPriorities(tilesetInfo.priorities);
+    rendererRef.current.setPassages(tilesetInfo.passages);
   }, [tilesetInfo]);
 
   // Drop cached character sprites when switching maps/projects so the cache
@@ -210,6 +220,11 @@ export function MapEditor({
     setShowEventPins(visible);
     writeMapEventPinsVisible(projectPath, currentMapId, visible);
   }, [currentMapId, projectPath]);
+
+  const updateShowCollisionOverlay = useCallback((visible: boolean) => {
+    setShowCollisionOverlay(visible);
+    writeBooleanPanelPreference(COLLISION_OVERLAY_PREFERENCE, visible);
+  }, []);
 
   // Load character sprite images for events
   useEffect(() => {
@@ -295,6 +310,7 @@ export function MapEditor({
     options: {
       showGrid,
       showEvents: showEventPins,
+      showCollisionOverlay,
       showLayer: showLayers,
       activeLayer: selectedLayer,
       zoom,
@@ -1041,6 +1057,8 @@ export function MapEditor({
           setShowGrid={setShowGrid}
           showEventPins={showEventPins}
           setShowEventPins={updateShowEventPins}
+          showCollisionOverlay={showCollisionOverlay}
+          setShowCollisionOverlay={updateShowCollisionOverlay}
           paletteVisible={paletteVisible}
           onTogglePalette={onTogglePalette}
           eventCount={mapData.events.length}

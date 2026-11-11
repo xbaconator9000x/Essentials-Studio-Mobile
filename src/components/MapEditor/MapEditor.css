@@ -84,6 +84,18 @@
   background: var(--color-surface0);
 }
 
+.toolbar-collision-toggle {
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-surface0);
+}
+
+.toolbar-collision-toggle input {
+  width: 20px;
+  height: 20px;
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;

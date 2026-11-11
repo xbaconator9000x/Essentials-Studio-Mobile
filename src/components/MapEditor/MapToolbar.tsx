@@ -26,6 +26,8 @@ interface MapToolbarProps {
   onPasteTiles: () => void;
   showEventPins: boolean;
   setShowEventPins: (show: boolean) => void;
+  showCollisionOverlay: boolean;
+  setShowCollisionOverlay: (show: boolean) => void;
   paletteVisible: boolean;
   onTogglePalette: () => void;
   eventCount: number;
@@ -71,6 +73,8 @@ export function MapToolbar({
   onPasteTiles,
   showEventPins,
   setShowEventPins,
+  showCollisionOverlay,
+  setShowCollisionOverlay,
   paletteVisible,
   onTogglePalette,
   eventCount,
@@ -247,6 +251,17 @@ export function MapToolbar({
           onChange={(e) => setShowEventPins(e.target.checked)}
         />
         Pins
+      </label>
+
+      <label className="toolbar-check toolbar-collision-toggle">
+        <input
+          type="checkbox"
+          aria-label="Show collision overlay"
+          title="Green edges are passable; red edges are blocked"
+          checked={showCollisionOverlay}
+          onChange={(event) => setShowCollisionOverlay(event.target.checked)}
+        />
+        Collision
       </label>
 
       {eventCount > 0 && (
