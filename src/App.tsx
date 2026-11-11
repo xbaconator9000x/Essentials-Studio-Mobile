@@ -37,8 +37,10 @@ import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { confirmProjectSwitch as confirmProjectSwitchWithSave } from "./services/projectSwitchGuards";
 import {
+  getLastMapId,
   getLastProjectPath,
   getRecentProjectPaths,
+  rememberLastMapId,
   rememberRecentProjectPath,
 } from "./services/recentProject";
 import { installEditorBackHandler } from "./services/editorBackNavigation";
@@ -421,9 +423,11 @@ function AppContent() {
       setError(null);
       // Validate the candidate's initial XP map and tileset before clearing
       // the current project. A corrupt ZIP must not replace a working editor.
-      const { project: proj, initialMap, initialTileset } = await prepareProjectBeforeOpen(path, {
-        openProject, loadMap, loadTileset,
-      });
+      const { project: proj, initialMap, initialTileset } = await prepareProjectBeforeOpen(
+        path,
+        { openProject, loadMap, loadTileset },
+        getLastMapId(path),
+      );
       lease.assertCurrent();
 
       // Load the first map's actual graphics BEFORE making the imported project
@@ -457,6 +461,7 @@ function AppContent() {
       setAutotileImages(initialImages?.autotiles ?? [null, null, null, null, null, null, null]);
       setCurrentMapId(initialMap?.id ?? null);
       currentMapIdRef.current = initialMap?.id ?? null;
+      if (initialMap) rememberLastMapId(proj.path, initialMap.id);
       updateMapDirty(false);
       // Close project-bound editors so stale event IDs cannot write to the new project.
       setEditingEvent(null);
@@ -757,6 +762,7 @@ function AppContent() {
       const changedMap = mapId !== currentMapIdRef.current;
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
+      rememberLastMapId(path, mapId);
       // Re-selecting/reloading the same map must not silently unmount an open
       // event editor with unsaved dialogue or command edits.
       if (changedMap) setEditingEvent(null);
