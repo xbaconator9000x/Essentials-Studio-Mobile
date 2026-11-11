@@ -7,6 +7,11 @@ on:
       - 'src/services/mapGestures.ts'
       - 'src/components/MapEditor/MapEditor.tsx'
       - 'src/components/MapEditor/MapEditor.css'
+      - 'src/components/MapEditor/MapToolbar.tsx'
+      - 'src/components/TilesetPalette/**'
+      - 'tests/mapEditorTouchContext.test.tsx'
+      - 'tests/mapToolbar.test.tsx'
+      - 'tests/tilesetPaletteMobile.test.tsx'
       - 'src/types/index.ts'
       - 'src/services/autotileData.ts'
       - 'tests/mapEditorFidelity.test.mjs'
@@ -19,6 +24,11 @@ on:
       - 'src/services/mapGestures.ts'
       - 'src/components/MapEditor/MapEditor.tsx'
       - 'src/components/MapEditor/MapEditor.css'
+      - 'src/components/MapEditor/MapToolbar.tsx'
+      - 'src/components/TilesetPalette/**'
+      - 'tests/mapEditorTouchContext.test.tsx'
+      - 'tests/mapToolbar.test.tsx'
+      - 'tests/tilesetPaletteMobile.test.tsx'
       - 'src/types/index.ts'
       - 'src/services/autotileData.ts'
       - 'tests/mapEditorFidelity.test.mjs'
@@ -37,4 +47,8 @@ jobs:
         with:
           node-version: '22'
       - name: Verify map fidelity and touch gestures
-        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs
+        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs tests/mapEdgeEditing.test.mjs tests/mapPassability.test.mjs
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Verify rendered map and tileset editing
+        run: npx vitest run tests/mapEditorTouchContext.test.tsx tests/mapToolbar.test.tsx tests/tilesetPaletteMobile.test.tsx tests/mapRendererEdges.test.ts tests/mapEventList.test.tsx
