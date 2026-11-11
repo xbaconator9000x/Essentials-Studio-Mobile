@@ -145,15 +145,17 @@ export function pasteSpriteSelection(
   if (!isValidImage(data, imageWidth, imageHeight)
       || !isValidImage(clipboard.data, clipboard.width, clipboard.height)
       || clipboard.width * clipboard.height > MAX_SPRITE_EDIT_PIXELS
-      || !Number.isInteger(destination.x) || !Number.isInteger(destination.y)
-      || destination.x < 0 || destination.y < 0
-      || destination.x >= imageWidth || destination.y >= imageHeight) return null;
+      || !Number.isSafeInteger(destination.x) || !Number.isSafeInteger(destination.y)) return null;
   if (transparentMode !== "replace" && transparentMode !== "preserve") return null;
   const changes = new Map<number, { before: number; after: number }>();
-  const width = Math.min(clipboard.width, imageWidth - destination.x);
-  const height = Math.min(clipboard.height, imageHeight - destination.y);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  // Intersect source and destination before traversing. Negative paste origins
+  // are valid when part of the copied image still intersects the canvas.
+  const sourceLeft = Math.max(0, -destination.x);
+  const sourceTop = Math.max(0, -destination.y);
+  const sourceRight = Math.min(clipboard.width, imageWidth - destination.x);
+  const sourceBottom = Math.min(clipboard.height, imageHeight - destination.y);
+  for (let y = sourceTop; y < sourceBottom; y++) {
+    for (let x = sourceLeft; x < sourceRight; x++) {
       const targetPixel = (destination.y + y) * imageWidth + destination.x + x;
       const sourcePixel = y * clipboard.width + x;
       const before = readPackedPixel(data, targetPixel);
