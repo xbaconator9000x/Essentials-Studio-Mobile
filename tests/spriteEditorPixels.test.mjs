@@ -303,3 +303,33 @@ test("moving pixels preserves alpha and rejects out-of-bounds edits without muta
   assert.deepEqual([...data.slice(20, 24)], [20, 40, 60, 128]);
   assert.deepEqual([...data.slice(0, 4)], [0, 0, 0, 0]);
 });
+
+test("duplicate sprite pixels preserves source, copies exact alpha, and supports undo", () => {
+  const data = image(4, 1);
+  data.set([25, 50, 75, 128], 0);
+  data.set([100, 125, 150, 255], 4);
+  const original = [...data];
+  const area = { x: 0, y: 0, width: 2, height: 1 };
+  const action = moveSpritePixels(data, 4, 1, area, 2, 0, "duplicate");
+  assert.ok(action);
+  assert.deepEqual([...data.slice(0, 8)], original.slice(0, 8));
+  assert.deepEqual([...data.slice(8)], original.slice(0, 8));
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(8)], original.slice(0, 8));
+});
+
+test("duplicate sprite pixels snapshots overlap and rejects out-of-bounds or unknown mode", () => {
+  const data = image(3, 1);
+  [1, 2, 3].forEach((v, i) => data.set([v, 0, 0, 255], i * 4));
+  const area = { x: 0, y: 0, width: 2, height: 1 };
+  assert.ok(moveSpritePixels(data, 3, 1, area, 1, 0, "duplicate"));
+  assert.deepEqual([data[0], data[4], data[8]], [1, 1, 2]);
+  const before = [...data];
+  assert.equal(moveSpritePixels(data, 3, 1, area, 2, 0, "duplicate"), null);
+  assert.equal(moveSpritePixels(data, 3, 1, area, 1, 0, "unknown"), null);
+  assert.deepEqual([...data], before);
+});
