@@ -333,3 +333,40 @@ test("duplicate sprite pixels snapshots overlap and rejects out-of-bounds or unk
   assert.equal(moveSpritePixels(data, 3, 1, area, 1, 0, "unknown"), null);
   assert.deepEqual([...data], before);
 });
+
+test("sprite paste clips negative origins without shifting source pixels and remains undoable", () => {
+  const data = image(2, 2, [9, 9, 9, 255]);
+  const original = [...data];
+  const clipboard = { width: 3, height: 3, data: image(3, 3) };
+  for (let i = 0; i < 9; i++) clipboard.data.set([i + 1, 0, 0, 255], i * 4);
+  const action = pasteSpriteSelection(data, 2, 2, clipboard, { x: -1, y: -1 });
+  assert.equal(action?.pixels.length, 4);
+  assert.deepEqual([0, 1, 2, 3].map(i => data[i * 4]), [5, 6, 8, 9]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([0, 1, 2, 3].map(i => data[i * 4]), [5, 6, 8, 9]);
+});
+
+test("sprite paste rejects nonintersecting and unsafe destinations without mutations", () => {
+  const data = image(2, 2, [9, 9, 9, 255]);
+  const before = [...data];
+  const clipboard = { width: 2, height: 2, data: image(2, 2, [1, 2, 3, 255]) };
+  for (const destination of [
+    { x: -2, y: 0 }, { x: 0, y: -2 }, { x: 2, y: 0 },
+    { x: 0, y: 2 }, { x: Number.MAX_SAFE_INTEGER + 1, y: 0 },
+  ]) assert.equal(pasteSpriteSelection(data, 2, 2, clipboard, destination), null);
+  assert.deepEqual([...data], before);
+});
+
+test("transparent-preserving clipped sprite paste does not erase destination", () => {
+  const data = image(2, 1, [20, 30, 40, 255]);
+  const clipboard = { width: 3, height: 1, data: new Uint8ClampedArray([
+    1, 2, 3, 255, 0, 0, 0, 0, 70, 80, 90, 128,
+  ]) };
+  const action = pasteSpriteSelection(data, 2, 1, clipboard, { x: -1, y: 0 }, "preserve");
+  assert.equal(action?.pixels.length, 1);
+  assert.deepEqual([...data], [20, 30, 40, 255, 70, 80, 90, 128]);
+});
