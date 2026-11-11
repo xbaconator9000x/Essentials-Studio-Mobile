@@ -1302,6 +1302,7 @@ export function MapEditor({
         />
         {showEventList && mapData && (
           <MapEventList
+            key={`${projectPath ?? ""}:${currentMapId ?? ""}`}
             events={mapData.events}
             onOpenEvent={handleOpenEventFromList}
             onCopyEvent={onCopyEvent}
