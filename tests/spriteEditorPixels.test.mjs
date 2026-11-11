@@ -248,3 +248,30 @@ test("touch selection nudges preserve rectangle size and clamp all image edges",
   assert.equal(moveSpriteSelection(start, 1.5, 0, 6, 4), null);
   assert.equal(moveSpriteSelection({ ...start, width: 7 }, 1, 0, 6, 4), null);
 });
+
+test("transparent-preserving paste overlays visible RGBA pixels without erasing background", () => {
+  const data = image(3, 1, [12, 34, 56, 255]);
+  const clipboard = { width: 2, height: 1, data: new Uint8ClampedArray([
+    250, 0, 0, 128, 0, 0, 0, 0,
+  ]) };
+  const action = pasteSpriteSelection(data, 3, 1, clipboard, { x: 1, y: 0 }, "preserve");
+  assert.equal(action?.pixels.length, 1);
+  assert.deepEqual([...data.slice(0, 4)], [12, 34, 56, 255]);
+  assert.deepEqual([...data.slice(4, 8)], [250, 0, 0, 128]);
+  assert.deepEqual([...data.slice(8, 12)], [12, 34, 56, 255]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], [...image(3, 1, [12, 34, 56, 255])]);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(4, 8)], [250, 0, 0, 128]);
+});
+
+test("legacy replacement paste still clears destinations beneath transparent clipboard pixels", () => {
+  const data = image(2, 1, [12, 34, 56, 255]);
+  const clipboard = { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 0]) };
+  assert.ok(pasteSpriteSelection(data, 2, 1, clipboard, { x: 0, y: 0 }));
+  assert.deepEqual([...data.slice(0, 4)], [0, 0, 0, 0]);
+  assert.equal(pasteSpriteSelection(data, 2, 1, clipboard, { x: 1, y: 0 }, "invalid"), null);
+  assert.deepEqual([...data.slice(4, 8)], [12, 34, 56, 255]);
+});
