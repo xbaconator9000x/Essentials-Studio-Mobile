@@ -31,6 +31,21 @@ interface MapToolbarProps {
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
 const COMPACT_LAYOUT_QUERY = "(max-width: 700px)";
+const PAINT_TOOLS: { tool: PaintTool; label: string }[] = [
+  { tool: "pencil", label: "Pen" },
+  { tool: "rectangle", label: "Rect" },
+  { tool: "bucket", label: "Fill" },
+  { tool: "eraser", label: "Erase" },
+  { tool: "select", label: "Sel" },
+  { tool: "pan", label: "Pan" },
+];
+const MAP_LAYERS = [
+  { layer: 0, label: "L1", name: "Layer 1" },
+  { layer: 1, label: "L2", name: "Layer 2" },
+  { layer: 2, label: "L3", name: "Layer 3" },
+  { layer: 3, label: "Ev", name: "Events layer" },
+  { layer: -1, label: "All", name: "All layers" },
+];
 
 export function MapToolbar({
   paintTool,
@@ -85,34 +100,39 @@ export function MapToolbar({
       </button>
       {!toolsCollapsed && !readOnly && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
-        {(["pencil", "rectangle", "bucket", "eraser", "select", "pan"] as PaintTool[]).map(
-          (tool) => (
+        {PAINT_TOOLS.map(({ tool, label }) => (
             <button
               key={tool}
               className={`toolbar-btn ${paintTool === tool ? "active" : ""}`}
               onClick={() => setPaintTool(tool)}
               title={tool}
+              aria-pressed={paintTool === tool}
             >
-              {tool === "pencil"
-                ? "Pen"
-                : tool === "rectangle"
-                ? "Rect"
-                : tool === "bucket"
-                ? "Fill"
-                : tool === "eraser"
-                ? "Erase"
-                : tool === "pan"
-                ? "Pan"
-                : "Sel"}
+              {label}
             </button>
-          )
-        )}
+        ))}
         {paintTool === "select" && tileClipboard && (
           <span style={{ fontSize: 10, color: "#40a02b", marginLeft: 4 }}>
             ✓ Copied ({tileClipboard.width}×{tileClipboard.height})
           </span>
         )}
       </div>}
+      {toolsCollapsed && !readOnly && (
+        <div className="toolbar-group map-toolbar-quick-tools" role="group" aria-label="Quick map tools">
+          {PAINT_TOOLS.map(({ tool, label }) => (
+            <button
+              key={tool}
+              className={`toolbar-btn ${paintTool === tool ? "active" : ""}`}
+              onClick={() => setPaintTool(tool)}
+              title={`${label} map tool`}
+              aria-label={`Use ${label.toLowerCase()} map tool`}
+              aria-pressed={paintTool === tool}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="toolbar-separator" />
 
@@ -127,33 +147,50 @@ export function MapToolbar({
 
       <div className="toolbar-separator" />
 
-      {!toolsCollapsed && <div className="toolbar-group">
+      {!toolsCollapsed && <div className="toolbar-group" role="group" aria-label="Map layers">
         <span className="toolbar-label">Layer:</span>
-        {[0, 1, 2].map((l) => (
+        {MAP_LAYERS.map(({ layer, label, name }) => (
           <button
-            key={l}
-            className={`toolbar-btn ${selectedLayer === l ? "active" : ""}`}
-            onClick={() => setSelectedLayer(l)}
+            key={layer}
+            className={`toolbar-btn ${selectedLayer === layer ? "active" : ""}`}
+            onClick={() => setSelectedLayer(layer)}
+            aria-label={name}
+            aria-pressed={selectedLayer === layer}
+            style={layer === 3 && selectedLayer === 3 ? { borderColor: "#fe640b", color: "#fe640b" } : {}}
           >
-            L{l + 1}
+            {label}
           </button>
         ))}
-        <button
-          className={`toolbar-btn ${selectedLayer === 3 ? "active" : ""}`}
-          onClick={() => setSelectedLayer(3)}
-          title="Events layer — view and select events"
-          style={selectedLayer === 3 ? { borderColor: "#fe640b", color: "#fe640b" } : {}}
-        >
-          Ev
-        </button>
-        <button
-          className={`toolbar-btn ${selectedLayer === -1 ? "active" : ""}`}
-          onClick={() => setSelectedLayer(-1)}
-          title="Show all layers at full opacity"
-        >
-          All
-        </button>
       </div>}
+      {toolsCollapsed && (
+        <div className="toolbar-group map-toolbar-quick-layers" role="group" aria-label="Quick map layers">
+          {MAP_LAYERS.map(({ layer, label, name }) => (
+            <button
+              key={layer}
+              className={`toolbar-btn ${selectedLayer === layer ? "active" : ""}`}
+              onClick={() => setSelectedLayer(layer)}
+              title={name}
+              aria-label={name}
+              aria-pressed={selectedLayer === layer}
+              style={layer === 3 && selectedLayer === 3 ? { borderColor: "#fe640b", color: "#fe640b" } : {}}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {toolsCollapsed && (
+        <label className="toolbar-check map-toolbar-quick-grid">
+          <input
+            type="checkbox"
+            aria-label="Show map grid"
+            checked={showGrid}
+            onChange={(event) => setShowGrid(event.target.checked)}
+          />
+          Grid
+        </label>
+      )}
 
       <div className="toolbar-separator" />
 

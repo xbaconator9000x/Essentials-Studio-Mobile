@@ -10,7 +10,7 @@ describe("mobile map toolbar", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reveals layer controls when the viewport changes from portrait to landscape", () => {
+  it("keeps layers directly usable in portrait and respects orientation changes", () => {
     let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
     const mediaQuery = {
       matches: true,
@@ -47,11 +47,13 @@ describe("mobile map toolbar", () => {
     );
 
     expect(matchMedia).toHaveBeenCalledWith("(max-width: 700px)");
-    expect(screen.queryByRole("button", { name: "L2" })).toBeNull();
-    act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
-    fireEvent.click(screen.getByRole("button", { name: "L2" }));
-
+    expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
+    act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
+    fireEvent.click(screen.getByRole("button", { name: "Layer 3" }));
+
+    expect(setSelectedLayer).toHaveBeenLastCalledWith(2);
   });
 
   it("persists an explicit tools choice across remounts and does not override it on rotation", () => {
@@ -89,14 +91,14 @@ describe("mobile map toolbar", () => {
     const view = render(toolbar());
     fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
 
-    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     expect(window.localStorage.getItem("essentials-studio:map-editor:tools-collapsed")).toBe("false");
     view.unmount();
 
     const reopened = render(toolbar());
-    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     act(() => onMediaChange?.({ matches: true } as MediaQueryListEvent));
-    expect(screen.getByRole("button", { name: "L2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     reopened.unmount();
   });
 
@@ -141,6 +143,52 @@ describe("mobile map toolbar", () => {
     expect(setPaintTool).toHaveBeenCalledWith("pan");
   });
 
+  it("keeps paint tools, layers and grid toggle usable while collapsed", () => {
+    const setPaintTool = vi.fn();
+    const setSelectedLayer = vi.fn();
+    const setShowGrid = vi.fn();
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+
+    const toolbar = (selectedLayer: number) => (
+      <MapToolbar
+        paintTool="pencil"
+        setPaintTool={setPaintTool}
+        tileClipboard={null}
+        selectedLayer={selectedLayer}
+        setSelectedLayer={setSelectedLayer}
+        showGrid
+        setShowGrid={setShowGrid}
+        zoom={1}
+        setZoom={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        showEventPins
+        setShowEventPins={vi.fn()}
+        paletteVisible
+        onTogglePalette={vi.fn()}
+        eventCount={0}
+        eventListVisible={false}
+        onToggleEventList={vi.fn()}
+      />
+    );
+    const view = render(toolbar(0));
+
+    expect(screen.getByRole("button", { name: "Use pen map tool" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Use erase map tool" }));
+    expect(setPaintTool).toHaveBeenCalledWith("eraser");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show map grid" }));
+    expect(setShowGrid).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
+    expect(setSelectedLayer).toHaveBeenCalledWith(3);
+
+    view.unmount();
+  });
+
   it("keeps the pin visibility toggle available and accessible when tools are collapsed", () => {
     const setShowEventPins = vi.fn();
     const mediaQuery = {
@@ -174,7 +222,7 @@ describe("mobile map toolbar", () => {
     );
     const view = render(toolbar(true));
 
-    expect(screen.queryByRole("button", { name: "Pen" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Use pen map tool" })).toBeTruthy();
     const pins = screen.getByRole("checkbox", { name: "Show event pins" });
     expect((pins as HTMLInputElement).checked).toBe(true);
     fireEvent.click(pins);

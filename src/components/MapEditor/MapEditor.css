@@ -354,6 +354,32 @@
     padding: 8px;
   }
 
+  .map-toolbar-quick-tools,
+  .map-toolbar-quick-layers {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-block: 2px;
+    scrollbar-width: thin;
+  }
+
+  .map-toolbar-quick-tools .toolbar-btn,
+  .map-toolbar-quick-layers .toolbar-btn {
+    flex: 0 0 auto;
+  }
+
+  .map-toolbar-quick-grid {
+    min-height: 44px;
+    padding: 4px 8px;
+    background: var(--color-surface0);
+    border-radius: 4px;
+  }
+
+  .map-toolbar-quick-grid input {
+    min-width: 22px;
+    min-height: 22px;
+  }
+
   .toolbar-pin-toggle {
     min-height: 44px;
   }
