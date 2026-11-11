@@ -133,6 +133,24 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("reconciles sprite selection and copy target when switching projects", async () => {
+    editorApi.listAssetFiles.mockImplementation(async (path: string) =>
+      path === "/project-a" ? ["Guide", "Hero"] : ["NewHero"]);
+    const onSaved = vi.fn();
+    const editor = (path: string) => (
+      <ProjectSaveProvider>
+        <SpriteEditor projectPath={path} onClose={vi.fn()} onSaved={onSaved} />
+      </ProjectSaveProvider>
+    );
+    const view = render(editor("/project-a"));
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/project-a", "Guide"));
+    view.rerender(editor("/project-b"));
+    await screen.findByDisplayValue("NewHero");
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/project-b", "NewHero"));
+    expect((screen.getByRole("textbox", { name: "Sprite copy name" }) as HTMLInputElement).value).toBe("NewHero_copy");
+  });
+
   it("exports the unscaled source PNG without saving or changing the project", async () => {
     renderEditor();
     await screen.findByDisplayValue("Guide");
