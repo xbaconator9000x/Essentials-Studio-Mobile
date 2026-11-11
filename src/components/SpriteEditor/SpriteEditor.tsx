@@ -187,8 +187,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (cancelled) return;
         const sorted = files.slice().sort((a, b) => a.localeCompare(b));
         setNames(sorted);
-        setSelectedName((current) => current || sorted[0] || "");
-        setTargetName((current) => current || (sorted[0] ? `${sorted[0]}_copy` : ""));
+        // A project switch must never retain a sprite name from another project.
+        // Preserve the current choice only if it exists in this project's assets.
+        setSelectedName((current) => sorted.includes(current) ? current : (sorted[0] || ""));
+        setTargetName((current) => {
+          const source = sorted[0] || "";
+          return current && sorted.some((name) => current === `${name}_copy`)
+            ? current : (source ? `${source}_copy` : "");
+        });
       })
       .catch((cause) => setError(`Could not list character graphics: ${cause}`))
       .finally(() => {
