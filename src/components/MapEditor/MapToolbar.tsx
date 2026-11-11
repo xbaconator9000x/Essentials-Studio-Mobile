@@ -222,6 +222,23 @@ export function MapToolbar({
       )}
 
       {toolsCollapsed && (
+        <div className="toolbar-group map-layer-visibility" role="group" aria-label="Quick visible tile layers">
+          {([0, 1, 2] as const).map((layer) => (
+            <label className="toolbar-check" key={layer}>
+              <input
+                type="checkbox"
+                aria-label={`Show tile layer ${layer + 1}`}
+                checked={showLayers[layer]}
+                disabled={selectedLayer === layer}
+                onChange={(event) => onToggleLayerVisibility(layer, event.target.checked)}
+              />
+              L{layer + 1}
+            </label>
+          ))}
+        </div>
+      )}
+
+      {toolsCollapsed && (
         <label className="toolbar-check map-toolbar-quick-grid">
           <input
             type="checkbox"
