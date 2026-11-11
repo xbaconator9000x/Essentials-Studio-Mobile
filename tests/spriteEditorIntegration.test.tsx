@@ -204,6 +204,40 @@ describe("sprite editor integration", () => {
     ));
   });
 
+  it("allows renaming an imported sprite copy from the compact toolbar", async () => {
+    const importUrl = { createObjectURL: vi.fn(() => "blob:quick-collision"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Quick import image as sprite copy"), {
+      target: { files: [new File(["sprite"], "Visitor.png")] },
+    });
+    await screen.findByText("Unsaved imported sprite");
+    const copyName = screen.getByRole("textbox", { name: "Quick imported sprite copy name" });
+    fireEvent.change(copyName, { target: { value: "Visitor_safe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project",
+      "Visitor_safe",
+      "data:image/png;base64,cGl4ZWxz",
+    );
+    await waitFor(() => expect(screen.queryByText("Unsaved imported sprite")).toBeNull());
+  });
+
   it("exposes non-destructive trace opacity and scale controls in the collapsed toolbar", async () => {
     const traceUrl = { createObjectURL: vi.fn(() => "blob:trace"), revokeObjectURL: vi.fn() };
     class TestImage {

@@ -154,6 +154,26 @@
   min-height: 44px;
 }
 
+.sprite-editor-quick-copy-name {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-subtext1);
+  font-size: 12px;
+}
+
+.sprite-editor-quick-copy-name input {
+  width: 132px;
+  min-width: 90px;
+  min-height: 44px;
+  padding: 6px 8px;
+  color: var(--color-text);
+  background: var(--color-surface0);
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+}
+
 .sprite-editor-quick-tools button {
   min-width: 52px;
   min-height: 44px;

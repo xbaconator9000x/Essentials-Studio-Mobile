@@ -1154,6 +1154,19 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 }}
               />
             </label>
+            {importedSpriteName !== null && (
+              <label className="sprite-editor-quick-copy-name">
+                Copy as
+                <input
+                  type="text"
+                  aria-label="Quick imported sprite copy name"
+                  value={targetName}
+                  maxLength={128}
+                  disabled={saving}
+                  onChange={(event) => setTargetName(event.target.value)}
+                />
+              </label>
+            )}
             {traceImage && (
               <button
                 type="button"
@@ -1482,7 +1495,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 Replace original PNG
               </button>
             </div>
-            {saveMode === "copy" && (
+            {!controlsCollapsed && saveMode === "copy" && (
               <label>
                 Copy name
                 <input value={targetName} onChange={(event) => setTargetName(event.target.value)} maxLength={128} />
