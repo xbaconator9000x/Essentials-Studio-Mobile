@@ -122,3 +122,31 @@ test("map tile sampling respects active layer, visible XP layers, and bounds", (
   data.tiles[2] = -1;
   assert.equal(sampleMapTile(data, 0, 0, 2), null);
 });
+
+test("empty-tile preserving map paste retains destination across XP layers and supports undo", () => {
+  const source = map(2, 1);
+  source.tiles.splice(0, source.tiles.length, 384, 0, 0, 1024, 0, -1);
+  const clipboard = copyTileRegion(source, { x1: 0, y1: 0, x2: 1, y2: 0 }, -1);
+  const destination = map(2, 1);
+  destination.tiles.splice(0, destination.tiles.length, 400, 401, 500, 501, 600, 601);
+  const before = destination.tiles.slice();
+  const changes = pasteTileRegion(destination, clipboard, { x: 0, y: 0 }, -1, "preserve");
+  assert.deepEqual(destination.tiles, [384, 401, 500, 1024, 600, -1]);
+  assert.equal(changes.length, 3);
+  revertAction(destination, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(destination.tiles, before);
+  applyAction(destination, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(destination.tiles, [384, 401, 500, 1024, 600, -1]);
+});
+
+test("map paste replace mode still clears zero tiles and invalid mode is atomic", () => {
+  const destination = map(2, 1);
+  destination.tiles[0] = 400;
+  destination.tiles[1] = 401;
+  const clipboard = { width: 2, height: 1, layers: [[0, 384], [], []] };
+  assert.deepEqual(pasteTileRegion(destination, clipboard, { x: 0, y: 0 }, 0, "invalid"), []);
+  assert.deepEqual(destination.tiles.slice(0, 2), [400, 401]);
+  const changes = pasteTileRegion(destination, clipboard, { x: 0, y: 0 }, 0, "replace");
+  assert.equal(changes.length, 2);
+  assert.deepEqual(destination.tiles.slice(0, 2), [0, 384]);
+});
