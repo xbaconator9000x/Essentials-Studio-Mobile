@@ -123,7 +123,7 @@ describe("map event browser", () => {
     const originalOrder = events.map((event) => event.id);
     render(<MapEventList events={events} onOpenEvent={vi.fn()} onClose={vi.fn()} />);
     const ids = () => Array.from(document.querySelectorAll(".map-event-list-name"))
-      .map((element) => element.textContent?.match(/\\[(\\d+)\\]/)?.[1]);
+      .map((element) => element.textContent?.match(/\[(\d+)\]/)?.[1]);
     expect(ids()).toEqual(["002", "009"]);
     fireEvent.click(screen.getByRole("button", { name: "Sort descending" }));
     expect(ids()).toEqual(["009", "002"]);
