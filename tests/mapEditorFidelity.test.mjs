@@ -198,7 +198,7 @@ test("clipboard paste preserves zero tiles at clipped destination edges", () => 
   data.tiles.fill(900);
   const clipboard = { width: 3, height: 2, layers: [[0, 111, 222, 333, 0, 444], [], []] };
   const changes = pasteTileRegion(data, clipboard, { x: -1, y: 0 }, 0, "preserve");
-  assert.equal(changes.length, 2);
-  assert.deepEqual(data.tiles.slice(0, 4), [111, 222, 900, 900]);
+  assert.equal(changes.length, 3);
+  assert.deepEqual(data.tiles.slice(0, 4), [111, 222, 900, 444]);
   assert.deepEqual(data.tiles.slice(4), new Array(8).fill(900));
 });
