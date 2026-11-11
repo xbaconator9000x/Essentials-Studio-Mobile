@@ -174,6 +174,33 @@ export function flipSpritePixels(
   return action;
 }
 
+/** Rotate a square sprite region by 90 degrees, preserving exact RGBA bytes.
+ * Non-square areas are rejected because rotating them would require resizing
+ * the native image or modifying pixels outside the selection. */
+export function rotateSquareSpritePixels(
+  data: Uint8ClampedArray, width: number, height: number,
+  direction: "clockwise" | "counterclockwise", selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width !== area.height || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = 0; y < area.height; y++) {
+    for (let x = 0; x < area.width; x++) {
+      const target = (area.y + y) * width + area.x + x;
+      const sourceX = direction === "clockwise" ? y : area.width - 1 - y;
+      const sourceY = direction === "clockwise" ? area.height - 1 - x : x;
+      const source = (area.y + sourceY) * width + area.x + sourceX;
+      const before = readPackedPixel(data, target);
+      const after = readPackedPixel(data, source);
+      if (before !== after) changes.set(target, { before, after });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 /** Extract frequent visible RGB colors; ignore fully transparent pixels. */
 export function extractSpritePalette(
   data: Uint8ClampedArray, width: number, height: number, limit = 16,
