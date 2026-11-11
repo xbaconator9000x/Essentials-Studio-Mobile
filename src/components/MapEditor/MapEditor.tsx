@@ -92,6 +92,7 @@ export function MapEditor({
   const animFrameRef = useRef<number>(0);
   const undoStackRef = useRef(new UndoStack());
   const touchGesturesRef = useRef(new TouchGestureMachine());
+  const suppressTouchClickUntilRef = useRef(0);
 
   // Viewport state
   const [viewportX, setViewportX] = useState(0);
@@ -873,11 +874,19 @@ export function MapEditor({
         return;
       }
       if (action.type === "long-press") {
-        if (!mapData) return;
+        if (readOnly || !mapData) return;
         const tile = screenToTile(action.point.x, action.point.y);
         if (!tile) return;
-        const target = resolveMapTapTarget(tile, mapData.width, mapData.height, 3, mapData.events);
-        if (target.type === "event") onOpenEvent?.(target.event.id, target.event.name);
+        if (tile.x < 0 || tile.x >= mapData.width || tile.y < 0 || tile.y >= mapData.height) return;
+        const event = mapData.events.find((candidate) => candidate.x === tile.x && candidate.y === tile.y);
+        suppressTouchClickUntilRef.current = Date.now() + 700;
+        setContextMenu({
+          x: action.point.x,
+          y: action.point.y,
+          tileX: tile.x,
+          tileY: tile.y,
+          event: event ? { id: event.id, name: event.name } : null,
+        });
         return;
       }
       if (action.type === "pan") {
@@ -1092,6 +1101,11 @@ export function MapEditor({
           onTouchEnd={handleTouchEndFallback}
           onTouchCancel={handleTouchCancelFallback}
           onClick={(e) => {
+            if (Date.now() <= suppressTouchClickUntilRef.current) {
+              suppressTouchClickUntilRef.current = 0;
+              e.preventDefault();
+              return;
+            }
             if (readOnly || !mapData || selectedLayer !== 3) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;

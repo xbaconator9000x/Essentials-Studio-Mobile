@@ -30,17 +30,22 @@ export function MapContextMenu({
   return (
     <div
       className="map-tree-context-overlay"
+      role="presentation"
       onClick={() => setContextMenu(null)}
       onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
     >
       <div
         className="map-tree-context-menu"
+        role="menu"
+        aria-label={contextMenu.event ? "Event actions" : "Map tile actions"}
         style={{ left: contextMenu.x, top: contextMenu.y }}
         onClick={(e) => e.stopPropagation()}
       >
         {contextMenu.event && (
           <>
             <button
+              type="button"
+              role="menuitem"
               onClick={() => {
                 if (onOpenEvent) onOpenEvent(contextMenu.event!.id, contextMenu.event!.name);
                 setContextMenu(null);
@@ -49,6 +54,8 @@ export function MapContextMenu({
               Open Event
             </button>
             <button
+              type="button"
+              role="menuitem"
               onClick={async () => {
                 if (onCopyEvent) await onCopyEvent(contextMenu.event!.id);
                 setContextMenu(null);
@@ -58,6 +65,8 @@ export function MapContextMenu({
             </button>
             <div className="map-tree-context-separator" />
             <button
+              type="button"
+              role="menuitem"
               className="map-tree-context-danger"
               onClick={() => {
                 if (onDeleteEvent) onDeleteEvent(contextMenu.event!.id, contextMenu.event!.name);
@@ -72,6 +81,8 @@ export function MapContextMenu({
         {!contextMenu.event && hasClipboardEvent && (
           <>
             <button
+              type="button"
+              role="menuitem"
               onClick={async () => {
                 if (onPasteEvent) await onPasteEvent(contextMenu.tileX, contextMenu.tileY);
                 setContextMenu(null);
@@ -83,6 +94,8 @@ export function MapContextMenu({
           </>
         )}
         <button
+          type="button"
+          role="menuitem"
           onClick={async () => {
             if (onSetStartPosition) await onSetStartPosition(contextMenu.tileX, contextMenu.tileY);
             setContextMenu(null);
