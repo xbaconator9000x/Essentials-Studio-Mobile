@@ -33,19 +33,17 @@
 .app-mobile-workspace-dirty { color: var(--color-accent); }
 .app-mobile-workspace-clean { color: var(--color-subtext1); }
 .app-mobile-workspace-actions {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
   min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  /* All commands remain visible without horizontal scrolling on portrait phones. */
 }
-.app-mobile-workspace-actions::-webkit-scrollbar { display: none; }
+.app-mobile-workspace-actions > button[aria-label="Save all changes"] { order: -2; }
+.app-mobile-workspace-actions > button[aria-label="Export project ZIP"] { order: -1; }
 .app-mobile-workspace-actions > button {
-  flex: 1 0 auto;
   min-height: 44px;
-  min-width: 48px;
+  min-width: 0;
   padding: 7px 9px;
   border: 1px solid var(--color-surface1);
   border-radius: 8px;
