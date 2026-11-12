@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction,
+  applyAction, revertAction, translateMapTileRegion,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
@@ -311,5 +311,39 @@ test("clear selected map tiles rejects events layer and malformed rectangles ato
   const before = data.tiles.slice();
   assert.deepEqual(clearMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 3), []);
   assert.deepEqual(clearMapTileRegion(data, { x1: 0.5, y1: 0, x2: 1, y2: 1 }, 0), []);
+  assert.deepEqual(data.tiles, before);
+});
+
+test("selected XP map tiles move atomically with overlapping source and destination", () => {
+  const data = map(4, 2);
+  data.tiles.splice(0, 8, 384, 385, 386, 0, 400, 401, 402, 0);
+  data.tiles[8] = -1;
+  data.events.push({ id: 7, x: 1, y: 1 });
+  const before = structuredClone(data);
+  const changes = translateMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 0, 1, 0);
+  assert.deepEqual(data.tiles.slice(0, 8), [0, 384, 385, 0, 0, 400, 401, 0]);
+  assert.deepEqual(data.tiles.slice(8), before.tiles.slice(8));
+  assert.deepEqual(data.events, before.events);
+  assert.equal(new Set(changes.map(c => `${c.layer}:${c.x}:${c.y}`)).size, changes.length);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, before);
+  applyAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.equal(data.tiles[1], 384);
+});
+
+test("duplicate selection preserves source across all XP layers and rejects out-of-bounds moves", () => {
+  const data = map(3, 2);
+  data.tiles[0] = 384;
+  data.tiles[6] = -1;
+  data.tiles[12] = 1024;
+  const before = data.tiles.slice();
+  const changes = translateMapTileRegion(data, { x1: 0, y1: 0, x2: 0, y2: 0 }, -1, 1, 0, "copy");
+  assert.equal(changes.length, 3);
+  assert.equal(data.tiles[1], 384);
+  assert.equal(data.tiles[7], -1);
+  assert.equal(data.tiles[13], 1024);
+  assert.equal(data.tiles[0], 384);
+  assert.deepEqual(translateMapTileRegion(data, { x1: 2, y1: 0, x2: 2, y2: 0 }, -1, 1, 0), []);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
   assert.deepEqual(data.tiles, before);
 });
