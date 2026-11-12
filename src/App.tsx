@@ -219,6 +219,19 @@ function AppContent() {
   }, []);
 
   const activeProjectPath = project?.path;
+  const lastMobileProjectPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeProjectPath || !mobileLayout) return;
+    if (lastMobileProjectPathRef.current === activeProjectPath) return;
+    lastMobileProjectPathRef.current = activeProjectPath;
+    // A different project is a new editing scope. Back navigation between
+    // screens must retain dirty work, but opening another root must re-arm
+    // read-only preview and close a palette scoped to the previous project.
+    setMobileEditEnabled(false);
+    setMobileSection("projects");
+    setShowTilesetPalette(false);
+  }, [activeProjectPath, mobileLayout]);
+
   useEffect(() => {
     if (!activeProjectPath || !mobileLayout) return;
     const sentinel = { essentialsStudioBack: true };
