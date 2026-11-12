@@ -52,6 +52,42 @@ export function TilesetPalette({
   const [activeTab, setActiveTab] = useState<PaletteTab>("tiles");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverTileId, setHoverTileId] = useState<number | null>(null);
+  const [tileIdInput, setTileIdInput] = useState(String(selectedTileId));
+  const paletteScrollRef = useRef<HTMLDivElement>(null);
+  const tileRows = tilesetImage
+    ? Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE) : 0;
+  const tileCols = tilesetImage
+    ? Math.min(TILESET_COLUMNS, Math.floor((tilesetImage.naturalWidth || tilesetImage.width) / TILE_SIZE)) : 0;
+  const tileIdIsValid = (id: number) => Number.isSafeInteger(id)
+    && id >= FIRST_REGULAR_TILE && id <= 32767
+    && tileCols > 0 && tileRows > 0
+    && (id - FIRST_REGULAR_TILE) % TILESET_COLUMNS < tileCols
+    && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) < tileRows;
+  const inputTileId = /^\\d+$/.test(tileIdInput.trim()) ? Number(tileIdInput.trim()) : NaN;
+  const canJump = tileIdIsValid(inputTileId);
+
+  useEffect(() => {
+    setTileIdInput(String(selectedTileId));
+  }, [selectedTileId]);
+
+  useEffect(() => {
+    if (activeTab !== "tiles" || !tileIdIsValid(selectedTileId)) return;
+    const panel = paletteScrollRef.current;
+    if (!panel || panel.clientHeight <= 0) return;
+    const tileTop = Math.floor((selectedTileId - FIRST_REGULAR_TILE) / TILESET_COLUMNS) * TILE_SIZE;
+    if (tileTop < panel.scrollTop) panel.scrollTop = tileTop;
+    else if (tileTop + TILE_SIZE > panel.scrollTop + panel.clientHeight)
+      panel.scrollTop = tileTop + TILE_SIZE - panel.clientHeight;
+  }, [selectedTileId, activeTab, tilesetImage]);
+
+  const navigateTile = (dx: number, dy: number) => {
+    if (!tileCols || !tileRows) return;
+    const index = tileIdIsValid(selectedTileId) ? selectedTileId - FIRST_REGULAR_TILE : 0;
+    const x = Math.max(0, Math.min(tileCols - 1, index % TILESET_COLUMNS + dx));
+    const y = Math.max(0, Math.min(tileRows - 1, Math.floor(index / TILESET_COLUMNS) + dy));
+    const target = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
+    if (tileIdIsValid(target)) onSelectTile(target);
+  };
 
   // Render the tileset grid onto canvas
   useEffect(() => {
@@ -215,9 +251,30 @@ export function TilesetPalette({
         </button>
       </div>
 
-      {/* Tiles tab: clickable tileset grid */}
+      {/* Tiles tab: keyboard and finger-accessible native RMXP tile IDs. */}
       {activeTab === "tiles" && (
-        <div className="palette-scroll">
+        <>
+          {tilesetImage && (
+            <div className="palette-tile-navigation" role="group" aria-label="Tile selection controls">
+              <form onSubmit={event => {
+                event.preventDefault();
+                if (canJump) onSelectTile(inputTileId);
+              }}>
+                <label htmlFor="palette-tile-id">Tile ID</label>
+                <input id="palette-tile-id" type="number" inputMode="numeric"
+                  min={FIRST_REGULAR_TILE} max={32767} step={1} value={tileIdInput}
+                  aria-label="Jump to tile ID" onChange={event => setTileIdInput(event.target.value)} />
+                <button type="submit" disabled={!canJump} aria-label="Select tile ID">Go</button>
+              </form>
+              <div className="palette-tile-nudge" role="group" aria-label="Tile navigation">
+                <button type="button" aria-label="Tile left" onClick={() => navigateTile(-1, 0)}>←</button>
+                <button type="button" aria-label="Tile up" onClick={() => navigateTile(0, -1)}>↑</button>
+                <button type="button" aria-label="Tile down" onClick={() => navigateTile(0, 1)}>↓</button>
+                <button type="button" aria-label="Tile right" onClick={() => navigateTile(1, 0)}>→</button>
+              </div>
+            </div>
+          )}
+          <div className="palette-scroll" ref={paletteScrollRef}>
           {tilesetImage ? (
             <canvas
               ref={canvasRef}
@@ -235,7 +292,8 @@ export function TilesetPalette({
               <p className="dim">Image not loaded</p>
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       {/* Autotiles tab */}
