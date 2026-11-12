@@ -26,7 +26,7 @@ export function MobileOperationFeedback({
   if (!progress && !outcome && !error) return null;
 
   return (
-    <div className="app-mobile-operation-feedback" aria-label="Project operation updates">
+    <div className={`app-mobile-operation-feedback${expanded ? " is-expanded" : ""}`} aria-label="Project operation updates">
       {progress && (
         <div className="app-mobile-operation-line is-progress" role="status" aria-live="polite">
           <span className="app-mobile-operation-text">{progress}</span>
@@ -50,7 +50,6 @@ export function MobileOperationFeedback({
             onClick={onDismissOutcome}>×</button>
         </div>
       )}
-      <style>{`.app-mobile-operation-feedback ${expanded ? ".app-mobile-operation-text" : ".__never"} { white-space: normal; overflow: visible; text-overflow: clip; }`}</style>
     </div>
   );
 }
