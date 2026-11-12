@@ -460,3 +460,35 @@ test("selection bucket fill rejects malformed bounds without modifying image", (
   }
   assert.deepEqual([...data], original);
 });
+
+test("brush and eraser clip to selection including mirrored pixels, preserving undo", () => {
+  const data = image(6, 4);
+  const area = { x: 1, y: 1, width: 2, height: 2 };
+  const history = new SpritePixelHistory();
+  const original = [...data];
+  const paint = paintSpritePixels(data, 6, 4, 2, 1, "#ff0044", 3, false, true, true, area);
+  assert.ok(paint);
+  assert.ok(paint.pixels.length > 0);
+  for (const pixel of paint.pixels) {
+    assert.ok(pixel % 6 >= area.x && pixel % 6 < area.x + area.width);
+    assert.ok(Math.floor(pixel / 6) >= area.y && Math.floor(pixel / 6) < area.y + area.height);
+  }
+  assert.equal(history.push(paint), true);
+  const painted = [...data];
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data], painted);
+  const erase = paintSpritePixels(data, 6, 4, 2, 1, "#000000", 3, true, true, true, area);
+  assert.ok(erase);
+  assert.equal(history.push(erase), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], painted);
+});
+
+test("invalid sprite brush selection is rejected atomically", () => {
+  const data = image(3, 3);
+  assert.equal(paintSpritePixels(data, 3, 3, 1, 1, "#ffffff", 1, false, false, false,
+    { x: 2, y: 2, width: 2, height: 2 }), null);
+  assert.deepEqual([...data], [...image(3, 3)]);
+});
