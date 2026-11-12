@@ -16,3 +16,14 @@ test("sprite tool and history shortcuts resolve without intercepting text fields
   assert.equal(resolveSpriteShortcut({ key: "z", ctrlKey: true, target: { isContentEditable: true } }), null);
   assert.equal(resolveSpriteShortcut({ key: "i", altKey: true }), null);
 });
+
+
+test("nested editable controls retain native keyboard editing shortcuts", () => {
+  const editable = { tagName: "DIV", getAttribute: (name) => name === "contenteditable" ? "true" : null };
+  const child = { tagName: "SPAN", parentElement: editable };
+  assert.equal(resolveSpriteShortcut({ key: "v", ctrlKey: true, target: child }), null);
+  assert.equal(resolveSpriteShortcut({ key: "b", target: child }), null);
+  assert.equal(resolveSpriteShortcut({ key: "z", ctrlKey: true, target: { parentElement: { getAttribute: (name) => name === "role" ? "textbox" : null } } }), null);
+  const cyclic = { tagName: "DIV" }; cyclic.parentElement = cyclic;
+  assert.deepEqual(resolveSpriteShortcut({ key: "b", target: cyclic }), { type: "tool", tool: "brush" });
+});
