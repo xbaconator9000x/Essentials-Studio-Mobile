@@ -305,13 +305,18 @@ body,
 
 @media (max-width: 700px) {
   .app-titlebar {
-    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
-    gap: 8px;
+    padding: max(5px, env(safe-area-inset-top)) 10px 5px;
+    gap: 6px;
+    min-height: 42px;
   }
 
   .app-title {
     flex: 1;
-    font-size: 15px;
+    min-width: 0;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .app-preview-badge {
@@ -382,7 +387,11 @@ body,
     flex-shrink: 0;
     flex-direction: column;
     gap: 10px;
-    padding: 14px;
+    padding: 10px 12px;
+    max-height: min(38dvh, 320px);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--color-base);
     border-bottom: 1px solid var(--color-surface0);
   }
@@ -476,18 +485,22 @@ body,
   .app-mobile-nav {
     display: flex;
     flex: 0 0 auto;
-    min-height: 64px;
+    min-height: 56px;
     justify-content: space-around;
-    gap: 6px;
-    padding: 6px 8px max(8px, env(safe-area-inset-bottom));
+    gap: 5px;
+    padding: 4px 6px max(5px, env(safe-area-inset-bottom));
+    z-index: 9;
     background: var(--color-mantle);
     border-top: 1px solid var(--color-surface0);
   }
 
   .app-mobile-nav button {
     flex: 1;
-    padding: 6px 4px;
-    font-size: 13px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 3px;
+    font-size: 12px;
+    touch-action: manipulation;
   }
 
   .app-mobile-nav button[aria-current="page"] {
