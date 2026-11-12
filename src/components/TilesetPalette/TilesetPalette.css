@@ -218,3 +218,46 @@
 @media (max-width: 700px) {
   .palette-tabs button, .autotile-item { min-height: 44px; }
 }
+
+/* Touch navigation for the 8-column RPG Maker XP tileset coordinate system. */
+.palette-tile-navigation {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-surface0);
+}
+.palette-tile-navigation form,
+.palette-tile-nudge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.palette-tile-navigation form label {
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--color-subtext1);
+}
+.palette-tile-navigation form input {
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-mantle);
+  color: var(--color-text);
+  padding: 4px 6px;
+}
+.palette-tile-navigation button {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+.palette-tile-navigation button:disabled { opacity: .5; }
+.palette-tile-nudge button { flex: 1; }
+@media (max-width: 700px) {
+  .palette-tile-navigation button,
+  .palette-tile-navigation input { min-height: 44px; font-size: 16px; }
+}
