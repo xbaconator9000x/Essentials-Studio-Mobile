@@ -267,6 +267,36 @@ describe("sprite editor integration", () => {
     ));
   });
 
+  it("preserves imported pixels when an earlier project sprite load resolves late", async () => {
+    let resolveProjectImage!: (image: { width: number; height: number }) => void;
+    editorApi.loadCharacterImage.mockImplementationOnce(() =>
+      new Promise((resolve) => { resolveProjectImage = resolve; }));
+    const importUrl = { createObjectURL: vi.fn(() => "blob:late-load"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", importUrl);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("Quick import image as sprite copy"), {
+      target: { files: [new File(["sprite"], "Visitor.png")] },
+    });
+    await screen.findByText("Unsaved imported sprite");
+    await act(async () => { resolveProjectImage({ width: 4, height: 4 }); });
+    expect(screen.getByText("Unsaved imported sprite")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save sprite" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project", "Visitor", "data:image/png;base64,cGl4ZWxz",
+    ));
+  });
+
   it("allows renaming an imported sprite copy from the compact toolbar", async () => {
     const importUrl = { createObjectURL: vi.fn(() => "blob:quick-collision"), revokeObjectURL: vi.fn() };
     class TestImage {
