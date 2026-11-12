@@ -25,6 +25,8 @@ interface MapToolbarProps {
   canCopyTiles: boolean;
   canPasteTiles: boolean;
   onCopyTiles: () => void;
+  canClearTiles: boolean;
+  onClearTiles: () => void;
   onPasteTiles: () => void;
   preserveEmptyPaste: boolean;
   onPreserveEmptyPasteChange: (value: boolean) => void;
@@ -86,6 +88,8 @@ export function MapToolbar({
   canCopyTiles,
   canPasteTiles,
   onCopyTiles,
+  canClearTiles,
+  onClearTiles,
   onPasteTiles,
   preserveEmptyPaste,
   onPreserveEmptyPasteChange,
@@ -285,6 +289,9 @@ export function MapToolbar({
           >
             Copy
           </button>
+          <button type="button" className="toolbar-btn"
+            onClick={onClearTiles} disabled={!canClearTiles}
+            aria-label="Clear selected map tiles">Clear tiles</button>
           <button
             className="toolbar-btn"
             onClick={onPasteTiles}
