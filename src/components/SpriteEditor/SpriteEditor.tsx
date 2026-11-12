@@ -13,6 +13,7 @@ import {
   spritePixelAt,
   zoomSpriteTraceTransform,
   zoomSpriteViewport,
+  setSpriteViewportZoom,
   type SpriteTraceTransform,
 } from "../../services/spriteEditorGeometry";
 import {
@@ -305,6 +306,18 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setOffsetX(next.offsetX);
     setOffsetY(next.offsetY);
   }, [offsetX, offsetY, zoom]);
+
+  const setExactZoom = useCallback((level: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const next = setSpriteViewportZoom({ zoom, offsetX, offsetY }, level,
+      { x: rect.width / 2, y: rect.height / 2 });
+    fitViewportOnResize.current = false;
+    setZoom(next.zoom);
+    setOffsetX(next.offsetX);
+    setOffsetY(next.offsetY);
+  }, [zoom, offsetX, offsetY]);
 
   const handleWheelZoom = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
@@ -1401,6 +1414,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite zoom controls">
               <button type="button" aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
               <button type="button" aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
+              <label className="sprite-editor-quick-range">Zoom {Math.round(zoom * 10) / 10}×
+                <input type="range" aria-label="Exact sprite zoom" min="1" max="32" step="1"
+                  value={zoom} onChange={(event) => setExactZoom(Number(event.currentTarget.value))} />
+              </label>
             </div>
             <label className="sprite-editor-quick-color">
               Color
@@ -1643,6 +1660,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             <div className="sprite-editor-tool-row">
               <button aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
               <button aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
+              <label className="sprite-editor-quick-range">Zoom {Math.round(zoom * 10) / 10}×
+                <input type="range" aria-label="Exact sprite zoom" min="1" max="32" step="1"
+                  value={zoom} onChange={(event) => setExactZoom(Number(event.currentTarget.value))} />
+              </label>
             </div>
             <label>
               Trace overlay
