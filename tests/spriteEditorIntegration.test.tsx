@@ -1940,3 +1940,51 @@ describe("sprite editor integration", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Could not load trace overlay");
   });
 });
+
+describe("portrait symmetry tools and view-only pixel grid", () => {
+  it("mirrors brush pixels into four corners as one undoable sprite edit", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mirror sprite brush horizontally" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mirror sprite brush vertically" }));
+    const canvas = view.container.querySelector(".sprite-editor-canvas")!;
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 76, clientY: 76,
+    });
+    fireEvent.pointerUp(canvas, {
+      pointerId: 1, pointerType: "mouse", button: 0, clientX: 76, clientY: 76,
+    });
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+    const first = putImageData.mock.calls.at(-1)?.[0] as ImageData;
+    expect(first).toBeTruthy();
+    expect([0, 3, 12, 15].map(pixel => first.data[pixel * 4 + 3])).toEqual([255, 255, 255, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo sprite edit" }));
+    const afterUndo = putImageData.mock.calls.at(-1)?.[0] as ImageData;
+    expect([0, 3, 12, 15].map(pixel => afterUndo.data[pixel * 4 + 3])).toEqual([0, 0, 0, 0]);
+    fireEvent.click(screen.getByRole("button", { name: "Redo sprite edit" }));
+    const afterRedo = putImageData.mock.calls.at(-1)?.[0] as ImageData;
+    expect([0, 3, 12, 15].map(pixel => afterRedo.data[pixel * 4 + 3])).toEqual([255, 255, 255, 255]);
+  });
+
+  it("remembers grid and symmetry preferences without marking sprite pixels dirty", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show sprite pixel grid" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mirror sprite brush horizontally" }));
+    expect(window.localStorage.getItem("essentials-studio:sprite-editor:pixel-grid-visible")).toBe("false");
+    expect(window.localStorage.getItem("essentials-studio:sprite-editor:mirror-horizontal")).toBe("true");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    view.unmount();
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    expect((screen.getByRole("checkbox", { name: "Show sprite pixel grid" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("checkbox", { name: "Mirror sprite brush horizontally" }) as HTMLInputElement).checked).toBe(true);
+  });
+});
