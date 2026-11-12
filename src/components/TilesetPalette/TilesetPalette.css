@@ -191,14 +191,15 @@
   color: var(--color-overlay0);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 700px) {
   .tileset-palette {
     position: absolute;
     z-index: 8;
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(80vw, 260px);
+    width: min(90vw, 340px);
+    max-width: 100%;
     min-width: 0;
     box-shadow: -8px 0 20px rgba(0, 0, 0, 0.3);
   }
