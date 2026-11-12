@@ -9,6 +9,7 @@ import {
   eraseTile,
   copyTileRegion,
   pasteTileRegion,
+  clearMapTileRegion,
   sampleMapTile,
   UndoStack,
   type MapAction,
