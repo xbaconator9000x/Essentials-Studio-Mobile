@@ -1281,7 +1281,7 @@ function AppContent() {
           onDeleteMap={handleDeleteMap}
           onRenameMap={handleRenameMap}
           onMapProperties={handleMapProperties}
-          readOnly={mobileLayout && mobileSection === "projects"}
+          readOnly={mobileLayout && !mobileEditEnabled}
         />
 
         {/* Center: Map editor */}
