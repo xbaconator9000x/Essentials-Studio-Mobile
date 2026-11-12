@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MobileRecentProjects } from "../src/components/MobileRecentProjects";
 
 describe("mobile recent project switcher", () => {
+  afterEach(cleanup);
   it("shows the current project and opens another through the supplied guarded callback", () => {
     const onSelect = vi.fn();
     render(
