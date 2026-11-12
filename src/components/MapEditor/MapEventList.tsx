@@ -7,9 +7,10 @@ interface Props {
   onCopyEvent?: (eventId: number) => Promise<void>;
   onFocusEvent?: (eventId: number) => void;
   onClose: () => void;
+  onBeginCreateEvent?: () => void;
 }
 
-export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, onClose }: Props) {
+export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, onClose, onBeginCreateEvent }: Props) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"id" | "name" | "position">("id");
   const [descending, setDescending] = useState(false);
@@ -38,7 +39,10 @@ export function MapEventList({ events, onOpenEvent, onCopyEvent, onFocusEvent, o
     <section id="map-event-list" className="map-event-list" aria-label="Map events">
       <header className="map-event-list-header">
         <h2>Events on this map ({events.length})</h2>
-        <button type="button" aria-label="Close map events" onClick={onClose}>Close</button>
+        <div className="map-event-list-header-actions">
+          {onBeginCreateEvent && <button type="button" aria-label="Create a new map event" onClick={onBeginCreateEvent}>New event</button>}
+          <button type="button" aria-label="Close map events" onClick={onClose}>Close</button>
+        </div>
       </header>
       <label className="map-event-list-search">
         <span className="map-event-list-search-label">Find an event</span>
