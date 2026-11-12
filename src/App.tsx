@@ -45,6 +45,7 @@ import {
 } from "./services/recentProject";
 import { installEditorBackHandler } from "./services/editorBackNavigation";
 import { MobileRecentProjects } from "./components/MobileRecentProjects";
+import { MobileWorkspaceBar } from "./components/MobileWorkspaceBar";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -289,17 +290,10 @@ function AppContent() {
       if (state.mobileSection !== "projects") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        const goToProjects = () => {
-          setMobileSection("projects");
-          setMobileEditEnabled(false);
-        };
-        if (state.dirtyCount > 0) {
-          void confirmEditor("Discard unsaved changes and return to Projects?").then(discard => {
-            if (discard) goToProjects();
-          });
-        } else {
-          goToProjects();
-        }
+        // Sections are views of the same mounted project. Moving to the map
+        // list must never suggest discarding edits or clear Save All state.
+        // Only actually opening a *different project* runs the save guard.
+        setMobileSection("projects");
       }
     };
     window.addEventListener("keydown", handleMobileEscape);
@@ -1211,17 +1205,26 @@ function AppContent() {
       {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
       {mobileLayout && (
-        <div className="app-mobile-experimental-banner" role="note">
-          Preview: map browsing is read-only by default. Editing, Save All and ZIP export are experimental; use a disposable ZIP.
-        </div>
-      )}
-      {mobileLayout && mobileSection === "maps" && (
-        <div className="app-mobile-map-controls">
-          <span>{mobileEditEnabled ? "Experimental editing enabled" : "Read-only map preview"}</span>
-          <button onClick={() => setMobileEditEnabled((enabled) => !enabled)}>
-            {mobileEditEnabled ? "Turn editing off" : "Enable editing (experimental)"}
-          </button>
-        </div>
+        <MobileWorkspaceBar
+          section={mobileSection}
+          projectName={project.name}
+          mapName={currentMapId !== null
+            ? (project.map_infos[currentMapId]?.name ?? `Map ${String(currentMapId).padStart(3, "0")}`)
+            : null}
+          dirtyCount={dirtyCount}
+          busy={loading || saving}
+          editingEnabled={mobileEditEnabled}
+          paletteVisible={showTilesetPalette}
+          onShowProjects={() => setMobileSection("projects")}
+          onToggleEditing={() => setMobileEditEnabled((enabled) => !enabled)}
+          onTogglePalette={() => setShowTilesetPalette((visible) => {
+            const next = !visible;
+            writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, next);
+            return next;
+          })}
+          onSaveAll={() => void handleSaveAll()}
+          onExportZip={() => void handleExportProjectZip()}
+        />
       )}
 
       {/* Desktop keeps the three-panel layout; Android uses project/map screens. */}
@@ -1229,9 +1232,9 @@ function AppContent() {
         <section className="app-mobile-project-summary">
           <div>
             <h1>{project.name}</h1>
-            <p>{Object.keys(project.map_infos).length} maps · {mobileEditEnabled ? "experimental editing enabled" : "read-only preview"}</p>
+            <p>{Object.keys(project.map_infos).length} maps available</p>
           </div>
-          <p>Choose a map below to inspect its layers and events. The imported archive remains untouched.</p>
+          <p>Select a map to open the editor. Your source ZIP remains unchanged.</p>
           <label className="app-mobile-import-btn">
             Import disposable ZIP
             <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
@@ -1316,7 +1319,7 @@ function AppContent() {
         )}
 
         <section className="app-mobile-settings">
-          <h1>Preview settings</h1>
+          <h1>Project &amp; export</h1>
           <p>Current project: <strong>{project.name}</strong></p>
           <div className="app-mobile-safety-note" role="alert">
             This is an experimental Android build. Keep the original ZIP and work only on a disposable copy until you have verified this build on your device.
@@ -1335,10 +1338,10 @@ function AppContent() {
               }} />
           </label>
           <button disabled={loading || saving} onClick={() => void handleSaveAll()}>
-            Save All (experimental)
+            Save All
           </button>
           <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
-            Export ZIP (experimental)
+            Export ZIP
           </button>
         </section>
         {mobileLayout && mobileSection === "sprites" && (
@@ -1348,7 +1351,7 @@ function AppContent() {
             <div className="app-mobile-safety-note" role="alert">
               Keep the original ZIP and open the editor only on a disposable project copy.
             </div>
-            <button onClick={() => setShowSprites(true)}>Open Sprite Editor (experimental)</button>
+            <button onClick={() => setShowSprites(true)}>Open Sprite Editor</button>
           </section>
         )}
       </div>
