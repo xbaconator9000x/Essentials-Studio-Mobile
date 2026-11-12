@@ -217,7 +217,8 @@ export function flipSpritePixels(
   axis: "horizontal" | "vertical" | "rotate180", selection?: SpriteSelection | null,
 ): SpritePixelAction | null {
   const area = selection ?? { x: 0, y: 0, width, height };
-  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+  if ((axis !== "horizontal" && axis !== "vertical" && axis !== "rotate180")
+      || !isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
       || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
   const changes = new Map<number, { before: number; after: number }>();
   for (let y = 0; y < area.height; y++) {
@@ -244,7 +245,8 @@ export function rotateSquareSpritePixels(
   direction: "clockwise" | "counterclockwise", selection?: SpriteSelection | null,
 ): SpritePixelAction | null {
   const area = selection ?? { x: 0, y: 0, width, height };
-  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+  if ((direction !== "clockwise" && direction !== "counterclockwise")
+      || !isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
       || area.width !== area.height || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
   const changes = new Map<number, { before: number; after: number }>();
   for (let y = 0; y < area.height; y++) {
