@@ -125,7 +125,7 @@ export function MapToolbar({
   }, []);
 
   return (
-    <div className="map-editor-toolbar">
+    <div className={`map-editor-toolbar${toolsCollapsed ? " map-editor-toolbar--compact" : ""}`}>
       <button
         className="toolbar-btn"
         aria-expanded={!toolsCollapsed}
@@ -158,6 +158,15 @@ export function MapToolbar({
       </div>}
       {toolsCollapsed && !readOnly && (
         <div className="toolbar-group map-toolbar-quick-tools" role="group" aria-label="Quick map tools">
+          <label className="map-toolbar-native-tool-select">
+            <span>Tool</span>
+            <select aria-label="Select active map tool" value={paintTool}
+              onChange={event => setPaintTool(event.currentTarget.value as PaintTool)}>
+              {PAINT_TOOLS.map(({ tool, label }) => (
+                <option key={tool} value={tool}>{label}</option>
+              ))}
+            </select>
+          </label>
           {PAINT_TOOLS.map(({ tool, label }) => (
             <button
               key={tool}
