@@ -25,6 +25,7 @@ import {
 } from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
 import { replayMapHistory } from "../../services/mapHistory";
+import { resolveMapEventPlacement, type MapEventPlacementMode } from "../../services/mapEventPlacement";
 import { shouldHandleMapShortcut } from "../../services/mapShortcutGuards";
 import {
   readMapEventPinsVisible,
@@ -97,6 +98,8 @@ export function MapEditor({
   const undoStackRef = useRef(new UndoStack());
   const touchGesturesRef = useRef(new TouchGestureMachine());
   const suppressTouchClickUntilRef = useRef(0);
+  const suppressEventDoubleClickUntilRef = useRef(0);
+  const eventPlacementPendingRef = useRef(false);
 
   // Viewport state
   const [viewportX, setViewportX] = useState(0);
@@ -113,6 +116,9 @@ export function MapEditor({
     () => readMapEventPinsVisible(projectPath, currentMapId),
   );
   const [showEventList, setShowEventList] = useState(false);
+  const [eventPlacementMode, setEventPlacementMode] = useState<MapEventPlacementMode | null>(null);
+  const [eventPlacementPending, setEventPlacementPending] = useState(false);
+  const [eventPlacementMessage, setEventPlacementMessage] = useState<string | null>(null);
   const [showLayers, setShowLayers] = useState<[boolean, boolean, boolean]>([
     true,
     true,
@@ -196,6 +202,8 @@ export function MapEditor({
     setCursorTile(null);
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
+    setEventPlacementMode(null);
+    setEventPlacementMessage(null);
     isPainting.current = false;
     isTouchPainting.current = false;
     paintChanges.current = [];
@@ -204,6 +212,10 @@ export function MapEditor({
 
   const chooseLayer = useCallback((layer: number) => {
     setSelectedLayer(layer);
+    if (layer !== 3) {
+      setEventPlacementMode(null);
+      setEventPlacementMessage(null);
+    }
     if (layer >= 0 && layer <= 2) {
       setShowLayers((previous) => {
         const next: [boolean, boolean, boolean] = [...previous];
@@ -530,6 +542,67 @@ export function MapEditor({
     },
     [mapData, zoom],
   );
+
+  const toggleEventPlacement = useCallback((mode: MapEventPlacementMode) => {
+    if (readOnly || (mode === "create" && !onCreateEvent) ||
+        (mode === "paste" && (!hasClipboardEvent || !onPasteEvent)) ||
+        eventPlacementPendingRef.current) return;
+    if (eventPlacementMode === mode) {
+      setEventPlacementMode(null);
+    } else {
+      setEventPlacementMode(mode);
+      setSelectedLayer(3);
+      updateShowEventPins(true);
+      setShowEventList(false);
+      setContextMenu(null);
+    }
+    setEventPlacementMessage(null);
+  }, [eventPlacementMode, hasClipboardEvent, onCreateEvent, onPasteEvent, readOnly, updateShowEventPins]);
+
+  const placeEventAtTile = useCallback((point: { x: number; y: number }) => {
+    if (!mapData || !eventPlacementMode || readOnly || eventPlacementPendingRef.current) return;
+    const result = resolveMapEventPlacement(eventPlacementMode, point.x, point.y,
+      mapData.width, mapData.height, mapData.events);
+    if (result === "outside") return;
+    if (result === "occupied") {
+      setEventPlacementMessage("This tile already contains an event. Choose an empty tile.");
+      return;
+    }
+    if (result === "create") {
+      if (!onCreateEvent) return;
+      suppressEventDoubleClickUntilRef.current = Date.now() + 600;
+      onCreateEvent(point.x, point.y);
+      setEventPlacementMode(null);
+      setEventPlacementMessage(null);
+      return;
+    }
+    if (!hasClipboardEvent || !onPasteEvent) return;
+    eventPlacementPendingRef.current = true;
+    setEventPlacementPending(true);
+    setEventPlacementMessage(null);
+    void Promise.resolve().then(() => onPasteEvent(point.x, point.y))
+      .then(() => {
+        setEventPlacementMode(null);
+        setEventPlacementMessage(null);
+      })
+      .catch(() => setEventPlacementMessage("Could not paste event. Choose another tile or cancel."))
+      .finally(() => {
+        eventPlacementPendingRef.current = false;
+        setEventPlacementPending(false);
+      });
+  }, [eventPlacementMode, hasClipboardEvent, mapData, onCreateEvent, onPasteEvent, readOnly]);
+
+  const fitMapToViewport = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!mapData || !canvas || mapData.width < 1 || mapData.height < 1) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const fit = Math.max(0.25, Math.min(4,
+      (rect.width - 16) / (mapData.width * TILE_SIZE),
+      (rect.height - 16) / (mapData.height * TILE_SIZE)));
+    setZoom(fit);
+    setClampedViewport(0, 0, fit);
+  }, [mapData, setClampedViewport]);
 
   const focusEventOnMap = useCallback((eventId: number) => {
     const event = mapData?.events.find((candidate) => candidate.id === eventId);
@@ -877,6 +950,10 @@ export function MapEditor({
       );
       setCursorTile(target.type === "outside" ? null : tile);
 
+      if (eventPlacementMode) {
+        placeEventAtTile(tile);
+        return;
+      }
       if (target.type === "event") {
         onOpenEvent?.(target.event.id, target.event.name);
         return;
@@ -939,6 +1016,8 @@ export function MapEditor({
       readOnly,
       commitRectangle,
       pickMapTile,
+      eventPlacementMode,
+      placeEventAtTile,
     ],
   );
 
@@ -960,7 +1039,7 @@ export function MapEditor({
           window.innerWidth,
           window.innerHeight,
           200,
-          event ? 200 : hasClipboardEvent ? 140 : 90,
+          event ? 200 : hasClipboardEvent ? 190 : onCreateEvent ? 140 : 90,
         );
         suppressTouchClickUntilRef.current = Date.now() + 700;
         setContextMenu({
@@ -1199,6 +1278,12 @@ export function MapEditor({
           eventCount={mapData.events.length}
           eventListVisible={showEventList}
           onToggleEventList={() => setShowEventList((visible) => !visible)}
+          canCreateEvent={Boolean(onCreateEvent)}
+          canPasteEvent={Boolean(onPasteEvent)}
+          eventPlacementMode={eventPlacementMode}
+          eventPlacementPending={eventPlacementPending}
+          onToggleEventPlacement={toggleEventPlacement}
+          onFitMap={fitMapToViewport}
           zoom={zoom}
           setZoom={setZoom}
           onUndo={() => { handleHistory("undo"); }}
@@ -1235,9 +1320,14 @@ export function MapEditor({
               e.preventDefault();
               return;
             }
-            if (readOnly || !mapData || selectedLayer !== 3) return;
+            if (readOnly || !mapData) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;
+            if (eventPlacementMode) {
+              placeEventAtTile(pos);
+              return;
+            }
+            if (selectedLayer !== 3) return;
             const evt = mapData.events.find(
               (candidate) => candidate.x === pos.x && candidate.y === pos.y
             );
@@ -1247,7 +1337,8 @@ export function MapEditor({
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onDoubleClick={(e) => {
-            if (readOnly || !mapData) return;
+            if (readOnly || !mapData || eventPlacementMode ||
+                Date.now() < suppressEventDoubleClickUntilRef.current) return;
             const pos = screenToTile(e.clientX, e.clientY);
             if (!pos) return;
             const evt = mapData.events.find(
@@ -1292,7 +1383,7 @@ export function MapEditor({
               window.innerWidth,
               window.innerHeight,
               200,
-              evt ? 200 : hasClipboardEvent ? 140 : 90,
+              evt ? 200 : hasClipboardEvent ? 190 : onCreateEvent ? 140 : 90,
             );
             setContextMenu({
               x: menuPoint.x,
@@ -1311,6 +1402,7 @@ export function MapEditor({
             onCopyEvent={onCopyEvent}
             onFocusEvent={focusEventOnMap}
             onClose={() => setShowEventList(false)}
+            onBeginCreateEvent={!readOnly && onCreateEvent ? () => toggleEventPlacement("create") : undefined}
           />
         )}
         {/* Scrollbar overlays */}
@@ -1346,6 +1438,7 @@ export function MapEditor({
           onCopyEvent={onCopyEvent}
           onDeleteEvent={onDeleteEvent}
           onPasteEvent={onPasteEvent}
+          onCreateEvent={onCreateEvent}
           onSetStartPosition={onSetStartPosition}
         />
       )}
@@ -1364,6 +1457,7 @@ export function MapEditor({
           )}
           <span>{selectedLayer === -1 ? "All Layers" : selectedLayer === 3 ? `Events (${mapData.events.length})` : `Layer ${selectedLayer + 1}/3`}</span>
           <span>Tile: {selectedTileId}</span>
+          {eventPlacementMessage && <span role="status" className="map-event-placement-message">{eventPlacementMessage}</span>}
           <span className="toolbar-right">
             {undoStackRef.current.canUndo() ? "Ctrl+Z: Undo" : ""}
             {undoStackRef.current.canRedo() ? " | Ctrl+Y: Redo" : ""}
