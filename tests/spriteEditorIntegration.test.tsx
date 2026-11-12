@@ -284,7 +284,7 @@ describe("sprite editor integration", () => {
     renderEditor();
     await screen.findByDisplayValue("Guide");
     await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByLabelText("Quick import image as sprite copy"), {
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
       target: { files: [new File(["sprite"], "Visitor.png")] },
     });
     await screen.findByText("Unsaved imported sprite");
