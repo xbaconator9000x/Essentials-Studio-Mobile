@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  paintTile, paintRectangle, floodFill, copyTileRegion, pasteTileRegion, sampleMapTile,
+  paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
   applyAction, revertAction,
 } from "../src/services/mapEditor.ts";
 
@@ -280,4 +280,36 @@ test("autotile bucket replacement canonicalizes neighbour edits and preserves ot
   assert.deepEqual(data.tiles, before);
   applyAction(data, { type: "fill", changes, timestamp: 0 });
   assert.deepEqual(data.tiles, after);
+});
+
+test("clear selected map tiles on all XP layers preserves events and is fully undoable", () => {
+  const data = map(6, 5);
+  data.events = [{ id: 1, x: 2, y: 2, name: "Keep" }];
+  for (let layer = 0; layer < 3; layer++) {
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 6; x++)
+      data.tiles[layer * 30 + y * 6 + x] = 384 + layer;
+  }
+  const before = data.tiles.slice();
+  const changes = clearMapTileRegion(data, { x1: 1, y1: 1, x2: 3, y2: 3 }, -1);
+  assert.equal(changes.length, 27);
+  assert.equal(new Set(changes.map(c => `${c.layer}:${c.x}:${c.y}`)).size, changes.length);
+  assert.equal(data.events[0].name, "Keep");
+  for (let layer = 0; layer < 3; layer++) {
+    assert.equal(data.tiles[layer * 30 + 2 * 6 + 2], 0);
+    assert.equal(data.tiles[layer * 30], 384 + layer);
+  }
+  const after = data.tiles.slice();
+  revertAction(data, { type: "erase", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+  applyAction(data, { type: "erase", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, after);
+});
+
+test("clear selected map tiles rejects events layer and malformed rectangles atomically", () => {
+  const data = map();
+  data.tiles.fill(384);
+  const before = data.tiles.slice();
+  assert.deepEqual(clearMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 3), []);
+  assert.deepEqual(clearMapTileRegion(data, { x1: 0.5, y1: 0, x2: 1, y2: 1 }, 0), []);
+  assert.deepEqual(data.tiles, before);
 });
