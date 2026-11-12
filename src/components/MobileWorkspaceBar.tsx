@@ -29,6 +29,7 @@ export function MobileWorkspaceBar({
 }: Props) {
   const onMap = section === "maps";
   const onMapList = section === "projects";
+  const canNavigateToMaps = !onMapList;
   return (
     <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions">
       <div className="app-mobile-workspace-context">
@@ -40,9 +41,9 @@ export function MobileWorkspaceBar({
         </span>
       </div>
       <div className="app-mobile-workspace-actions" role="group" aria-label="Project and map actions">
-        {onMap && (
+        {canNavigateToMaps && (
           <button type="button" onClick={onShowProjects} disabled={busy}
-            aria-label="Choose another map">Maps</button>
+            aria-label={onMap ? "Choose another map" : "Return to project maps"}>Maps</button>
         )}
         {(onMap || onMapList) && (
           <button type="button" className={editingEnabled ? "is-active" : ""}
