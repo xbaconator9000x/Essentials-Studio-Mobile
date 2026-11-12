@@ -213,10 +213,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!selectedName) return;
     let cancelled = false;
+    // An import can supersede this in-flight project image without changing selectedName.
+    // Never allow its late resolution to overwrite imported pixels or clear their dirty flag.
+    const importGeneration = spriteImportId.current;
     setLoading(true);
     void loadCharacterImage(projectPath, selectedName)
       .then((image) => {
-        if (cancelled) return;
+        if (cancelled || importGeneration !== spriteImportId.current) return;
         if (!image) throw new Error("The selected character image could not be loaded");
         if (image.width * image.height > 16_777_216) {
           throw new Error("Sprite image exceeds the 16-megapixel edit limit");
@@ -242,9 +245,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         setDirty(false);
         setImageRevision((value) => value + 1);
       })
-      .catch((cause) => setError(`Could not open ${selectedName}: ${cause}`))
+      .catch((cause) => {
+        if (!cancelled && importGeneration === spriteImportId.current) {
+          setError(`Could not open ${selectedName}: ${cause}`);
+        }
+      })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && importGeneration === spriteImportId.current) setLoading(false);
       });
     return () => { cancelled = true; };
   }, [projectPath, projectSpriteReload, selectedName, updateDirty]);
