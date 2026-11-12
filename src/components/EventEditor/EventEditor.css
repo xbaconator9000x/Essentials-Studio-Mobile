@@ -1236,3 +1236,74 @@
   white-space: nowrap;
   max-width: 250px;
 }
+
+/* Dialogue editing is the primary phone task: keep the command list tall.
+   The command action rail scrolls instead of wrapping across three rows. */
+@media (max-width: 700px) {
+  .event-command-panel-header {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-height: 54px;
+    padding: 5px 7px;
+  }
+
+  .event-command-panel-title {
+    flex: 0 0 auto;
+    max-width: 106px;
+    font-size: 11px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .event-command-actions {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  .event-command-action {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+
+  .event-editor-footer {
+    min-height: 56px;
+    padding: 5px 7px max(5px, env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+
+  .event-editor-footer-actions {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+  }
+
+  .event-editor-footer-actions > button {
+    flex: 0 0 auto;
+  }
+
+  .event-editor-footer-actions > button:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+  }
+
+  .event-editor-footer-actions > button:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--color-mantle);
+  }
+}
