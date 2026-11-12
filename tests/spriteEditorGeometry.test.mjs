@@ -159,3 +159,13 @@ test("exact zoom retains the anchored pixel and clamps to 1–32×", () => {
   assert.equal(setSpriteViewportZoom(viewport, NaN, anchor), viewport);
   assert.equal(setSpriteViewportZoom(viewport, 4, { x: Infinity, y: 0 }), viewport);
 });
+
+test("portrait sprite fit shows an entire oversized RMXP sheet without cropping", () => {
+  const viewport = fitSpriteViewport(512, 384, 240, 320);
+  assert.ok(viewport.zoom > 0 && viewport.zoom < 1);
+  assert.ok(viewport.offsetX >= 0 && viewport.offsetY >= 0);
+  assert.ok(viewport.offsetX + 512 * viewport.zoom <= 240);
+  assert.ok(viewport.offsetY + 384 * viewport.zoom <= 320);
+  assert.deepEqual(spritePixelAt(viewport.offsetX + viewport.zoom * 511.5,
+    viewport.offsetY + viewport.zoom * 383.5, viewport, 512, 384), { x: 511, y: 383 });
+});
