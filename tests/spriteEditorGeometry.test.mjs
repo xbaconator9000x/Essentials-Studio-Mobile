@@ -143,7 +143,7 @@ test("invalid pinch and coordinate inputs leave viewport unchanged", () => {
   assert.equal(spritePixelAt(10, 10, { ...viewport, offsetX: Infinity }, 16, 16), null);
 });
 
-test("exact zoom retains the anchored pixel and clamps to 1–32×", () => {
+test("exact zoom retains the anchored pixel and clamps to 1/32–32×", () => {
   const viewport = { zoom: 4, offsetX: 12, offsetY: -8 };
   const anchor = { x: 100, y: 80 };
   const worldX = (anchor.x - viewport.offsetX) / viewport.zoom;
@@ -155,7 +155,8 @@ test("exact zoom retains the anchored pixel and clamps to 1–32×", () => {
     assert.equal((anchor.y - result.offsetY) / result.zoom, worldY);
   }
   assert.equal(setSpriteViewportZoom(viewport, 100, anchor).zoom, 32);
-  assert.equal(setSpriteViewportZoom(viewport, 0.25, anchor).zoom, 1);
+  assert.equal(setSpriteViewportZoom(viewport, 0.25, anchor).zoom, 0.25);
+  assert.equal(setSpriteViewportZoom(viewport, 0.001, anchor).zoom, 1 / 32);
   assert.equal(setSpriteViewportZoom(viewport, NaN, anchor), viewport);
   assert.equal(setSpriteViewportZoom(viewport, 4, { x: Infinity, y: 0 }), viewport);
 });
@@ -168,4 +169,22 @@ test("portrait sprite fit shows an entire oversized RMXP sheet without cropping"
   assert.ok(viewport.offsetY + 384 * viewport.zoom <= 320);
   assert.deepEqual(spritePixelAt(viewport.offsetX + viewport.zoom * 511.5,
     viewport.offsetY + viewport.zoom * 383.5, viewport, 512, 384), { x: 511, y: 383 });
+});
+
+
+test("portrait fitted sheets retain fractional zoom across pinch, pan, and exact zoom", () => {
+  const fitted = fitSpriteViewport(512, 384, 240, 320);
+  const center = { x: 120, y: 160 };
+  const zoomed = zoomSpriteViewport(fitted, center, center, 1.5);
+  assert.ok(zoomed.zoom > fitted.zoom && zoomed.zoom < 1);
+  assert.equal((center.x - zoomed.offsetX) / zoomed.zoom,
+    (center.x - fitted.offsetX) / fitted.zoom);
+  const panned = zoomSpriteViewport(zoomed, center, { x: 130, y: 175 }, 1);
+  assert.equal(panned.offsetX, zoomed.offsetX + 10);
+  assert.equal(panned.offsetY, zoomed.offsetY + 15);
+  const exact = setSpriteViewportZoom(fitted, 0.25, center);
+  assert.equal(exact.zoom, 0.25);
+  assert.equal((center.x - exact.offsetX) / exact.zoom,
+    (center.x - fitted.offsetX) / fitted.zoom);
+  assert.equal(zoomSpriteViewport(fitted, center, center, 0.0001).zoom, 1 / 32);
 });
