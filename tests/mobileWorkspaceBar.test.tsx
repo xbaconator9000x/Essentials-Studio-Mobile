@@ -68,6 +68,16 @@ describe("mobile portrait workspace commands", () => {
     for (const callback of Object.values(actions)) expect(callback).not.toHaveBeenCalled();
   });
 
+  it("exposes opt-in map hierarchy management without entering the map canvas", () => {
+    const { actions } = renderActions({ section: "projects", editingEnabled: false });
+    expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    const edit = screen.getByRole("button", { name: "Enable map organisation" });
+    expect(edit.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(edit);
+    expect(actions.onToggleEditing).toHaveBeenCalledTimes(1);
+    expect(actions.onShowProjects).not.toHaveBeenCalled();
+  });
+
   it("has Save All and export on Projects and Settings without unrelated map buttons", () => {
     const { view, actions } = renderActions({
       section: "projects", mapName: null, dirtyCount: 0,
