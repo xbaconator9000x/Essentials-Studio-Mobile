@@ -476,8 +476,15 @@ try {
   await projectTools.getByRole("button", { name: "Database" }).click();
   const dbModal = page.locator(".db-editor");
   await dbModal.waitFor({ state: "visible", timeout: 30_000 });
+  // This rights-cleared fixture includes Tilesets.rxdata but omits some
+  // other database files. Select a *real available tab* and wait for its
+  // asynchronous native load before measuring the phone list panel.
+  await dbModal.getByRole("button", { name: "Tilesets", exact: true }).click();
+  const activeDbList = dbModal.locator(".db-list-panel:visible").first();
+  await activeDbList.waitFor({ state: "visible", timeout: 30_000 });
   const dbMetrics = await dbModal.evaluate(element => ({
-    listWidth: element.querySelector(".db-list-panel")?.getBoundingClientRect().width ?? 0,
+    listWidth: [...element.querySelectorAll(".db-list-panel")]
+      .map(node => node.getBoundingClientRect().width).find(width => width > 0) ?? 0,
     panelWidth: element.getBoundingClientRect().width,
   }));
   assert.ok(dbMetrics.listWidth >= dbMetrics.panelWidth - 6,
