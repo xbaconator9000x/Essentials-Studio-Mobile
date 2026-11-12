@@ -1371,6 +1371,20 @@ function AppContent() {
           <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
             Export ZIP
           </button>
+          <div className="app-mobile-tools-section" role="group" aria-label="Project data editors">
+            <h2>Project editors</h2>
+            <p>Edit Pokémon data, Ruby scripts and PBS records from the same project workspace.</p>
+            <div className="app-mobile-tools-grid">
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowDatabase(true)}>Database</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowScripts(true)}>Ruby Scripts</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowPbs(true)}>PBS Data</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => { setMobileSection("sprites"); setShowSprites(true); }}>Sprite Editor</button>
+            </div>
+          </div>
         </section>
         {mobileLayout && mobileSection === "sprites" && (
           <section className="app-mobile-sprite-preview">
