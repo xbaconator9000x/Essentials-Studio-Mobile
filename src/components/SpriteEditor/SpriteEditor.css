@@ -479,3 +479,31 @@
     justify-content: flex-end;
   }
 }
+
+/* Pixel-grid and symmetry guides stay reachable in the collapsed phone toolbar. */
+.sprite-editor-mirror-options {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sprite-editor-mirror-options label {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 5px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+  white-space: nowrap;
+  font-size: 12px;
+}
+.sprite-editor-mirror-options input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}
+@media (max-width: 700px) {
+  .sprite-editor-mirror-options label { min-height: 44px; }
+  .sprite-editor-mirror-options input[type="checkbox"] { width: 22px; height: 22px; }
+}
