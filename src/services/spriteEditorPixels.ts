@@ -390,6 +390,9 @@ export function paintSpritePixels(
   return action;
 }
 
+/** Four-connected bucket fill, optionally constrained to the active selection.
+ * The edit is computed before writing, so limit failures never partially paint.
+ * RGBA equality is exact, preserving RPG Maker XP sprite transparency. */
 export function fillSpritePixels(
   data: Uint8ClampedArray,
   width: number,
@@ -397,38 +400,48 @@ export function fillSpritePixels(
   x: number,
   y: number,
   color: string,
+  selection?: SpriteSelection | null,
 ): SpritePixelAction | null {
   if (!isValidImage(data, width, height)
       || !Number.isInteger(x) || !Number.isInteger(y)
-      || x < 0 || y < 0 || x >= width || y >= height) return null;
+      || x < 0 || y < 0 || x >= width || y >= height
+      || (selection != null && !isValidSpriteSelection(selection, width, height))) return null;
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (x < area.x || y < area.y || x >= area.x + area.width || y >= area.y + area.height) return null;
   const replacement = parseColor(color);
   if (replacement === null) return null;
-
   const start = y * width + x;
   const target = readPackedPixel(data, start);
   if (target === replacement) return null;
 
-  const seen = new Uint8Array(width * height);
-  const queue = new Uint32Array(Math.min(width * height, MAX_SPRITE_EDIT_PIXELS));
+  // Allocate only for the selection rather than the entire project sprite.
+  const areaPixels = area.width * area.height;
+  const seen = new Uint8Array(areaPixels);
+  const queue = new Uint32Array(Math.min(areaPixels, MAX_SPRITE_EDIT_PIXELS));
   let readIndex = 0;
   let writeIndex = 1;
   queue[0] = start;
-  seen[start] = 1;
+  seen[(y - area.y) * area.width + x - area.x] = 1;
 
   while (readIndex < writeIndex) {
     const pixel = queue[readIndex++];
     const px = pixel % width;
     const py = Math.floor(pixel / width);
-    const enqueue = (neighbor: number) => {
-      if (seen[neighbor] || readPackedPixel(data, neighbor) !== target) return;
+    const enqueue = (nx: number, ny: number) => {
+      if (nx < area.x || nx >= area.x + area.width
+          || ny < area.y || ny >= area.y + area.height) return;
+      const local = (ny - area.y) * area.width + nx - area.x;
+      if (seen[local]) return;
+      const neighbor = ny * width + nx;
+      if (readPackedPixel(data, neighbor) !== target) return;
       if (writeIndex >= queue.length) throw new Error("Fill region exceeds the one-million-pixel edit limit");
-      seen[neighbor] = 1;
+      seen[local] = 1;
       queue[writeIndex++] = neighbor;
     };
-    if (px > 0) enqueue(pixel - 1);
-    if (px + 1 < width) enqueue(pixel + 1);
-    if (py > 0) enqueue(pixel - width);
-    if (py + 1 < height) enqueue(pixel + width);
+    enqueue(px - 1, py);
+    enqueue(px + 1, py);
+    enqueue(px, py - 1);
+    enqueue(px, py + 1);
   }
 
   const pixels = queue.slice(0, writeIndex);
