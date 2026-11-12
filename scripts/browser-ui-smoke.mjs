@@ -426,6 +426,17 @@ try {
   await page.locator(".app-mobile-project-summary").waitFor({ state: "visible" });
   assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
     "Save All must stay available when navigating back to the map list");
+  // Mobile map management must be reachable without a mouse right-click,
+  // but must not write to the fixture until the user chooses an operation.
+  const treeAction = page.getByRole("button", { name: /Map actions for/ }).first();
+  await treeAction.waitFor({ state: "visible", timeout: 10_000 });
+  await treeAction.click();
+  await page.getByRole("button", { name: "New Child Map..." }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-map-actions.png"), fullPage: true });
+  await page.locator(".map-tree-context-overlay").click({ position: { x: 2, y: 2 } });
+  await workspaceActions.getByRole("button", { name: "Lock map organisation" }).click();
+  assert.equal(await page.getByRole("button", { name: /Map actions for/ }).count(), 0,
+    "Read-only mobile map list must not offer mutation buttons");
   await page.screenshot({ path: join(evidence, "browser-mobile-project-list.png"), fullPage: true });
   assert.deepEqual(pageErrors, [], "Portrait navigation must not produce uncaught React errors");
 
