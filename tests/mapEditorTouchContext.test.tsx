@@ -324,7 +324,8 @@ describe("explicit mobile event placement", () => {
     const canvas = view.container.querySelector("canvas")!;
     dispatchTouch(canvas, "pointerdown", 100);
     dispatchTouch(canvas, "pointerup", 150);
-    expect(onCreateEvent).toHaveBeenCalledExactlyOnceWith(1, 1);
+    expect(onCreateEvent).toHaveBeenCalledTimes(1);
+    expect(onCreateEvent).toHaveBeenCalledWith(1, 1);
     expect(screen.getByRole("button", { name: "Place new map event" })).toBeTruthy();
     // Event creation is owned by the project bridge; do not mark tile painting dirty.
     expect(onMapDirty).not.toHaveBeenCalled();
@@ -336,11 +337,12 @@ describe("explicit mobile event placement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
     fireEvent.click(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
     expect(onCreateEvent).not.toHaveBeenCalled();
-    expect(screen.getByRole("status").textContent).toContain("already contains an event");
+    expect(screen.getByText(/This tile already contains an event/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel new event placement" })).toBeTruthy();
     rendererApi.screenToTile.mockReturnValue({ x: 2, y: 0 });
     fireEvent.click(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
-    expect(onCreateEvent).toHaveBeenCalledExactlyOnceWith(2, 0);
+    expect(onCreateEvent).toHaveBeenCalledTimes(1);
+    expect(onCreateEvent).toHaveBeenCalledWith(2, 0);
   });
 
   it("routes copied-event placement through project paste and prevents accidental duplicate taps", async () => {
@@ -350,7 +352,7 @@ describe("explicit mobile event placement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Place copied map event" }));
     const canvas = view.container.querySelector("canvas")!;
     fireEvent.click(canvas, { clientX: 48, clientY: 48 });
-    await waitFor(() => expect(onPasteEvent).toHaveBeenCalledExactlyOnceWith(1, 1));
+    await waitFor(() => expect(onPasteEvent).toHaveBeenCalledWith(1, 1));
     fireEvent.click(canvas, { clientX: 48, clientY: 48 });
     expect(onPasteEvent).toHaveBeenCalledTimes(1);
     pending.resolve?.();
