@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MapNavigator } from "../src/components/MapEditor/MapNavigator";
+import type { ComponentProps } from "react";
 import type { EventInfo } from "../src/types";
 
 const events = [{
@@ -9,7 +10,7 @@ const events = [{
   graphic_name: "", graphic_direction: 2, graphic_pattern: 0,
 }] as EventInfo[];
 
-function setup(overrides: Partial<React.ComponentProps<typeof MapNavigator>> = {}) {
+function setup(overrides: Partial<ComponentProps<typeof MapNavigator>> = {}) {
   const onNavigate = vi.fn();
   const onPlaceEvent = vi.fn();
   const onOpenEvent = vi.fn();
