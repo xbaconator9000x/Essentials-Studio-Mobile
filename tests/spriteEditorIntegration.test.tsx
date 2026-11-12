@@ -1988,3 +1988,21 @@ describe("portrait symmetry tools and view-only pixel grid", () => {
     expect((screen.getByRole("checkbox", { name: "Mirror sprite brush horizontally" }) as HTMLInputElement).checked).toBe(true);
   });
 });
+
+describe("exact sprite zoom controls", () => {
+  it("provides precise zoom in portrait mode without changing the sprite or save state", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(context.drawImage).toHaveBeenCalled());
+    const zoomControl = screen.getByRole("slider", { name: "Exact sprite zoom" }) as HTMLInputElement;
+    fireEvent.change(zoomControl, { target: { value: "7" } });
+    expect(zoomControl.value).toBe("7");
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(28));
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
+  });
+});
