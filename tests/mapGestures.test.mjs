@@ -174,3 +174,15 @@ test("touch paint interpolation includes every tile between fast diagonal sample
   ]);
   assert.deepEqual(rasterizeTileLine({ x: Number.NaN, y: 1 }, { x: 1, y: 1 }), []);
 });
+
+test("map strokes reject corrupt and oversized pointer paths without allocating huge arrays", () => {
+  for (const invalid of [NaN, Infinity, -Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: invalid, y: 1 }), []);
+  }
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 1_000_000, y: 0 }), []);
+  assert.deepEqual(rasterizeTileLine({ x: -32_769, y: 0 }, { x: 0, y: 0 }), []);
+  assert.equal(rasterizeTileLine({ x: 0, y: 0 }, { x: 32_768, y: 0 }).length, 32_769);
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 3, y: 0 }), [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+  ]);
+});
