@@ -98,6 +98,35 @@ test("two-finger movement pinches and suppresses a trailing single-finger tap", 
   assert.equal(gestures.pointerUp(3, { x: 10, y: 10 }, 60), null);
 });
 
+test("coincident two-finger touches do not cause an infinite zoom or accidental painting", () => {
+  const gestures = new TouchGestureMachine();
+  gestures.pointerDown(1, { x: 40, y: 40 }, 0);
+  gestures.pointerDown(2, { x: 40, y: 40 }, 1);
+  assert.deepEqual(gestures.pointerMove(2, { x: 50, y: 40 }), {
+    type: "pinch",
+    scale: 1,
+    center: { x: 45, y: 40 },
+    deltaX: 5,
+    deltaY: 0,
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 60, y: 40 }), {
+    type: "pinch",
+    scale: 2,
+    center: { x: 50, y: 40 },
+    deltaX: 5,
+    deltaY: 0,
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 40, y: 40 }), {
+    type: "pinch",
+    scale: 1,
+    center: { x: 40, y: 40 },
+    deltaX: -10,
+    deltaY: 0,
+  });
+  assert.equal(gestures.pointerUp(2, { x: 40, y: 40 }, 40), null);
+  assert.equal(gestures.pointerUp(1, { x: 40, y: 40 }, 50), null);
+});
+
 test("event-layer taps inspect an event, create on empty cells, and reject out-of-bounds cells", () => {
   const events = [{ id: 7, name: "Door", x: 2, y: 1 }];
   assert.deepEqual(resolveMapTapTarget({ x: 2, y: 1 }, 4, 3, 3, events), {
