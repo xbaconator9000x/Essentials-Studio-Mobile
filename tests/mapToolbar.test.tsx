@@ -421,3 +421,45 @@ describe("mobile map toolbar", () => {
     expect(onToggleEventList).toHaveBeenCalledOnce();
   });
 });
+
+describe("portrait map zoom and event actions", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("offers zoom increments, direct slider values, map fit and explicit event placement", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const setZoom = vi.fn();
+    const onFitMap = vi.fn();
+    const onToggleEventPlacement = vi.fn();
+    render(<MapToolbar
+      paintTool="pencil" setPaintTool={vi.fn()}
+      tileClipboard={null} selectedLayer={0} setSelectedLayer={vi.fn()}
+      showGrid setShowGrid={vi.fn()} zoom={1} setZoom={setZoom}
+      onUndo={vi.fn()} onRedo={vi.fn()}
+      {...noTileClipboardActions}
+      showEventPins setShowEventPins={vi.fn()}
+      paletteVisible onTogglePalette={vi.fn()}
+      eventCount={0} eventListVisible={false} onToggleEventList={vi.fn()}
+      canCreateEvent canPasteEvent hasClipboardEvent
+      eventPlacementMode={null} onToggleEventPlacement={onToggleEventPlacement} onFitMap={onFitMap}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in map" }));
+    expect(setZoom).toHaveBeenCalledWith(1.25);
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out map" }));
+    expect(setZoom).toHaveBeenCalledWith(0.75);
+    fireEvent.change(screen.getByRole("slider", { name: "Map zoom" }), { target: { value: "2.5" } });
+    expect(setZoom).toHaveBeenCalledWith(2.5);
+    fireEvent.click(screen.getByRole("button", { name: "Fit entire map to viewport" }));
+    expect(onFitMap).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
+    fireEvent.click(screen.getByRole("button", { name: "Place copied map event" }));
+    expect(onToggleEventPlacement).toHaveBeenNthCalledWith(1, "create");
+    expect(onToggleEventPlacement).toHaveBeenNthCalledWith(2, "paste");
+    expect(screen.getByRole("button", { name: "Events (0)" })).toBeTruthy();
+  });
+});
