@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { MapInfo, MapTreeNode } from "../../types";
+import { clampContextMenuPosition } from "../../services/mapGestures";
 import "./MapTreePanel.css";
 
 interface Props {
@@ -75,7 +76,11 @@ export function MapTreePanel({
     (e: React.MouseEvent, mapId: number, mapName: string) => {
       e.preventDefault();
       e.stopPropagation();
-      setContextMenu({ x: e.clientX, y: e.clientY, mapId, mapName });
+      const { x, y } = clampContextMenuPosition(
+        { x: e.clientX, y: e.clientY }, window.innerWidth, window.innerHeight,
+        200, 320, 8,
+      );
+      setContextMenu({ x, y, mapId, mapName });
     },
     []
   );
@@ -241,6 +246,15 @@ function MapTreeNodeItem({
         <span className="map-tree-name">
           [{String(node.id).padStart(3, "0")}] {node.name}
         </span>
+        {!readOnly && onContextMenu && (
+          <button type="button" className="map-tree-actions-button"
+            aria-label={`Map actions for ${node.name}`}
+            title={`Map actions for ${node.name}`}
+            onClick={event => {
+              event.stopPropagation();
+              onContextMenu(event, node.id, node.name);
+            }}>⋮</button>
+        )}
       </div>
       {expanded &&
         hasChildren &&
