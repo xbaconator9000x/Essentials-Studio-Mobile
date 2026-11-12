@@ -342,6 +342,24 @@ export function paintRectangle(
   return canonicalMapLayerChanges(map, layer, before);
 }
 
+/** Erase a selected rectangular region on one XP tile layer or all three.
+ * Events are deliberately excluded. Uses autotile-aware rectangle painting
+ * and returns an atomic, canonical undo ledger across the affected layers. */
+export function clearMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const layers = activeLayer === -1 ? [0, 1, 2] : [activeLayer];
+  const changes: TileChange[] = [];
+  for (const layer of layers) {
+    changes.push(...paintRectangle(map, rect.x1, rect.y1, rect.x2, rect.y2, layer, 0));
+  }
+  return changes;
+}
+
 export function floodFill(
   map: MapRenderData, x: number, y: number, layer: number, tileId: number,
 ): TileChange[] {
