@@ -114,6 +114,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [mirrorVertical, setMirrorVertical] = useState(() => readPanelPreference(MIRROR_VERTICAL_PREFERENCE) ?? false);
   const [spritePalette, setSpritePalette] = useState<string[]>([]);
   const [replaceFrom, setReplaceFrom] = useState("#000000");
+  const [replaceTolerance, setReplaceTolerance] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [zoom, setZoom] = useState(4);
@@ -604,7 +605,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       return;
     }
     const action = operation === "replace"
-      ? replaceSpriteColor(image.data, source.width, source.height, replaceFrom, brushColor, area)
+      ? replaceSpriteColor(image.data, source.width, source.height, replaceFrom, brushColor, area, replaceTolerance)
       : operation === "clockwise" || operation === "counterclockwise"
         ? rotateSquareSpritePixels(image.data, source.width, source.height, operation, area)
         : flipSpritePixels(image.data, source.width, source.height, operation, area);
@@ -621,7 +622,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
     setError(null);
-  }, [brushColor, loading, replaceFrom, saving, selection, updateDirty]);
+  }, [brushColor, loading, replaceFrom, replaceTolerance, saving, selection, updateDirty]);
 
   const exportCurrentSprite = useCallback(async () => {
     const source = imageCanvasRef.current;
@@ -1498,6 +1499,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
                   onChange={(event) => setReplaceFrom(event.currentTarget.value)} />
               </label>
+              <label className="sprite-editor-quick-color">Shade tolerance ({replaceTolerance})
+                <input type="range" aria-label="Recolor shade tolerance" min={0} max={64} step={1}
+                  value={replaceTolerance} disabled={loading || saving}
+                  onChange={(event) => setReplaceTolerance(Number(event.currentTarget.value))} />
+              </label>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("replace")}>Replace color</button>
             </div>
             {spritePalette.length > 0 && <div className="sprite-editor-swatches" role="group" aria-label="Extracted sprite colors">
@@ -1633,6 +1639,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
                   onChange={(event) => setReplaceFrom(event.currentTarget.value)} />
+              </label>
+              <label className="sprite-editor-quick-color">Shade tolerance ({replaceTolerance})
+                <input type="range" aria-label="Recolor shade tolerance" min={0} max={64} step={1}
+                  value={replaceTolerance} disabled={loading || saving}
+                  onChange={(event) => setReplaceTolerance(Number(event.currentTarget.value))} />
               </label>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("replace")}>Replace color</button>
             </div>
