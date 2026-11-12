@@ -438,7 +438,67 @@ try {
   assert.equal(await page.getByRole("button", { name: /Map actions for/ }).count(), 0,
     "Read-only mobile map list must not offer mutation buttons");
   await page.screenshot({ path: join(evidence, "browser-mobile-project-list.png"), fullPage: true });
-  assert.deepEqual(pageErrors, [], "Portrait navigation must not produce uncaught React errors");
+  // The export receipt must not push the canvas off-screen on a phone.
+  // Inspecting and dismissing the full native receipt must remain possible.
+  const operationFeedback = page.locator(".app-mobile-operation-feedback");
+  await operationFeedback.waitFor({ state: "visible", timeout: 10_000 });
+  const operationBox = await operationFeedback.boundingBox();
+  assert.ok(operationBox && operationBox.height <= 70,
+    "Native export receipts must start compact on a portrait viewport: " +
+      JSON.stringify(operationBox));
+  await operationFeedback.getByRole("button", { name: "Show full operation details" }).click();
+  assert.ok((await operationFeedback.innerText()).includes("ZIP saved to local file:"),
+    "Details must preserve the complete native ZIP export receipt");
+  await operationFeedback.getByRole("button", { name: "Dismiss operation message" }).click();
+  await operationFeedback.waitFor({ state: "hidden" });
+
+  // The Tools screen must expose the actual desktop-backed editors, and
+  // opening them must produce usable portrait layouts without extra writes.
+  await navigation.getByRole("button", { name: "Settings", exact: true }).click();
+  const projectTools = page.getByRole("group", { name: "Project data editors" });
+  for (const label of ["Database", "Ruby Scripts", "PBS Data", "Sprite Editor"]) {
+    assert.equal(await projectTools.getByRole("button", { name: label, exact: true }).isVisible(), true,
+      label + " must be reachable from mobile Tools");
+  }
+  await projectTools.getByRole("button", { name: "PBS Data" }).click();
+  const pbsModal = page.locator(".pbs-entity-editor");
+  await pbsModal.waitFor({ state: "visible", timeout: 30_000 });
+  const pbsMetrics = await pbsModal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    sidebarHeight: element.querySelector(".pbs-entity-sidebar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(pbsMetrics.width <= 392 && pbsMetrics.sidebarHeight <= 90,
+    "PBS mobile category rail must not consume desktop-width space: " + JSON.stringify(pbsMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-pbs-editor.png"), fullPage: true });
+  await pbsModal.locator(".pbs-entity-close").click();
+  await pbsModal.waitFor({ state: "hidden", timeout: 15_000 });
+
+  await projectTools.getByRole("button", { name: "Database" }).click();
+  const dbModal = page.locator(".db-editor");
+  await dbModal.waitFor({ state: "visible", timeout: 30_000 });
+  const dbMetrics = await dbModal.evaluate(element => ({
+    listWidth: element.querySelector(".db-list-panel")?.getBoundingClientRect().width ?? 0,
+    panelWidth: element.getBoundingClientRect().width,
+  }));
+  assert.ok(dbMetrics.listWidth >= dbMetrics.panelWidth - 6,
+    "Database portrait list must stack above the entity form: " + JSON.stringify(dbMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-database-editor.png"), fullPage: true });
+  await dbModal.getByRole("button", { name: "Cancel" }).click();
+  await dbModal.waitFor({ state: "hidden", timeout: 15_000 });
+
+  await projectTools.getByRole("button", { name: "Ruby Scripts" }).click();
+  const scriptModal = page.locator(".script-editor-wrapper");
+  await scriptModal.waitFor({ state: "visible", timeout: 30_000 });
+  const scriptMetrics = await scriptModal.evaluate(element => ({
+    listWidth: element.querySelector(".script-list-panel")?.getBoundingClientRect().width ?? 0,
+    panelWidth: element.getBoundingClientRect().width,
+  }));
+  assert.ok(scriptMetrics.listWidth >= scriptMetrics.panelWidth - 6,
+    "Ruby Scripts portrait navigation must stack above CodeMirror: " + JSON.stringify(scriptMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-ruby-editor.png"), fullPage: true });
+  await scriptModal.getByRole("button", { name: "Cancel" }).click();
+  await scriptModal.waitFor({ state: "hidden", timeout: 15_000 });
+  assert.deepEqual(pageErrors, [], "Portrait tool navigation must not produce uncaught React errors");
 
   const receipt = {
     status: "real Chromium map/event/PBS UI → Rust saves → native ZIP export → reimport passed",
@@ -457,6 +517,7 @@ try {
     },
     reactAndNativeProcessRestartPassed: true,
     browserPortraitWorkspaceVerified: true,
+    mobileProjectEditorsVerified: true,
     mobileMetrics,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
