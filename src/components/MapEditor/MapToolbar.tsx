@@ -38,6 +38,12 @@ interface MapToolbarProps {
   eventCount: number;
   eventListVisible: boolean;
   onToggleEventList: () => void;
+  canCreateEvent?: boolean;
+  canPasteEvent?: boolean;
+  eventPlacementMode?: "create" | "paste" | null;
+  eventPlacementPending?: boolean;
+  onToggleEventPlacement?: (mode: "create" | "paste") => void;
+  onFitMap?: () => void;
 }
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
@@ -91,6 +97,12 @@ export function MapToolbar({
   eventCount,
   eventListVisible,
   onToggleEventList,
+  canCreateEvent = false,
+  canPasteEvent = false,
+  eventPlacementMode = null,
+  eventPlacementPending = false,
+  onToggleEventPlacement,
+  onFitMap,
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) ??
@@ -316,7 +328,30 @@ export function MapToolbar({
         Collision
       </label>
 
-      {eventCount > 0 && (
+      <div className="toolbar-group map-toolbar-event-actions" role="group" aria-label="Map event placement">
+        {!readOnly && canCreateEvent && onToggleEventPlacement && (
+          <button type="button" className={`toolbar-btn ${eventPlacementMode === "create" ? "active" : ""}`}
+            aria-label={eventPlacementMode === "create" ? "Cancel new event placement" : "Place new map event"}
+            aria-pressed={eventPlacementMode === "create"}
+            disabled={eventPlacementPending}
+            onClick={() => onToggleEventPlacement("create")}
+          >{eventPlacementMode === "create" ? "Cancel new" : "New event"}</button>
+        )}
+        {!readOnly && canPasteEvent && hasClipboardEvent && onToggleEventPlacement && (
+          <button type="button" className={`toolbar-btn ${eventPlacementMode === "paste" ? "active" : ""}`}
+            aria-label={eventPlacementMode === "paste" ? "Cancel copied event placement" : "Place copied map event"}
+            aria-pressed={eventPlacementMode === "paste"}
+            disabled={eventPlacementPending}
+            onClick={() => onToggleEventPlacement("paste")}
+          >{eventPlacementMode === "paste" ? "Cancel paste" : "Paste event"}</button>
+        )}
+      </div>
+      {eventPlacementMode && (
+        <span className="toolbar-label map-event-placement-hint" role="status">
+          {eventPlacementPending ? "Saving event…" : `Tap an empty map tile to ${eventPlacementMode === "create" ? "create" : "paste"} an event. Tap the active button to cancel.`}
+        </span>
+      )}
+      {(
         <button
           className="toolbar-btn"
           aria-expanded={eventListVisible}
@@ -348,13 +383,17 @@ export function MapToolbar({
           Zoom: {Math.round(zoom * 100)}%
         </span>
         {readOnly && <span className="toolbar-label">Read-only preview</span>}
-        <button
-          className="toolbar-btn toolbar-btn-sm"
-          onClick={() => setZoom(1)}
-          title="Reset zoom"
-        >
-          1:1
-        </button>
+        <button type="button" className="toolbar-btn toolbar-btn-sm" aria-label="Zoom out map"
+          disabled={zoom <= 0.25} onClick={() => setZoom(Math.max(0.25, Math.round((zoom - 0.25) * 100) / 100))}>−</button>
+        <input type="range" className="map-zoom-slider" aria-label="Map zoom"
+          min="0.25" max="4" step="0.25" value={zoom}
+          onChange={event => setZoom(Number(event.target.value))} />
+        <button type="button" className="toolbar-btn toolbar-btn-sm" aria-label="Zoom in map"
+          disabled={zoom >= 4} onClick={() => setZoom(Math.min(4, Math.round((zoom + 0.25) * 100) / 100))}>+</button>
+        <button type="button" className="toolbar-btn toolbar-btn-sm" onClick={() => setZoom(1)}
+          title="Reset zoom" aria-label="Reset map zoom">1:1</button>
+        {onFitMap && <button type="button" className="toolbar-btn toolbar-btn-sm"
+          aria-label="Fit entire map to viewport" onClick={onFitMap}>Fit</button>}
       </div>
     </div>
   );
