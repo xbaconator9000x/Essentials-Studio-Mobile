@@ -27,6 +27,8 @@ interface MapToolbarProps {
   onCopyTiles: () => void;
   canClearTiles: boolean;
   onClearTiles: () => void;
+  canTranslateTiles: boolean;
+  onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
   onPasteTiles: () => void;
   preserveEmptyPaste: boolean;
   onPreserveEmptyPasteChange: (value: boolean) => void;
@@ -90,6 +92,8 @@ export function MapToolbar({
   onCopyTiles,
   canClearTiles,
   onClearTiles,
+  canTranslateTiles,
+  onTranslateTiles,
   onPasteTiles,
   preserveEmptyPaste,
   onPreserveEmptyPasteChange,
@@ -292,6 +296,19 @@ export function MapToolbar({
           <button type="button" className="toolbar-btn"
             onClick={onClearTiles} disabled={!canClearTiles}
             aria-label="Clear selected map tiles">Clear tiles</button>
+          <div className="toolbar-group" role="group" aria-label="Move or duplicate selected tiles">
+            {([
+              [-1, 0, "Left"], [0, -1, "Up"], [0, 1, "Down"], [1, 0, "Right"],
+            ] as const).map(([dx, dy, direction]) => (
+              <button key={direction} type="button" className="toolbar-btn"
+                disabled={!canTranslateTiles}
+                aria-label={`Move selected tiles ${direction.toLowerCase()}`}
+                onClick={() => onTranslateTiles(dx, dy, "move")}>{direction}</button>
+            ))}
+            <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
+              aria-label="Duplicate selected tiles right"
+              onClick={() => onTranslateTiles(1, 0, "copy")}>Duplicate →</button>
+          </div>
           <button
             className="toolbar-btn"
             onClick={onPasteTiles}
