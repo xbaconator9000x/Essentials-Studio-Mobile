@@ -765,6 +765,13 @@ export function EventEditor({
           </span>
           <div className="event-editor-footer-actions">
             <button
+              className="event-editor-btn event-editor-btn-primary"
+              onClick={handleOk}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save & close"}
+            </button>
+            <button
               className="event-editor-btn"
               aria-label="Save All from event editor"
               onClick={() => void handleSaveAll()}
@@ -789,13 +796,6 @@ export function EventEditor({
               aria-label="Redo event edit"
             >
               ↪
-            </button>
-            <button
-              className="event-editor-btn event-editor-btn-primary"
-              onClick={handleOk}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save & close"}
             </button>
             <button className="event-editor-btn" onClick={handleCancel} disabled={saving}>
               Cancel
