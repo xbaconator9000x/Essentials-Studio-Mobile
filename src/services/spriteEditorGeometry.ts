@@ -51,7 +51,11 @@ export function rasterizeSpriteLine(
   start: { x: number; y: number },
   end: { x: number; y: number },
 ): { x: number; y: number }[] {
-  if (![start.x, start.y, end.x, end.y].every(Number.isSafeInteger) || Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) >= 1_000_000) return [];
+  // A corrupt or stale touch coordinate must never allocate a million-point stroke.
+  // 32K pixels exceeds even unusually large RMXP sprite sheets while keeping
+  // interpolation bounded on memory-constrained Android devices.
+  if (![start.x, start.y, end.x, end.y].every(Number.isSafeInteger) ||
+      Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) > 32_768) return [];
   let x = Math.floor(start.x);
   let y = Math.floor(start.y);
   const endX = Math.floor(end.x);
