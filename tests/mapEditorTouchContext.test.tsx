@@ -388,3 +388,35 @@ describe("explicit mobile event placement", () => {
     expect(screen.queryByRole("button", { name: "Place copied map event" })).toBeNull();
   });
 });
+
+describe("project-scoped event placement", () => {
+  it("drops a previous project's in-flight paste UI state after switching projects", async () => {
+    const pending: { resolve?: () => void } = {};
+    const onPasteEvent = vi.fn(() => new Promise<void>(resolve => { pending.resolve = resolve; }));
+    const onMapDirty = vi.fn();
+    const onCreateEvent = vi.fn();
+    const tilesetInfo = { id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] };
+    const props = {
+      tilesetInfo, tilesetImage: null, autotileImages: [], selectedTileId: 1,
+      onMapDirty, onCreateEvent, onPasteEvent, hasClipboardEvent: true,
+      paletteVisible: true, onTogglePalette: vi.fn(), graphicsRevision: 0,
+    };
+    const view = render(<MapEditor {...props}
+      projectPath="/project-one" currentMapId={1}
+      mapData={{ id: 1, width: 3, height: 3, tileset_id: 1, tiles: Array(27).fill(0), events: [] }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "Place copied map event" }));
+    fireEvent.click(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
+    await waitFor(() => expect(onPasteEvent).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole("button", { name: "Cancel copied event placement" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<MapEditor {...props}
+      projectPath="/project-two" currentMapId={2}
+      mapData={{ id: 2, width: 3, height: 3, tileset_id: 1, tiles: Array(27).fill(0), events: [] }}
+    />);
+    expect(screen.getByRole("button", { name: "Place copied map event" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Place copied map event" }) as HTMLButtonElement).disabled).toBe(false);
+    pending.resolve?.();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Place copied map event" })).toBeTruthy());
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+});
