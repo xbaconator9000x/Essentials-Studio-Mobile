@@ -1,3 +1,4 @@
+import { useState } from "react";
 import "./MobileRecentProjects.css";
 
 interface Props {
@@ -31,14 +32,26 @@ function projectLabels(paths: readonly string[]): string[] {
 }
 
 export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }: Props) {
+  const [query, setQuery] = useState("");
   const uniquePaths = [...new Set(paths)];
   if (uniquePaths.length < 2) return null;
   const labels = projectLabels(uniquePaths);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visiblePaths = uniquePaths.filter((path, index) =>
+    !normalizedQuery || labels[index].toLocaleLowerCase().includes(normalizedQuery) ||
+    path.toLocaleLowerCase().includes(normalizedQuery),
+  );
 
   return (
     <nav className="app-mobile-project-list" aria-label="Recent projects">
       <strong>Recent projects</strong>
-      {uniquePaths.map((path, index) => {
+      {uniquePaths.length > 4 && (
+        <input type="search" aria-label="Find recent project" placeholder="Find project…"
+          value={query} disabled={disabled} onChange={(event) => setQuery(event.target.value)} />
+      )}
+      {visiblePaths.length === 0 && <p role="status">No matching projects</p>}
+      {visiblePaths.map((path) => {
+        const index = uniquePaths.indexOf(path);
         const active = path === currentPath;
         return (
           <button
