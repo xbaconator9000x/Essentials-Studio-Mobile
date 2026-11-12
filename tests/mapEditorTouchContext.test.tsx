@@ -420,3 +420,45 @@ describe("project-scoped event placement", () => {
     expect(onMapDirty).not.toHaveBeenCalled();
   });
 });
+
+describe("connected coordinate navigator", () => {
+  it("jumps to a tile and creates a native event without corrupting map paint data", () => {
+    const onCreateEvent = vi.fn();
+    const onMapDirty = vi.fn();
+    const tiles = Array(27).fill(384);
+    const view = renderMap({ events: [], onCreateEvent, onMapDirty, tiles });
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    const x = screen.getByRole("textbox", { name: "Map tile X coordinate" });
+    const y = screen.getByRole("textbox", { name: "Map tile Y coordinate" });
+    fireEvent.change(x, { target: { value: "2" } });
+    fireEvent.change(y, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Go to map coordinates" }));
+    expect(view.container.querySelector(".map-editor-status")?.textContent).toContain("(2, 0)");
+    fireEvent.click(screen.getByRole("button", { name: "Create event at coordinates" }));
+    expect(onCreateEvent).toHaveBeenCalledWith(2, 0);
+    expect(screen.queryByRole("region", { name: "Map coordinate navigator" })).toBeNull();
+    expect(tiles).toEqual(Array(27).fill(384));
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+
+  it("prevents placement over an existing native event and opens its editor", () => {
+    const onOpenEvent = vi.fn();
+    const onCreateEvent = vi.fn();
+    renderMap({ onOpenEvent, onCreateEvent });
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Map tile X coordinate" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Map tile Y coordinate" }), { target: { value: "1" } });
+    expect((screen.getByRole("button", { name: "Create event at coordinates" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Edit event" }));
+    expect(onOpenEvent).toHaveBeenCalledWith(4, "Guide");
+    expect(onCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps read-only coordinate navigation accessible without mutating events", () => {
+    renderMap({ readOnly: true });
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    expect(screen.getByRole("button", { name: "Go to map coordinates" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create event at coordinates" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Paste event at coordinates" })).toBeNull();
+  });
+});
