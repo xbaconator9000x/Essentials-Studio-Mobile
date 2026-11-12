@@ -96,5 +96,20 @@ describe("mobile portrait workspace commands", () => {
     );
     expect(screen.getByRole("button", { name: "Export project ZIP" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Return to project maps" })).toBeTruthy();
+  });
+
+  it("returns from sprites and settings to the project map chooser without changing editor state", () => {
+    const { view, actions } = renderActions({ section: "sprites" });
+    fireEvent.click(screen.getByRole("button", { name: "Return to project maps" }));
+    expect(actions.onShowProjects).toHaveBeenCalledTimes(1);
+    expect(actions.onToggleEditing).not.toHaveBeenCalled();
+    view.rerender(<MobileWorkspaceBar section="settings" projectName="Shattered"
+      mapName={null} dirtyCount={1} busy={true} editingEnabled={false} paletteVisible={false}
+      {...actions} />);
+    const back = screen.getByRole("button", { name: "Return to project maps" }) as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
+    fireEvent.click(back);
+    expect(actions.onShowProjects).toHaveBeenCalledTimes(1);
   });
 });
