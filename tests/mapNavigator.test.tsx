@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MapNavigator } from "../src/components/MapEditor/MapNavigator";
 import type { ComponentProps } from "react";
 import type { EventInfo } from "../src/types";
@@ -94,4 +94,22 @@ describe("touch coordinate navigator", () => {
     expect((screen.getByRole("button", { name: "Create event at coordinates" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Paste event at coordinates" }) as HTMLButtonElement).disabled).toBe(true);
   });
+  it("updates the player start using the native async callback and prevents duplicate taps", async () => {
+    let resolveSave: (() => void) | undefined;
+    const onSetStartPosition = vi.fn(() => new Promise<void>(resolve => { resolveSave = resolve; }));
+    setup({ onSetStartPosition });
+    fireEvent.click(screen.getByRole("button", { name: "Set player start at coordinates" }));
+    expect(onSetStartPosition).toHaveBeenCalledWith(4, 5);
+    expect((screen.getByRole("button", { name: "Set player start at coordinates" }) as HTMLButtonElement).disabled).toBe(true);
+    resolveSave?.();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Set player start at coordinates" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("reports native start-position failure without changing the coordinates", async () => {
+    setup({ onSetStartPosition: vi.fn(async () => { throw new Error("disk full"); }) });
+    fireEvent.click(screen.getByRole("button", { name: "Set player start at coordinates" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Could not save the player starting position.");
+    expect((screen.getByRole("textbox", { name: "Map tile X coordinate" }) as HTMLInputElement).value).toBe("4");
+  });
+
 });
