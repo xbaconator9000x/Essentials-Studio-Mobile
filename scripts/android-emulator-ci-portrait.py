@@ -93,13 +93,23 @@ def launch(package: str) -> None:
     output = adb("shell", "monkey", "-p", package, "-c",
                  "android.intent.category.LAUNCHER", "1", timeout=60).stdout
     (EVIDENCE / "launch-command.txt").write_bytes(output)
+    print("Android monkey launcher:", output.decode(errors="replace")[-500:], flush=True)
+    # Android 15's dumpsys window output is not a stable public API: its
+    # focus strings differ from prior emulator releases. Require a real
+    # app process here, then prove actual foreground *UI* via fresh
+    # UIAutomator nodes below, rather than failing on a missing focus token.
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         pid = adb("shell", "pidof", package, check=False).stdout.decode().strip()
-        if pid and package in current_focus() and "Application Not Responding" not in current_focus():
+        if pid:
+            focus = current_focus()
+            (EVIDENCE / "window-after-launch.txt").write_text(focus, encoding="utf-8")
+            if "Application Not Responding" in focus and package in focus:
+                raise AssertionError("Emulator reported an editor application ANR on launch")
+            print(f"Editor process started: PID={pid}", flush=True)
             return
         time.sleep(2)
-    raise AssertionError("Editor never became the foreground Android process")
+    raise AssertionError("Editor process never started after launcher intent")
 
 
 def main() -> None:
@@ -131,6 +141,8 @@ def main() -> None:
 
     launch(package)
     nodes = wait_ui("Import Essentials Project ZIP", "portrait-welcome")
+    if not any(item.get("package", "") == package for item in nodes):
+        raise AssertionError("Welcome control is not owned by the installed editor package")
     if not locate(nodes, "Import ZIP via Android document picker"):
         raise AssertionError("Native SAF picker is not accessible on the Android welcome screen")
     screenshot("portrait-welcome")
@@ -202,3 +214,20 @@ if __name__ == "__main__":
             screenshot("final-screen")
         except Exception:
             pass
+        # On failure, surface useful bounded diagnostics in CI in addition
+        # to the full retained logcat and screenshot artifact. Never mistake
+        # a Java/WebView crash for a UI selector timing issue.
+        if sys.exc_info()[0] is not None:
+            try:
+                print("Android launcher output:", (EVIDENCE / "launch-command.txt").read_text(errors="replace")[-600:])
+            except OSError:
+                pass
+            try:
+                focus = adb("shell", "dumpsys", "activity", "activities", timeout=25,
+                            check=False).stdout.decode(errors="replace")
+                print("Android activities:", "\\n".join(
+                    line for line in focus.splitlines()
+                    if "Resumed" in line or "mFocused" in line or "essentials" in line.lower()
+                )[-1500:], flush=True)
+            except Exception as exc:
+                print("Could not inspect resumed activity:", exc, flush=True)
