@@ -96,7 +96,8 @@ export function setSpriteViewportZoom(
 ): SpriteViewport {
   if (![viewport.zoom, viewport.offsetX, viewport.offsetY, targetZoom, anchor.x, anchor.y]
     .every(Number.isFinite) || viewport.zoom <= 0 || targetZoom <= 0) return viewport;
-  const zoom = Math.max(1, Math.min(32, targetZoom));
+  // Preserve fractional fit zoom when a large sheet is being inspected on a phone.
+  const zoom = Math.max(1 / 32, Math.min(32, targetZoom));
   return {
     zoom,
     offsetX: anchor.x - (anchor.x - viewport.offsetX) * zoom / viewport.zoom,
@@ -111,7 +112,8 @@ export function zoomSpriteViewport(
   scale: number,
 ): SpriteViewport {
   if (![viewport.zoom, viewport.offsetX, viewport.offsetY, startCenter.x, startCenter.y, nextCenter.x, nextCenter.y, scale].every(Number.isFinite) || viewport.zoom <= 0 || scale <= 0) return viewport;
-  const zoom = Math.max(1, Math.min(32, viewport.zoom * scale));
+  // Pinch gestures must not snap an oversized sheet back to 1× on first touch.
+  const zoom = Math.max(1 / 32, Math.min(32, viewport.zoom * scale));
   const worldX = (startCenter.x - viewport.offsetX) / viewport.zoom;
   const worldY = (startCenter.y - viewport.offsetY) / viewport.zoom;
   return {
