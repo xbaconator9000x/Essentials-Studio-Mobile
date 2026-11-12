@@ -314,6 +314,77 @@ describe("touch map context actions", () => {
   });
 });
 
+describe("native map context action feedback", () => {
+  it("keeps a failed native event paste open and allows retry", async () => {
+    const onPasteEvent = vi.fn()
+      .mockRejectedValueOnce(new Error("native map write failed"))
+      .mockResolvedValueOnce(undefined);
+    const view = renderMap({ events: [], hasClipboardEvent: true, onPasteEvent });
+    fireEvent.contextMenu(view.container.querySelector(".map-editor-canvas")!, {
+      clientX: 48, clientY: 48,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste Event" }));
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toContain("Could not paste event: native map write failed");
+    expect(screen.getByRole("menu", { name: "Map tile actions" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste Event" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(onPasteEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("prevents double taps while the native event copy is pending", async () => {
+    let resolveCopy!: () => void;
+    const onCopyEvent = vi.fn(() => new Promise<void>((resolve) => {
+      resolveCopy = resolve;
+    }));
+    const view = renderMap({ onCopyEvent });
+    fireEvent.contextMenu(view.container.querySelector(".map-editor-canvas")!, {
+      clientX: 48, clientY: 48,
+    });
+    const button = screen.getByRole("menuitem", { name: "Copy Event" }) as HTMLButtonElement;
+    fireEvent.click(button);
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onCopyEvent).toHaveBeenCalledTimes(1);
+    resolveCopy();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+
+  it("does not let an old native response close a new project's context menu", async () => {
+    let resolveCopy!: () => void;
+    const onCopyEvent = vi.fn(() => new Promise<void>((resolve) => {
+      resolveCopy = resolve;
+    }));
+    const props = {
+      tilesetInfo: { id: 1, name: "Test", tileset_name: "Test", autotile_names: [],
+        passages: [], priorities: [], terrain_tags: [] },
+      tilesetImage: null, autotileImages: [], selectedTileId: 1,
+      onMapDirty: vi.fn(), onCopyEvent, onCreateEvent: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(), graphicsRevision: 0,
+    };
+    const original = {
+      id: 1, width: 3, height: 3, tileset_id: 1,
+      tiles: Array(27).fill(0),
+      events: [{ id: 4, name: "Guide", x: 1, y: 1, page_count: 1, graphic_name: "",
+        graphic_direction: 2, graphic_pattern: 0 }],
+    };
+    const view = render(<MapEditor {...props} projectPath="/original"
+      currentMapId={1} mapData={original} />);
+    const canvas = view.container.querySelector(".map-editor-canvas")!;
+    fireEvent.contextMenu(canvas, { clientX: 48, clientY: 48 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy Event" }));
+    expect(onCopyEvent).toHaveBeenCalledTimes(1);
+
+    view.rerender(<MapEditor {...props} projectPath="/new-project" currentMapId={2}
+      mapData={{ ...original, id: 2, events: [] }} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.contextMenu(canvas, { clientX: 48, clientY: 48 });
+    expect(screen.getByRole("menu", { name: "Map tile actions" })).toBeTruthy();
+    resolveCopy();
+    await waitFor(() => expect(screen.getByRole("menu", { name: "Map tile actions" })).toBeTruthy());
+  });
+});
+
 describe("explicit mobile event placement", () => {
   it("creates a real map event at an empty tapped tile and exits placement mode", () => {
     const onCreateEvent = vi.fn();
