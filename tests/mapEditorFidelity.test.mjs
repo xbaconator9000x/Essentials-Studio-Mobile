@@ -245,3 +245,39 @@ test("thin autotile rectangles handle shared corners and preserve undo", () => {
     assert.deepEqual(data.tiles, before);
   }
 });
+
+test("autotile removal across adjacent rectangle cells records each cell exactly once", () => {
+  const data = map(8, 6);
+  for (let y = 1; y < 5; y++) for (let x = 1; x < 7; x++)
+    data.tiles[y * data.width + x] = 48;
+  data.tiles[data.width * data.height + 4] = -1;
+  const before = data.tiles.slice();
+  const changes = paintRectangle(data, 2, 2, 5, 4, 0, 384);
+  assert.ok(changes.length >= 12);
+  assert.equal(new Set(changes.map(c => `${c.layer}:${c.x}:${c.y}`)).size, changes.length);
+  for (const change of changes) {
+    assert.equal(change.oldTileId, before[change.y * data.width + change.x]);
+    assert.equal(change.newTileId, data.tiles[change.y * data.width + change.x]);
+  }
+  const after = data.tiles.slice();
+  revertAction(data, { type: "rectangle", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+  applyAction(data, { type: "rectangle", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, after);
+});
+
+test("autotile bucket replacement canonicalizes neighbour edits and preserves other layers", () => {
+  const data = map(7, 7);
+  for (let y = 1; y < 6; y++) for (let x = 1; x < 6; x++)
+    data.tiles[y * data.width + x] = 48;
+  data.tiles[7 * 7 + 8] = 1024;
+  const before = data.tiles.slice();
+  const changes = floodFill(data, 3, 3, 0, 384);
+  assert.equal(new Set(changes.map(c => `${c.layer}:${c.x}:${c.y}`)).size, changes.length);
+  assert.deepEqual(data.tiles.slice(49), before.slice(49));
+  const after = data.tiles.slice();
+  revertAction(data, { type: "fill", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+  applyAction(data, { type: "fill", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, after);
+});
