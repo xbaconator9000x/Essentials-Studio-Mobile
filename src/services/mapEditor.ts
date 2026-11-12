@@ -313,11 +313,50 @@ export function paintTile(
   return changes;
 }
 
+/** Produce one canonical delta per XP tile cell after an autotile-aware operation.
+ * Neighbour updates can touch the same cell repeatedly; the intermediate
+ * changes must never be used directly for undo or the original value is lost. */
+function canonicalMapLayerChanges(
+  map: MapRenderData, layer: number, before: number[],
+): TileChange[] {
+  const area = map.width * map.height;
+  const changes: TileChange[] = [];
+  for (let i = 0; i < area; i++) {
+    const oldTileId = before[i];
+    const newTileId = map.tiles[layer * area + i];
+    if (oldTileId !== newTileId) changes.push({
+      x: i % map.width, y: Math.floor(i / map.width), layer, oldTileId, newTileId,
+    });
+  }
+  return changes;
+}
+
+export function paintRectangle(
+  map: MapRenderData, x1: number, y1: number, x2: number, y2: number,
+  layer: number, tileId: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(layer)) return [];
+  const area = map.width * map.height;
+  const before = map.tiles.slice(layer * area, (layer + 1) * area);
+  paintRectangleInternal(map, x1, y1, x2, y2, layer, tileId);
+  return canonicalMapLayerChanges(map, layer, before);
+}
+
+export function floodFill(
+  map: MapRenderData, x: number, y: number, layer: number, tileId: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(layer)) return [];
+  const area = map.width * map.height;
+  const before = map.tiles.slice(layer * area, (layer + 1) * area);
+  floodFillInternal(map, x, y, layer, tileId);
+  return canonicalMapLayerChanges(map, layer, before);
+}
+
 /**
  * Paint a rectangular area. Returns all changes.
  * For autotiles, resolves all patterns after placing all tiles.
  */
-export function paintRectangle(
+function paintRectangleInternal(
   mapData: MapRenderData,
   x1: number,
   y1: number,
@@ -435,7 +474,7 @@ export function paintRectangle(
  * Flood fill from a starting position. Returns all changes.
  * For autotiles, fills with the correct pattern for each cell.
  */
-export function floodFill(
+function floodFillInternal(
   mapData: MapRenderData,
   startX: number,
   startY: number,
