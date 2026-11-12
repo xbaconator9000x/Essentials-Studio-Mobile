@@ -89,6 +89,22 @@ export function spritePixelAt(
   return x >= 0 && y >= 0 && x < imageWidth && y < imageHeight ? { x, y } : null;
 }
 
+/** Set a precise zoom level while retaining the pixel beneath the chosen anchor. */
+export function setSpriteViewportZoom(
+  viewport: SpriteViewport,
+  targetZoom: number,
+  anchor: { x: number; y: number },
+): SpriteViewport {
+  if (![viewport.zoom, viewport.offsetX, viewport.offsetY, targetZoom, anchor.x, anchor.y]
+    .every(Number.isFinite) || viewport.zoom <= 0 || targetZoom <= 0) return viewport;
+  const zoom = Math.max(1, Math.min(32, targetZoom));
+  return {
+    zoom,
+    offsetX: anchor.x - (anchor.x - viewport.offsetX) * zoom / viewport.zoom,
+    offsetY: anchor.y - (anchor.y - viewport.offsetY) * zoom / viewport.zoom,
+  };
+}
+
 export function zoomSpriteViewport(
   viewport: SpriteViewport,
   startCenter: { x: number; y: number },
