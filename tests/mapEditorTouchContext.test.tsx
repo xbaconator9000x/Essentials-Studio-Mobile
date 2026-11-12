@@ -467,7 +467,7 @@ describe("map and project edit isolation", () => {
       currentMapId={2} mapData={map(2)} />);
     dispatchTouch(canvas, "pointerdown", 200);
     dispatchTouch(canvas, "pointerup", 240);
-    expect((screen.getByRole("button", { name: "Paste copied tiles" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("drops previous-project tile clipboard before any paste into a new project", async () => {
@@ -484,7 +484,7 @@ describe("map and project edit isolation", () => {
       currentMapId={2} mapData={map(2)} />);
     dispatchTouch(canvas, "pointerdown", 200);
     dispatchTouch(canvas, "pointerup", 240);
-    expect((screen.getByRole("button", { name: "Paste copied tiles" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByText(/Copied \(1×1\)/)).toBeNull();
   });
 });
