@@ -89,10 +89,18 @@ export function spritePixelAt(
   imageWidth: number,
   imageHeight: number,
 ): { x: number; y: number } | null {
-  if (![screenX, screenY, viewport.zoom, viewport.offsetX, viewport.offsetY, imageWidth, imageHeight].every(Number.isFinite) || viewport.zoom <= 0) return null;
+  if (
+    ![screenX, screenY, viewport.zoom, viewport.offsetX, viewport.offsetY].every(Number.isFinite) ||
+    viewport.zoom <= 0 ||
+    !Number.isSafeInteger(imageWidth) || !Number.isSafeInteger(imageHeight) ||
+    imageWidth <= 0 || imageHeight <= 0
+  ) return null;
   const x = Math.floor((screenX - viewport.offsetX) / viewport.zoom);
   const y = Math.floor((screenY - viewport.offsetY) / viewport.zoom);
-  return x >= 0 && y >= 0 && x < imageWidth && y < imageHeight ? { x, y } : null;
+  // Extremely small fitted zooms or corrupted offsets can overflow the
+  // screen-to-image transform; never forward invalid pixel indices to a brush.
+  return Number.isSafeInteger(x) && Number.isSafeInteger(y) &&
+    x >= 0 && y >= 0 && x < imageWidth && y < imageHeight ? { x, y } : null;
 }
 
 /** Set a precise zoom level while retaining the pixel beneath the chosen anchor. */
