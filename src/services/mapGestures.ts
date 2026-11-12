@@ -247,7 +247,11 @@ export class TouchGestureMachine {
     const [first, second] = [...this.pointers.values()];
     const distance = this.distance(first, second);
     const center = this.center(first, second);
-    const scale = this.previousPinchDistance > 0 ? distance / this.previousPinchDistance : 1;
+    // Coincident fingers produce a zero-length baseline. Keep zoom stable until
+    // both pointers separate, rather than dividing by zero or jumping on the
+    // first movement. A subsequent move can establish a usable baseline.
+    const scale = this.previousPinchDistance > 0 && distance > 0
+      ? distance / this.previousPinchDistance : 1;
     const action: TouchGestureAction = {
       type: "pinch",
       scale,
