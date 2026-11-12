@@ -677,6 +677,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           tool === "eraser",
           mirrorHorizontal,
           mirrorVertical,
+          selection,
         );
         if (action && !historyRef.current.record(action)) {
           applySpritePixelAction(imageData.data, action, "before");
