@@ -1450,6 +1450,7 @@ export function MapEditor({
             onNavigate={navigateToMapTile}
             onPlaceEvent={performEventPlacement}
             onOpenEvent={onOpenEvent}
+            onSetStartPosition={onSetStartPosition}
             onClose={() => setNavigatorVisible(false)}
           />
         )}
