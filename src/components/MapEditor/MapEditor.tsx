@@ -38,6 +38,8 @@ import {
 import { MapScrollbars } from "./MapScrollbars";
 import { MapToolbar } from "./MapToolbar";
 import { MapEventList } from "./MapEventList";
+import { MapNavigator } from "./MapNavigator";
+import { parseMapCoordinate } from "../../services/mapCoordinateNavigation";
 import { MapContextMenu } from "./MapContextMenu";
 import "./MapEditor.css";
 
@@ -117,6 +119,7 @@ export function MapEditor({
     () => readMapEventPinsVisible(projectPath, currentMapId),
   );
   const [showEventList, setShowEventList] = useState(false);
+  const [navigatorVisible, setNavigatorVisible] = useState(false);
   const [eventPlacementMode, setEventPlacementMode] = useState<MapEventPlacementMode | null>(null);
   const [eventPlacementPending, setEventPlacementPending] = useState(false);
   const [eventPlacementMessage, setEventPlacementMessage] = useState<string | null>(null);
@@ -201,6 +204,7 @@ export function MapEditor({
     setSelectionStart(null);
     setSelectionEnd(null);
     setCursorTile(null);
+    setNavigatorVisible(false);
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
     eventPlacementScopeRef.current++;
@@ -563,9 +567,9 @@ export function MapEditor({
     setEventPlacementMessage(null);
   }, [eventPlacementMode, hasClipboardEvent, onCreateEvent, onPasteEvent, readOnly, updateShowEventPins]);
 
-  const placeEventAtTile = useCallback((point: { x: number; y: number }) => {
-    if (!mapData || !eventPlacementMode || readOnly || eventPlacementPendingRef.current) return;
-    const result = resolveMapEventPlacement(eventPlacementMode, point.x, point.y,
+  const performEventPlacement = useCallback((mode: MapEventPlacementMode, point: { x: number; y: number }) => {
+    if (!mapData || readOnly || eventPlacementPendingRef.current) return;
+    const result = resolveMapEventPlacement(mode, point.x, point.y,
       mapData.width, mapData.height, mapData.events);
     if (result === "outside") return;
     if (result === "occupied") {
@@ -577,6 +581,7 @@ export function MapEditor({
       suppressEventDoubleClickUntilRef.current = Date.now() + 600;
       onCreateEvent(point.x, point.y);
       setEventPlacementMode(null);
+      setNavigatorVisible(false);
       setEventPlacementMessage(null);
       return;
     }
@@ -589,6 +594,7 @@ export function MapEditor({
       .then(() => {
         if (scope !== eventPlacementScopeRef.current) return;
         setEventPlacementMode(null);
+        setNavigatorVisible(false);
         setEventPlacementMessage(null);
       })
       .catch(() => {
@@ -602,7 +608,23 @@ export function MapEditor({
         eventPlacementPendingRef.current = false;
         setEventPlacementPending(false);
       });
-  }, [eventPlacementMode, hasClipboardEvent, mapData, onCreateEvent, onPasteEvent, readOnly]);
+  }, [hasClipboardEvent, mapData, onCreateEvent, onPasteEvent, readOnly]);
+
+  const placeEventAtTile = useCallback((point: { x: number; y: number }) => {
+    if (eventPlacementMode) performEventPlacement(eventPlacementMode, point);
+  }, [eventPlacementMode, performEventPlacement]);
+
+  const navigateToMapTile = useCallback((point: { x: number; y: number }) => {
+    if (!mapData || !parseMapCoordinate(String(point.x), String(point.y), mapData.width, mapData.height)) return;
+    const canvas = canvasRef.current;
+    const viewport = centerMapViewportOnTile(
+      point.x, point.y, mapData.width, mapData.height,
+      canvas?.clientWidth || canvasSize.width,
+      canvas?.clientHeight || canvasSize.height, zoom,
+    );
+    setCursorTile(point);
+    setClampedViewport(viewport.x, viewport.y);
+  }, [mapData, canvasSize.width, canvasSize.height, zoom, setClampedViewport]);
 
   const fitMapToViewport = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1296,6 +1318,11 @@ export function MapEditor({
           eventPlacementPending={eventPlacementPending}
           onToggleEventPlacement={toggleEventPlacement}
           onFitMap={fitMapToViewport}
+          navigatorVisible={navigatorVisible}
+          onToggleNavigator={() => {
+            setNavigatorVisible(value => !value);
+            setShowEventList(false);
+          }}
           zoom={zoom}
           setZoom={setZoom}
           onUndo={() => { handleHistory("undo"); }}
@@ -1406,6 +1433,26 @@ export function MapEditor({
             });
           }}
         />
+        {navigatorVisible && mapData && (
+          <MapNavigator
+            key={`${projectPath ?? ""}:${currentMapId ?? ""}`}
+            mapWidth={mapData.width}
+            mapHeight={mapData.height}
+            events={mapData.events}
+            initialTile={cursorTile}
+            startTile={currentMapId === startPosition?.mapId
+              ? { x: startPosition.x, y: startPosition.y } : undefined}
+            readOnly={readOnly}
+            canCreateEvent={Boolean(onCreateEvent)}
+            canPasteEvent={Boolean(hasClipboardEvent && onPasteEvent)}
+            eventPlacementPending={eventPlacementPending}
+            eventPlacementMessage={eventPlacementMessage}
+            onNavigate={navigateToMapTile}
+            onPlaceEvent={performEventPlacement}
+            onOpenEvent={onOpenEvent}
+            onClose={() => setNavigatorVisible(false)}
+          />
+        )}
         {showEventList && mapData && (
           <MapEventList
             key={`${projectPath ?? ""}:${currentMapId ?? ""}`}
