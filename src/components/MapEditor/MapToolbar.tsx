@@ -44,6 +44,8 @@ interface MapToolbarProps {
   eventPlacementPending?: boolean;
   onToggleEventPlacement?: (mode: "create" | "paste") => void;
   onFitMap?: () => void;
+  navigatorVisible?: boolean;
+  onToggleNavigator?: () => void;
 }
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
@@ -103,6 +105,8 @@ export function MapToolbar({
   eventPlacementPending = false,
   onToggleEventPlacement,
   onFitMap,
+  navigatorVisible = false,
+  onToggleNavigator,
 }: MapToolbarProps) {
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) ??
@@ -328,6 +332,9 @@ export function MapToolbar({
         Collision
       </label>
 
+      {onToggleNavigator && <button type="button" className={`toolbar-btn ${navigatorVisible ? "active" : ""}`}
+        aria-label="Navigate to map coordinates" aria-expanded={navigatorVisible}
+        aria-controls="map-coordinate-navigator" onClick={onToggleNavigator}>Go to X,Y</button>}
       <div className="toolbar-group map-toolbar-event-actions" role="group" aria-label="Map event placement">
         {!readOnly && canCreateEvent && onToggleEventPlacement && (
           <button type="button" className={`toolbar-btn ${eventPlacementMode === "create" ? "active" : ""}`}
