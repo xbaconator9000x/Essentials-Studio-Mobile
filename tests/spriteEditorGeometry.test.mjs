@@ -6,6 +6,7 @@ import {
   spritePixelAt,
   zoomSpriteTraceTransform,
   zoomSpriteViewport,
+  setSpriteViewportZoom,
 } from "../src/services/spriteEditorGeometry.ts";
 
 test("sprite fit centers an integer zoom and respects the maximum scale", () => {
@@ -140,4 +141,21 @@ test("invalid pinch and coordinate inputs leave viewport unchanged", () => {
   assert.equal(zoomSpriteViewport(viewport, { x: Infinity, y: 0 }, center, 2), viewport);
   assert.equal(spritePixelAt(NaN, 10, viewport, 16, 16), null);
   assert.equal(spritePixelAt(10, 10, { ...viewport, offsetX: Infinity }, 16, 16), null);
+});
+
+test("exact zoom retains the anchored pixel and clamps to 1–32×", () => {
+  const viewport = { zoom: 4, offsetX: 12, offsetY: -8 };
+  const anchor = { x: 100, y: 80 };
+  const worldX = (anchor.x - viewport.offsetX) / viewport.zoom;
+  const worldY = (anchor.y - viewport.offsetY) / viewport.zoom;
+  for (const level of [1, 3, 7, 16, 32]) {
+    const result = setSpriteViewportZoom(viewport, level, anchor);
+    assert.equal(result.zoom, level);
+    assert.equal((anchor.x - result.offsetX) / result.zoom, worldX);
+    assert.equal((anchor.y - result.offsetY) / result.zoom, worldY);
+  }
+  assert.equal(setSpriteViewportZoom(viewport, 100, anchor).zoom, 32);
+  assert.equal(setSpriteViewportZoom(viewport, 0.25, anchor).zoom, 1);
+  assert.equal(setSpriteViewportZoom(viewport, NaN, anchor), viewport);
+  assert.equal(setSpriteViewportZoom(viewport, 4, { x: Infinity, y: 0 }), viewport);
 });
