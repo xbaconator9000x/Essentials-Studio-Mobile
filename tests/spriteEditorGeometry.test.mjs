@@ -74,6 +74,17 @@ test("sprite brush coordinates respect zoom, pan, and image bounds", () => {
   assert.equal(spritePixelAt(48, 1, viewport, 8, 8), null);
 });
 
+test("sprite hit testing rejects malformed dimensions and overflowing fitted coordinates", () => {
+  const viewport = { zoom: MIN_SPRITE_ZOOM, offsetX: 0, offsetY: 0 };
+  for (const width of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(spritePixelAt(1, 1, viewport, width, 16), null);
+  }
+  assert.equal(spritePixelAt(1, 1, viewport, 16, 0), null);
+  assert.equal(spritePixelAt(Number.MAX_VALUE, 1, viewport, 16, 16), null);
+  assert.equal(spritePixelAt(1, Number.MAX_VALUE, viewport, 16, 16), null);
+  assert.deepEqual(spritePixelAt(0.5 * viewport.zoom, 0.5 * viewport.zoom, viewport, 16, 16), { x: 0, y: 0 });
+});
+
 test("pinch zoom retains the pixel under the moving gesture center", () => {
   const start = { x: 40, y: 32 };
   const next = { x: 56, y: 48 };
