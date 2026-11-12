@@ -183,6 +183,39 @@ describe("sprite editor integration", () => {
     expect(screen.queryByRole("textbox", { name: "Quick imported sprite copy name" })).toBeNull();
   });
 
+  it("discards a pending imported image when switching project paths", async () => {
+    editorApi.listAssetFiles.mockImplementation(async (path: string) =>
+      path === "/project-a" ? ["Guide"] : ["NewHero"]);
+    const urls = { createObjectURL: vi.fn(() => "blob:pending-import"), revokeObjectURL: vi.fn() };
+    let pendingImage: { width: number; height: number; onload: (() => void) | null } | null = null;
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      constructor() { pendingImage = this; }
+      set src(_value: string) {}
+    }
+    vi.stubGlobal("URL", urls);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+    const editor = (path: string) => (
+      <ProjectSaveProvider>
+        <SpriteEditor projectPath={path} onClose={vi.fn()} onSaved={vi.fn()} />
+      </ProjectSaveProvider>
+    );
+    const view = render(editor("/project-a"));
+    await screen.findByDisplayValue("Guide");
+    fireEvent.change(screen.getByLabelText("Import image as copy"), {
+      target: { files: [new File(["sprite"], "Visitor.png")] },
+    });
+    expect(pendingImage).not.toBeNull();
+    view.rerender(editor("/project-b"));
+    await screen.findByDisplayValue("NewHero");
+    await act(async () => { pendingImage?.onload?.(); });
+    expect(screen.queryByText("Unsaved imported sprite")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Quick imported sprite copy name" })).toBeNull();
+    expect(urls.revokeObjectURL).toHaveBeenCalledWith("blob:pending-import");
+  });
+
   it("exports the unscaled source PNG without saving or changing the project", async () => {
     renderEditor();
     await screen.findByDisplayValue("Guide");
