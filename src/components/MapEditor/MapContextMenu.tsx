@@ -14,6 +14,7 @@ interface MapContextMenuProps {
   onCopyEvent?: (eventId: number) => Promise<void>;
   onDeleteEvent?: (eventId: number, eventName: string) => void;
   onPasteEvent?: (x: number, y: number) => Promise<void>;
+  onCreateEvent?: (x: number, y: number) => void;
   onSetStartPosition?: (x: number, y: number) => Promise<void>;
 }
 
@@ -25,6 +26,7 @@ export function MapContextMenu({
   onCopyEvent,
   onDeleteEvent,
   onPasteEvent,
+  onCreateEvent,
   onSetStartPosition,
 }: MapContextMenuProps) {
   return (
@@ -77,6 +79,12 @@ export function MapContextMenu({
             </button>
             <div className="map-tree-context-separator" />
           </>
+        )}
+        {!contextMenu.event && onCreateEvent && (
+          <button type="button" role="menuitem" onClick={() => {
+            onCreateEvent(contextMenu.tileX, contextMenu.tileY);
+            setContextMenu(null);
+          }}>New Event</button>
         )}
         {!contextMenu.event && hasClipboardEvent && (
           <>
