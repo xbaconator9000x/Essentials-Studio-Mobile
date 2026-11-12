@@ -37,6 +37,35 @@ describe("mobile recent project switcher", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("uses longer unique path suffixes when parent and project names collide", () => {
+    const onSelect = vi.fn();
+    render(
+      <MobileRecentProjects
+        paths={["/sdcard/one/Game", "/private/one/Game", "/other/two/Game"]}
+        currentPath="/sdcard/one/Game"
+        disabled={false}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "sdcard/one/Game · Current" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "private/one/Game" }));
+    expect(onSelect).toHaveBeenCalledWith("/private/one/Game");
+    expect(screen.getByRole("button", { name: "two/Game" })).toBeTruthy();
+  });
+
+  it("does not show duplicate entries as separate projects", () => {
+    const { container } = render(
+      <MobileRecentProjects
+        paths={["/private/one/Game", "/private/one/Game"]}
+        currentPath="/private/one/Game"
+        disabled={false}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
   it("renders without Array.prototype.at for older Android WebViews", () => {
     const atDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at");
     let textContent: string | null = null;
