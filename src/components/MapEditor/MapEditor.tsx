@@ -1440,7 +1440,7 @@ export function MapEditor({
             mapHeight={mapData.height}
             events={mapData.events}
             initialTile={cursorTile}
-            startTile={currentMapId === startPosition?.mapId
+            startTile={startPosition && currentMapId === startPosition.mapId
               ? { x: startPosition.x, y: startPosition.y } : undefined}
             readOnly={readOnly}
             canCreateEvent={Boolean(onCreateEvent)}
