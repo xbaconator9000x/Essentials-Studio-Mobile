@@ -482,6 +482,36 @@ body,
     width: 100%;
   }
 
+  .app-mobile-tools-section {
+    display: grid;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-surface0);
+  }
+
+  .app-mobile-tools-section h2 {
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .app-mobile-tools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .app-mobile-tools-grid button {
+    min-width: 0;
+    min-height: 52px;
+    text-align: center;
+    touch-action: manipulation;
+  }
+
+  .app-mobile-tools-grid button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
   .app-mobile-nav {
     display: flex;
     flex: 0 0 auto;
