@@ -507,3 +507,74 @@
   .sprite-editor-mirror-options label { min-height: 44px; }
   .sprite-editor-mirror-options input[type="checkbox"] { width: 22px; height: 22px; }
 }
+
+/* Preserve the sprite canvas on portrait phones. The action row scrolls
+   horizontally rather than wrapping into two or three full-width rows. */
+.sprite-editor-title-mobile { display: none; }
+
+@media (max-width: 700px) {
+  .sprite-editor {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sprite-editor-header {
+    flex-wrap: nowrap;
+    min-height: 54px;
+    max-height: 60px;
+    padding: 4px 6px;
+    gap: 5px;
+  }
+
+  .sprite-editor-header > strong {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 70px;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+
+  .sprite-editor-title-desktop { display: none; }
+  .sprite-editor-title-mobile { display: inline; }
+
+  .sprite-editor-header-actions {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 5px;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+  }
+
+  .sprite-editor-header-actions > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .sprite-editor-header-actions > button:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--color-mantle);
+    border-color: var(--color-accent);
+  }
+
+  .sprite-editor-tools {
+    max-height: min(42dvh, 360px);
+  }
+
+  .sprite-editor-quick-tools {
+    gap: 6px;
+    padding: 4px 7px;
+    max-height: 58px;
+    overflow-y: hidden;
+  }
+
+  .sprite-editor-quick-tools > *,
+  .sprite-editor-quick-group > * {
+    flex-shrink: 0;
+  }
+}
