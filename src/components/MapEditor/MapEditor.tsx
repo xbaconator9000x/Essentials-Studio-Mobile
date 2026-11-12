@@ -24,6 +24,7 @@ import {
   type TouchGestureAction,
 } from "../../services/mapGestures";
 import { loadCharacterImage } from "../../services/imageLoader";
+import { loadMapEventGraphics } from "../../services/mapEventGraphics";
 import { replayMapHistory } from "../../services/mapHistory";
 import { resolveMapEventPlacement, type MapEventPlacementMode } from "../../services/mapEventPlacement";
 import { shouldHandleMapShortcut } from "../../services/mapShortcutGuards";
@@ -318,13 +319,11 @@ export function MapEditor({
     if (toLoad.length === 0) return;
 
     let cancelled = false;
-    (async () => {
-      const results = await Promise.all(
-        toLoad.map(async (name) => {
-          const img = await loadCharacterImage(projectPath, name);
-          return [name, img] as [string, HTMLImageElement | null];
-        })
-      );
+    void loadMapEventGraphics(
+      toLoad,
+      (name) => loadCharacterImage(projectPath, name),
+      () => !cancelled,
+    ).then((results) => {
       if (cancelled) return;
       setCharacterImages((prev) => {
         const next = new Map(prev);
@@ -333,8 +332,7 @@ export function MapEditor({
         }
         return next;
       });
-    })();
-
+    });
     return () => { cancelled = true; };
   }, [mapData, projectPath, graphicsRevision]);
 
