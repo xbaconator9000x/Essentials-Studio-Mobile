@@ -1299,13 +1299,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               >
                 {names.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-              <label className={`sprite-editor-quick-import${dirty || loading || saving ? " is-disabled" : ""}`}>
+              <label className={`sprite-editor-quick-import${dirty || saving ? " is-disabled" : ""}`}>
                 Import image
                 <input
                   type="file"
                   accept="image/*"
                   aria-label="Quick import image as sprite copy"
-                  disabled={dirty || loading || saving}
+                  disabled={dirty || saving}
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     event.currentTarget.value = "";
@@ -1536,7 +1536,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <input
                 type="file"
                 accept="image/*"
-                disabled={dirty || loading || saving}
+                disabled={dirty || saving}
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
