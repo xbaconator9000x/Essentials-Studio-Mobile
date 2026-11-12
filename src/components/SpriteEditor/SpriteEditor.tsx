@@ -657,7 +657,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     try {
       if (tool === "fill") {
         historyRef.current.begin();
-        action = fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor);
+        action = fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection);
         if (action) {
           if (!historyRef.current.push(action)) {
             applySpritePixelAction(imageData.data, action, "before");
