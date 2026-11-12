@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   fitSpriteViewport,
+  MIN_SPRITE_ZOOM,
   rasterizeSpriteLine,
   spritePixelAt,
   zoomSpriteTraceTransform,
@@ -143,7 +144,7 @@ test("invalid pinch and coordinate inputs leave viewport unchanged", () => {
   assert.equal(spritePixelAt(10, 10, { ...viewport, offsetX: Infinity }, 16, 16), null);
 });
 
-test("exact zoom retains the anchored pixel and clamps to 1/32–32×", () => {
+test("exact zoom retains the anchored pixel and clamps to 1/4096–32×", () => {
   const viewport = { zoom: 4, offsetX: 12, offsetY: -8 };
   const anchor = { x: 100, y: 80 };
   const worldX = (anchor.x - viewport.offsetX) / viewport.zoom;
@@ -156,7 +157,7 @@ test("exact zoom retains the anchored pixel and clamps to 1/32–32×", () => {
   }
   assert.equal(setSpriteViewportZoom(viewport, 100, anchor).zoom, 32);
   assert.equal(setSpriteViewportZoom(viewport, 0.25, anchor).zoom, 0.25);
-  assert.equal(setSpriteViewportZoom(viewport, 0.001, anchor).zoom, 1 / 32);
+  assert.equal(setSpriteViewportZoom(viewport, 0.00001, anchor).zoom, MIN_SPRITE_ZOOM);
   assert.equal(setSpriteViewportZoom(viewport, NaN, anchor), viewport);
   assert.equal(setSpriteViewportZoom(viewport, 4, { x: Infinity, y: 0 }), viewport);
 });
@@ -186,5 +187,15 @@ test("portrait fitted sheets retain fractional zoom across pinch, pan, and exact
   assert.equal(exact.zoom, 0.25);
   assert.equal((center.x - exact.offsetX) / exact.zoom,
     (center.x - fitted.offsetX) / fitted.zoom);
-  assert.equal(zoomSpriteViewport(fitted, center, center, 0.0001).zoom, 1 / 32);
+  assert.equal(zoomSpriteViewport(fitted, center, center, 0.0001).zoom, MIN_SPRITE_ZOOM);
+});
+
+
+test("very large RMXP sheets retain their sub-1/32 fitted scale during pinch and exact zoom", () => {
+  const fitted = fitSpriteViewport(4096, 4096, 100, 120);
+  assert.ok(fitted.zoom < 1 / 32);
+  const anchor = { x: 50, y: 60 };
+  assert.equal(zoomSpriteViewport(fitted, anchor, anchor, 1).zoom, fitted.zoom);
+  assert.equal(setSpriteViewportZoom(fitted, fitted.zoom, anchor).zoom, fitted.zoom);
+  assert.equal(zoomSpriteViewport(fitted, anchor, anchor, 0.000001).zoom, MIN_SPRITE_ZOOM);
 });
