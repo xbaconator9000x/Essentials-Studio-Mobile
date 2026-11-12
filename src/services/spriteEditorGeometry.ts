@@ -1,3 +1,6 @@
+/** Minimum interactive scale for oversized RMXP sheets on narrow phones. */
+export const MIN_SPRITE_ZOOM = 1 / 4096;
+
 export interface SpriteViewport {
   zoom: number;
   offsetX: number;
@@ -97,7 +100,7 @@ export function setSpriteViewportZoom(
   if (![viewport.zoom, viewport.offsetX, viewport.offsetY, targetZoom, anchor.x, anchor.y]
     .every(Number.isFinite) || viewport.zoom <= 0 || targetZoom <= 0) return viewport;
   // Preserve fractional fit zoom when a large sheet is being inspected on a phone.
-  const zoom = Math.max(1 / 32, Math.min(32, targetZoom));
+  const zoom = Math.max(MIN_SPRITE_ZOOM, Math.min(32, targetZoom));
   return {
     zoom,
     offsetX: anchor.x - (anchor.x - viewport.offsetX) * zoom / viewport.zoom,
@@ -113,7 +116,7 @@ export function zoomSpriteViewport(
 ): SpriteViewport {
   if (![viewport.zoom, viewport.offsetX, viewport.offsetY, startCenter.x, startCenter.y, nextCenter.x, nextCenter.y, scale].every(Number.isFinite) || viewport.zoom <= 0 || scale <= 0) return viewport;
   // Pinch gestures must not snap an oversized sheet back to 1× on first touch.
-  const zoom = Math.max(1 / 32, Math.min(32, viewport.zoom * scale));
+  const zoom = Math.max(MIN_SPRITE_ZOOM, Math.min(32, viewport.zoom * scale));
   const worldX = (startCenter.x - viewport.offsetX) / viewport.zoom;
   const worldY = (startCenter.y - viewport.offsetY) / viewport.zoom;
   return {
