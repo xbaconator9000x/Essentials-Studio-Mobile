@@ -461,6 +461,22 @@ export function MapEditor({
     if (clipboard.width > 0) setTileClipboard(clipboard);
   }, [mapData, selectionStart, selectionEnd, selectedLayer]);
 
+  const clearSelectedTiles = useCallback(() => {
+    if (!mapData || readOnly || !selectionStart || !selectionEnd || selectedLayer === 3
+        || isPainting.current || isTouchPainting.current) return;
+    const layers = selectedLayer === -1 ? "all three tile layers" : `tile layer ${selectedLayer + 1}`;
+    if (!window.confirm(`Clear the selected map tiles on ${layers}? This can be undone.`)) return;
+    const changes = clearMapTileRegion(mapData, {
+      x1: selectionStart.x, y1: selectionStart.y,
+      x2: selectionEnd.x, y2: selectionEnd.y,
+    }, selectedLayer);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "erase", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick(tick => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
+
   const pasteTilesAtCursor = useCallback(() => {
     const origin = cursorTile ?? selectionStart;
     if (!mapData || !tileClipboard || !origin || selectedLayer === 3 || readOnly) return;
@@ -1341,6 +1357,8 @@ export function MapEditor({
           canCopyTiles={canCopyTiles}
           canPasteTiles={canPasteTiles}
           onCopyTiles={copySelectedTiles}
+          canClearTiles={!readOnly && !!selectionStart && !!selectionEnd && selectedLayer !== 3}
+          onClearTiles={clearSelectedTiles}
           onPasteTiles={pasteTilesAtCursor}
           preserveEmptyPaste={preserveEmptyPaste}
           onPreserveEmptyPasteChange={setPreserveEmptyPaste}
