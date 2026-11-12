@@ -48,6 +48,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Initialise Tauri Android Gradle wrapper
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          npm ci
+          npm run tauri android init -- --ci
       - uses: gradle/actions/setup-gradle@v6.1.0
         with:
           cache-provider: basic
@@ -57,8 +64,6 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          npm ci
-          npm run tauri android init -- --ci
           npm run tauri android build -- --ci --apk --debug --target x86_64
           apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
           test -s "$apk"
