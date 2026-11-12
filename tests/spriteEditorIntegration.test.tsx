@@ -210,7 +210,7 @@ describe("sprite editor integration", () => {
     expect(pendingImage).not.toBeNull();
     view.rerender(editor("/project-b"));
     await screen.findByDisplayValue("NewHero");
-    await act(async () => { pendingImage?.onload?.(); });
+    await act(async () => { (pendingImage as TestImage | null)?.onload?.(); });
     expect(screen.queryByText("Unsaved imported sprite")).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Quick imported sprite copy name" })).toBeNull();
     expect(urls.revokeObjectURL).toHaveBeenCalledWith("blob:pending-import");
