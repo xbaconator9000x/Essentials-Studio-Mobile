@@ -17,6 +17,7 @@ interface Props {
   onNavigate: (point: { x: number; y: number }) => void;
   onPlaceEvent: (mode: MapEventPlacementMode, point: { x: number; y: number }) => void;
   onOpenEvent?: (eventId: number, name: string) => void;
+  onSetStartPosition?: (x: number, y: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -25,10 +26,12 @@ interface Props {
 export function MapNavigator({
   mapWidth, mapHeight, events, startTile, initialTile, readOnly = false,
   canCreateEvent, canPasteEvent, eventPlacementPending,
-  eventPlacementMessage, onNavigate, onPlaceEvent, onOpenEvent, onClose,
+  eventPlacementMessage, onNavigate, onPlaceEvent, onOpenEvent, onSetStartPosition, onClose,
 }: Props) {
   const [xText, setXText] = useState(String(initialTile?.x ?? 0));
   const [yText, setYText] = useState(String(initialTile?.y ?? 0));
+  const [startPending, setStartPending] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const coordinate = useMemo(
     () => parseMapCoordinate(xText, yText, mapWidth, mapHeight),
     [xText, yText, mapWidth, mapHeight],
@@ -89,6 +92,19 @@ export function MapNavigator({
       )}
       {eventPlacementPending && <p role="status">Saving event…</p>}
       {eventPlacementMessage && <p role="alert">{eventPlacementMessage}</p>}
+      {!readOnly && onSetStartPosition && (
+        <button type="button" disabled={!coordinate || startPending || eventPlacementPending}
+          aria-label="Set player start at coordinates"
+          onClick={() => {
+            if (!coordinate || startPending) return;
+            setStartPending(true);
+            setStartError(null);
+            void onSetStartPosition(coordinate.x, coordinate.y)
+              .catch(() => setStartError("Could not save the player starting position."))
+              .finally(() => setStartPending(false));
+          }}>{startPending ? "Saving start…" : "Set player start here"}</button>
+      )}
+      {startError && <p role="alert">{startError}</p>}
       {validStart && (
         <button type="button" className="map-navigator-start" aria-label="Go to player start"
           onClick={() => jump(validStart)}>Player start ({validStart.x}, {validStart.y})</button>
