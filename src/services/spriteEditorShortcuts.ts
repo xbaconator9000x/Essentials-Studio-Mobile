@@ -23,10 +23,22 @@ function isEditableTarget(target: unknown): boolean {
     tagName?: string;
     isContentEditable?: boolean;
     getAttribute?: (name: string) => string | null;
+    parentElement?: unknown;
   };
-  return element.isContentEditable === true
-    || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName?.toUpperCase() ?? "")
-    || element.getAttribute?.("contenteditable") === "true";
+  // Nested icons/spans must not steal editing shortcuts from their ancestors.
+  let current: unknown = element;
+  const visited = new Set<object>();
+  for (let depth = 0; depth < 32 && current && typeof current === "object"; depth++) {
+    if (visited.has(current)) break;
+    visited.add(current);
+    const node = current as typeof element;
+    if (node.isContentEditable === true
+      || ["INPUT", "TEXTAREA", "SELECT"].includes(node.tagName?.toUpperCase() ?? "")
+      || node.getAttribute?.("contenteditable") === "true"
+      || node.getAttribute?.("role") === "textbox") return true;
+    current = node.parentElement;
+  }
+  return false;
 }
 
 export function resolveSpriteShortcut(event: ShortcutEvent): SpriteShortcut | null {
