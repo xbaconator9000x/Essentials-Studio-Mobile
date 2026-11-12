@@ -370,3 +370,13 @@ test("transparent-preserving clipped sprite paste does not erase destination", (
   assert.equal(action?.pixels.length, 1);
   assert.deepEqual([...data], [20, 30, 40, 255, 70, 80, 90, 128]);
 });
+
+test("invalid sprite transform commands never mutate pixel buffers", () => {
+  const data = image(2, 2);
+  data.set([255, 0, 0, 255], 0);
+  data.set([0, 255, 0, 255], 4);
+  const original = [...data];
+  assert.equal(flipSpritePixels(data, 2, 2, "diagonal"), null);
+  assert.equal(rotateSquareSpritePixels(data, 2, 2, "sideways"), null);
+  assert.deepEqual([...data], original);
+});
