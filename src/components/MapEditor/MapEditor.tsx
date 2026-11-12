@@ -1500,6 +1500,7 @@ export function MapEditor({
       {/* Tile context menu */}
       {contextMenu && (
         <MapContextMenu
+          key={`${projectPath ?? ""}:${currentMapId ?? ""}:${contextMenu.tileX}:${contextMenu.tileY}:${contextMenu.event?.id ?? ""}`}
           contextMenu={contextMenu}
           setContextMenu={setContextMenu}
           hasClipboardEvent={hasClipboardEvent}
