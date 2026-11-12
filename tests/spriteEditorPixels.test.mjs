@@ -429,3 +429,34 @@ test("mirroring modes reject invalid flags and never mutate malformed buffers", 
   assert.equal(paintSpritePixels(data, 2, 2, 0, 0, "#ffffff", 1, false, false, null), null);
   assert.deepEqual([...data], prior);
 });
+
+test("bucket fill respects rectangular selection boundaries and exact RGBA connectivity", () => {
+  const data = image(5, 3);
+  const selection = { x: 1, y: 1, width: 3, height: 1 };
+  const history = new SpritePixelHistory();
+  const original = [...data];
+  assert.equal(fillSpritePixels(data, 5, 3, 0, 1, "#abcdef", selection), null);
+  const action = fillSpritePixels(data, 5, 3, 2, 1, "#abcdef", selection);
+  assert.equal(action?.pixels.length, 3);
+  assert.deepEqual([...data.slice(0, 5 * 4)], original.slice(0, 5 * 4));
+  assert.deepEqual([...data.slice(5 * 4, 6 * 4)], [0, 0, 0, 0]);
+  assert.deepEqual([...data.slice(6 * 4, 9 * 4)], Array(3).fill([171, 205, 239, 255]).flat());
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(6 * 4, 9 * 4)], Array(3).fill([171, 205, 239, 255]).flat());
+});
+
+test("selection bucket fill rejects malformed bounds without modifying image", () => {
+  const data = image(4, 4);
+  const original = [...data];
+  for (const area of [
+    { x: -1, y: 0, width: 2, height: 2 },
+    { x: 3, y: 3, width: 2, height: 2 },
+    { x: 0, y: 0, width: 0, height: 1 },
+  ]) {
+    assert.equal(fillSpritePixels(data, 4, 4, 1, 1, "#ffffff", area), null);
+  }
+  assert.deepEqual([...data], original);
+});
