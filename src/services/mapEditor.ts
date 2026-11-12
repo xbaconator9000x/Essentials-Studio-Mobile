@@ -360,6 +360,44 @@ export function clearMapTileRegion(
   return changes;
 }
 
+/** Translate a tile selection by one or more cells, optionally copying it.
+ * A source snapshot prevents overlap corruption. The destination is clipped
+ * to map bounds and all three XP layers remain independent. This is a single
+ * undoable edit; events and metadata are never moved. */
+export function translateMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+  dx: number,
+  dy: number,
+  mode: "move" | "copy" = "move",
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || ![rect.x1, rect.y1, rect.x2, rect.y2, dx, dy].every(Number.isSafeInteger)
+      || (mode !== "move" && mode !== "copy") || (dx === 0 && dy === 0)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom || left + dx < 0 || top + dy < 0
+      || right + dx >= map.width || bottom + dy >= map.height) return [];
+  const area = map.width * map.height;
+  const layers = activeLayer === -1 ? [0, 1, 2] : [activeLayer];
+  const changes: TileChange[] = [];
+  for (const layer of layers) {
+    const before = map.tiles.slice(layer * area, (layer + 1) * area);
+    if (mode === "move") {
+      for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++)
+        map.tiles[layer * area + y * map.width + x] = 0;
+    }
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++)
+      map.tiles[layer * area + (y + dy) * map.width + x + dx] =
+        before[y * map.width + x];
+    changes.push(...canonicalMapLayerChanges(map, layer, before));
+  }
+  return changes;
+}
+
 export function floodFill(
   map: MapRenderData, x: number, y: number, layer: number, tileId: number,
 ): TileChange[] {
