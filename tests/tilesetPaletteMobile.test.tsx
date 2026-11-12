@@ -62,3 +62,59 @@ describe("mobile tileset palette", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+describe("touch tile navigation", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("jumps directly to a valid native tile ID and rejects padded rows", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 65; // two complete rows; third row is partial image padding
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const onSelectTile = vi.fn();
+    render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={384} onSelectTile={onSelectTile} onClose={vi.fn()}
+    />);
+    const tileInput = screen.getByRole("spinbutton", { name: "Jump to tile ID" });
+    fireEvent.change(tileInput, { target: { value: "399" } });
+    fireEvent.click(screen.getByRole("button", { name: "Select tile ID" }));
+    expect(onSelectTile).toHaveBeenCalledWith(399);
+
+    fireEvent.change(tileInput, { target: { value: "400" } });
+    expect((screen.getByRole("button", { name: "Select tile ID" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(tileInput, { target: { value: "0" } });
+    expect((screen.getByRole("button", { name: "Select tile ID" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onSelectTile).toHaveBeenCalledTimes(1);
+  });
+
+  it("navigates exactly 8 tile IDs per row and clamps at real tileset edges", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 64;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const onSelectTile = vi.fn();
+    const props = {
+      tilesetInfo: { id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] },
+      tilesetImage: image, autotileImages: [], onSelectTile, onClose: vi.fn(),
+    };
+    const view = render(<TilesetPalette {...props} selectedTileId={384} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
+    expect(onSelectTile).toHaveBeenLastCalledWith(385);
+    view.rerender(<TilesetPalette {...props} selectedTileId={385} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile down" }));
+    expect(onSelectTile).toHaveBeenLastCalledWith(393);
+    view.rerender(<TilesetPalette {...props} selectedTileId={391} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
+    expect(onSelectTile).toHaveBeenLastCalledWith(391);
+    view.rerender(<TilesetPalette {...props} selectedTileId={399} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile down" }));
+    expect(onSelectTile).toHaveBeenLastCalledWith(399);
+  });
+});
