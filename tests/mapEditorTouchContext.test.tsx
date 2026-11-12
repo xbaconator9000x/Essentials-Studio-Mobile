@@ -421,6 +421,74 @@ describe("project-scoped event placement", () => {
   });
 });
 
+describe("map and project edit isolation", () => {
+  const tilesetInfo = { id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] };
+  const props = {
+    tilesetInfo, tilesetImage: null, autotileImages: [],
+    selectedTileId: 384, onMapDirty: vi.fn(), paletteVisible: true,
+    onTogglePalette: vi.fn(), graphicsRevision: 0,
+  };
+  const map = (id: number) => ({
+    id, width: 3, height: 3, tileset_id: 1,
+    tiles: Array(27).fill(0), events: [],
+  });
+
+  it("closes stale event actions and event browser when changing maps", () => {
+    const initial = { ...map(1), events: [{
+      id: 4, name: "Guide", x: 1, y: 1, page_count: 1,
+      graphic_name: "", graphic_direction: 2, graphic_pattern: 0,
+    }] };
+    const view = render(<MapEditor {...props} projectPath="/town"
+      currentMapId={1} mapData={initial} />);
+    fireEvent.contextMenu(view.container.querySelector(".map-editor-canvas")!, {
+      clientX: 48, clientY: 48,
+    });
+    expect(screen.getByRole("menu", { name: "Event actions" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Events (1)" }));
+    expect(screen.getByRole("region", { name: "Map events" })).toBeTruthy();
+
+    view.rerender(<MapEditor {...props} projectPath="/town"
+      currentMapId={2} mapData={map(2)} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Map events" })).toBeNull();
+  });
+
+  it("preserves a tile clipboard between maps in the same project", async () => {
+    const view = render(<MapEditor {...props} projectPath="/town"
+      currentMapId={1} mapData={map(1)} />);
+    fireEvent.click(screen.getByTitle("select"));
+    const canvas = view.container.querySelector(".map-editor-canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100);
+    dispatchTouch(canvas, "pointerup", 140);
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected tiles" }));
+    expect(await screen.findByText(/Copied \(1×1\)/)).toBeTruthy();
+
+    view.rerender(<MapEditor {...props} projectPath="/town"
+      currentMapId={2} mapData={map(2)} />);
+    dispatchTouch(canvas, "pointerdown", 200);
+    dispatchTouch(canvas, "pointerup", 240);
+    expect((screen.getByRole("button", { name: "Paste copied tiles" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("drops previous-project tile clipboard before any paste into a new project", async () => {
+    const view = render(<MapEditor {...props} projectPath="/town"
+      currentMapId={1} mapData={map(1)} />);
+    fireEvent.click(screen.getByTitle("select"));
+    const canvas = view.container.querySelector(".map-editor-canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100);
+    dispatchTouch(canvas, "pointerup", 140);
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected tiles" }));
+    expect(await screen.findByText(/Copied \(1×1\)/)).toBeTruthy();
+
+    view.rerender(<MapEditor {...props} projectPath="/other-project"
+      currentMapId={2} mapData={map(2)} />);
+    dispatchTouch(canvas, "pointerdown", 200);
+    dispatchTouch(canvas, "pointerup", 240);
+    expect((screen.getByRole("button", { name: "Paste copied tiles" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/Copied \(1×1\)/)).toBeNull();
+  });
+});
+
 describe("connected coordinate navigator", () => {
   it("jumps to a tile and creates a native event without corrupting map paint data", () => {
     const onCreateEvent = vi.fn();
