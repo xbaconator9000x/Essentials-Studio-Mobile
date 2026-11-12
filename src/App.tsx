@@ -1503,8 +1503,9 @@ function AppContent() {
         </div>
       )}
 
-      {/* Error display */}
-      {error && (
+      {/* The mobile alert already appears in the compact receipt strip.
+          Do not duplicate a long native error at the bottom of the canvas. */}
+      {!mobileLayout && error && (
         <div className="app-error">
           <span>{error}</span>
           <button onClick={() => setError(null)}>x</button>
