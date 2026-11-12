@@ -100,6 +100,7 @@ export function MapEditor({
   const suppressTouchClickUntilRef = useRef(0);
   const suppressEventDoubleClickUntilRef = useRef(0);
   const eventPlacementPendingRef = useRef(false);
+  const eventPlacementScopeRef = useRef(0);
 
   // Viewport state
   const [viewportX, setViewportX] = useState(0);
@@ -202,6 +203,9 @@ export function MapEditor({
     setCursorTile(null);
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
+    eventPlacementScopeRef.current++;
+    eventPlacementPendingRef.current = false;
+    setEventPlacementPending(false);
     setEventPlacementMode(null);
     setEventPlacementMessage(null);
     isPainting.current = false;
@@ -578,15 +582,23 @@ export function MapEditor({
     }
     if (!hasClipboardEvent || !onPasteEvent) return;
     eventPlacementPendingRef.current = true;
+    const scope = eventPlacementScopeRef.current;
     setEventPlacementPending(true);
     setEventPlacementMessage(null);
     void Promise.resolve().then(() => onPasteEvent(point.x, point.y))
       .then(() => {
+        if (scope !== eventPlacementScopeRef.current) return;
         setEventPlacementMode(null);
         setEventPlacementMessage(null);
       })
-      .catch(() => setEventPlacementMessage("Could not paste event. Choose another tile or cancel."))
+      .catch(() => {
+        if (scope === eventPlacementScopeRef.current)
+          setEventPlacementMessage("Could not paste event. Choose another tile or cancel.");
+      })
       .finally(() => {
+        // A pending paste from an old project must never lock or close the
+        // placement controls in the newly opened project.
+        if (scope !== eventPlacementScopeRef.current) return;
         eventPlacementPendingRef.current = false;
         setEventPlacementPending(false);
       });
