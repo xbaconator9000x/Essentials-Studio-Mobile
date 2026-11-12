@@ -58,6 +58,33 @@ describe("mobile map toolbar", () => {
     vi.unstubAllGlobals();
   });
 
+  it("switches paint tools with the compact native portrait selector", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const setPaintTool = vi.fn();
+    render(
+      <MapToolbar
+        paintTool="pencil" setPaintTool={setPaintTool}
+        tileClipboard={null} selectedLayer={0} setSelectedLayer={vi.fn()}
+        showGrid setShowGrid={vi.fn()} zoom={1} setZoom={vi.fn()}
+        onUndo={vi.fn()} onRedo={vi.fn()}
+        {...noTileClipboardActions}
+        showEventPins setShowEventPins={vi.fn()}
+        paletteVisible onTogglePalette={vi.fn()}
+        eventCount={0} eventListVisible={false} onToggleEventList={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Tools ▸" })).toBeTruthy();
+    const selector = screen.getByRole("combobox", { name: "Select active map tool" }) as HTMLSelectElement;
+    expect(selector.value).toBe("pencil");
+    fireEvent.change(selector, { target: { value: "bucket" } });
+    expect(setPaintTool).toHaveBeenCalledWith("bucket");
+    fireEvent.change(selector, { target: { value: "pan" } });
+    expect(setPaintTool).toHaveBeenCalledWith("pan");
+  });
+
   it("keeps the collision overlay toggle reachable in collapsed tools", () => {
     let onMediaChange: ((event: MediaQueryListEvent) => void) | undefined;
     vi.stubGlobal("matchMedia", vi.fn(() => ({
