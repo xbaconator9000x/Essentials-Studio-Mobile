@@ -93,6 +93,22 @@ describe("mobile recent project switcher", () => {
     expect(textContent).toContain("two/Game");
   });
 
+  it("filters long recent-project lists by visible suffix and full path without losing switch targets", () => {
+    const onSelect = vi.fn();
+    render(<MobileRecentProjects paths={[
+      "/projects/one/Game", "/projects/two/Game", "/projects/three/Game",
+      "/projects/four/Game", "/external/five/Shattered",
+    ]} currentPath="/projects/one/Game" disabled={false} onSelect={onSelect} />);
+    const search = screen.getByRole("searchbox", { name: "Find recent project" });
+    fireEvent.change(search, { target: { value: "FIVE" } });
+    expect(screen.getByRole("button", { name: "Shattered" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "two/Game" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Shattered" }));
+    expect(onSelect).toHaveBeenCalledWith("/external/five/Shattered");
+    fireEvent.change(search, { target: { value: "not-a-project" } });
+    expect(screen.getByRole("status").textContent).toBe("No matching projects");
+  });
+
   it("does not render a switcher until there is another project to switch to", () => {
     const { container } = render(
       <MobileRecentProjects
