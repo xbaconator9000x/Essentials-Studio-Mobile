@@ -1269,7 +1269,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     <div className="sprite-editor-overlay" role="dialog" aria-modal="true" aria-label="Sprite editor">
       <section className="sprite-editor">
         <header className="sprite-editor-header">
-          <strong>Character Sprite Editor</strong>
+          <strong title="Character Sprite Editor">
+            <span className="sprite-editor-title-desktop">Character Sprite Editor</span>
+            <span className="sprite-editor-title-mobile">Sprites</span>
+          </strong>
           <div className="sprite-editor-header-actions">
             <button
               aria-expanded={!controlsCollapsed}
