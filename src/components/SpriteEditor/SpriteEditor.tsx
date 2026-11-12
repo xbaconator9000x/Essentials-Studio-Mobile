@@ -59,6 +59,9 @@ interface PointerPoint {
 
 const TOOL_PANEL_PREFERENCE = "essentials-studio:sprite-editor:tools-collapsed";
 const PALETTE_PREFERENCE = "essentials-studio:sprite-editor:palette-visible";
+const PIXEL_GRID_PREFERENCE = "essentials-studio:sprite-editor:pixel-grid-visible";
+const MIRROR_HORIZONTAL_PREFERENCE = "essentials-studio:sprite-editor:mirror-horizontal";
+const MIRROR_VERTICAL_PREFERENCE = "essentials-studio:sprite-editor:mirror-vertical";
 const QUICK_SPRITE_COLORS = [
   "#000000", "#ffffff", "#e64553", "#40a02b", "#1e66f5", "#df8e1d", "#8839ef", "#179299",
 ];
@@ -105,6 +108,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [preserveTransparentPaste, setPreserveTransparentPaste] = useState(true);
   const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(1);
+  const [showPixelGrid, setShowPixelGrid] = useState(() => readPanelPreference(PIXEL_GRID_PREFERENCE) ?? true);
+  const [mirrorHorizontal, setMirrorHorizontal] = useState(() => readPanelPreference(MIRROR_HORIZONTAL_PREFERENCE) ?? false);
+  const [mirrorVertical, setMirrorVertical] = useState(() => readPanelPreference(MIRROR_VERTICAL_PREFERENCE) ?? false);
   const [spritePalette, setSpritePalette] = useState<string[]>([]);
   const [replaceFrom, setReplaceFrom] = useState("#000000");
   const [exporting, setExporting] = useState(false);
@@ -359,7 +365,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           );
           context.globalAlpha = 1;
         }
-        if (viewport.zoom >= 4) {
+        if (showPixelGrid && viewport.zoom >= 4) {
           const left = Math.max(0, Math.floor(-viewport.offsetX / viewport.zoom));
           const top = Math.max(0, Math.floor(-viewport.offsetY / viewport.zoom));
           const right = Math.min(source.width, Math.ceil((rect.width - viewport.offsetX) / viewport.zoom));
@@ -376,6 +382,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             const screenY = Math.round(viewport.offsetY + y * viewport.zoom) + 0.5;
             context.moveTo(viewport.offsetX + left * viewport.zoom, screenY);
             context.lineTo(viewport.offsetX + right * viewport.zoom, screenY);
+          }
+          context.stroke();
+        }
+        if ((mirrorHorizontal || mirrorVertical) && viewport.zoom >= 2) {
+          context.strokeStyle = "rgba(249, 226, 175, 0.65)";
+          context.lineWidth = 1;
+          context.beginPath();
+          if (mirrorHorizontal) {
+            const centerX = viewport.offsetX + source.width * viewport.zoom / 2;
+            context.moveTo(centerX, viewport.offsetY);
+            context.lineTo(centerX, viewport.offsetY + source.height * viewport.zoom);
+          }
+          if (mirrorVertical) {
+            const centerY = viewport.offsetY + source.height * viewport.zoom / 2;
+            context.moveTo(viewport.offsetX, centerY);
+            context.lineTo(viewport.offsetX + source.width * viewport.zoom, centerY);
           }
           context.stroke();
         }
@@ -397,7 +419,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     observer.observe(container);
     draw();
     return () => observer.disconnect();
-  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY, selection]);
+  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY, selection, showPixelGrid, mirrorHorizontal, mirrorVertical]);
 
   const pixelAtClient = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -617,6 +639,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           brushColor,
           brushSize,
           tool === "eraser",
+          mirrorHorizontal,
+          mirrorVertical,
         );
         if (action && !historyRef.current.record(action)) {
           applySpritePixelAction(imageData.data, action, "before");
@@ -638,7 +662,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setImageRevision((value) => value + 1);
     }
     return true;
-  }, [brushColor, brushSize, pixelAtClient, tool, updateDirty]);
+  }, [brushColor, brushSize, pixelAtClient, tool, updateDirty, mirrorHorizontal, mirrorVertical]);
 
   const paintStrokeTo = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -1366,6 +1390,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </button>
               ))}
             </div>
+            <div className="sprite-editor-quick-group sprite-editor-mirror-options" role="group" aria-label="Sprite drawing guides">
+              <label><input type="checkbox" aria-label="Show sprite pixel grid" checked={showPixelGrid}
+                onChange={(event) => { const value = event.currentTarget.checked; setShowPixelGrid(value); writePanelPreference(PIXEL_GRID_PREFERENCE, value); }} />Grid</label>
+              <label><input type="checkbox" aria-label="Mirror sprite brush horizontally" checked={mirrorHorizontal}
+                onChange={(event) => { const value = event.currentTarget.checked; setMirrorHorizontal(value); writePanelPreference(MIRROR_HORIZONTAL_PREFERENCE, value); }} />Mirror ↔</label>
+              <label><input type="checkbox" aria-label="Mirror sprite brush vertically" checked={mirrorVertical}
+                onChange={(event) => { const value = event.currentTarget.checked; setMirrorVertical(value); writePanelPreference(MIRROR_VERTICAL_PREFERENCE, value); }} />Mirror ↕</label>
+            </div>
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite zoom controls">
               <button type="button" aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
               <button type="button" aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
@@ -1511,6 +1543,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               ] as [SpriteTool, string][]).map(([name, label]) => (
                 <button key={name} aria-pressed={tool === name} onClick={() => setTool(name)}>{label}</button>
               ))}
+            </div>
+            <div className="sprite-editor-tool-row sprite-editor-mirror-options" role="group" aria-label="Sprite drawing guides">
+              <label><input type="checkbox" aria-label="Show sprite pixel grid" checked={showPixelGrid}
+                onChange={(event) => { const value = event.currentTarget.checked; setShowPixelGrid(value); writePanelPreference(PIXEL_GRID_PREFERENCE, value); }} />Grid</label>
+              <label><input type="checkbox" aria-label="Mirror sprite brush horizontally" checked={mirrorHorizontal}
+                onChange={(event) => { const value = event.currentTarget.checked; setMirrorHorizontal(value); writePanelPreference(MIRROR_HORIZONTAL_PREFERENCE, value); }} />Mirror ↔</label>
+              <label><input type="checkbox" aria-label="Mirror sprite brush vertically" checked={mirrorVertical}
+                onChange={(event) => { const value = event.currentTarget.checked; setMirrorVertical(value); writePanelPreference(MIRROR_VERTICAL_PREFERENCE, value); }} />Mirror ↕</label>
             </div>
             <div className="sprite-editor-tool-row" role="group" aria-label="Sprite selection actions">
               <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
