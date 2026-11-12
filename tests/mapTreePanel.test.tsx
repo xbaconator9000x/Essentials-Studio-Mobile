@@ -65,6 +65,49 @@ describe("project map tree browsing", () => {
     expect(screen.getByRole("treeitem", { name: /001.*Kanto/ })).toBeTruthy();
   });
 
+  it("opens native map actions from a touch-sized per-map button without selecting the map", () => {
+    const onSelectMap = vi.fn();
+    const onCreateMap = vi.fn();
+    const onRenameMap = vi.fn();
+    render(
+      <MapTreePanel mapInfos={mapInfos} currentMapId={null}
+        onSelectMap={onSelectMap} onCreateMap={onCreateMap}
+        onDeleteMap={vi.fn()} onRenameMap={onRenameMap}
+        onMapProperties={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Map actions for Harbor" }), {
+      clientX: window.innerWidth - 2,
+      clientY: window.innerHeight - 2,
+    });
+    const menu = document.querySelector(".map-tree-context-menu") as HTMLElement;
+    expect(menu).toBeTruthy();
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 200);
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 320);
+    expect(onSelectMap).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "New Child Map..." }));
+    expect(onCreateMap).toHaveBeenCalledWith(4);
+    expect(onSelectMap).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Rename..." })).toBeNull();
+  });
+
+  it("keeps map organisation actions unavailable in read-only preview", () => {
+    const onCreateMap = vi.fn();
+    const onSelectMap = vi.fn();
+    render(
+      <MapTreePanel mapInfos={mapInfos} currentMapId={null}
+        onSelectMap={onSelectMap} onCreateMap={onCreateMap}
+        onDeleteMap={vi.fn()} onRenameMap={vi.fn()}
+        onMapProperties={vi.fn()} readOnly
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Map actions for Harbor" })).toBeNull();
+    expect(screen.queryByTitle("Create new map")).toBeNull();
+    fireEvent.click(screen.getByRole("treeitem", { name: /004.*Harbor/ }));
+    expect(onSelectMap).toHaveBeenCalledWith(4);
+    expect(onCreateMap).not.toHaveBeenCalled();
+  });
+
   it("opens the selected real map ID from filtered results", () => {
     const onSelectMap = vi.fn();
     renderMapTree(null, onSelectMap);
