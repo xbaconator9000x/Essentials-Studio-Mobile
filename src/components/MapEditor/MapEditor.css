@@ -596,3 +596,99 @@
   }
   .map-coordinate-navigator input { font-size: 16px; }
 }
+
+/* Portrait canvas-first layout. In compact mode the tool rail scrolls
+   horizontally rather than using a third of the screen for multiple rows.
+   Expand "Tools" for the complete desktop-style controls. */
+.map-toolbar-native-tool-select { display: none; }
+
+@media (max-width: 700px) {
+  .map-editor-toolbar--compact {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 7px;
+    max-height: none;
+    min-height: 56px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 7px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    touch-action: pan-x;
+  }
+
+  .map-editor-toolbar--compact > * {
+    flex: 0 0 auto;
+  }
+
+  .map-editor-toolbar--compact > button:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--color-base);
+    border-color: var(--color-accent);
+    min-height: 44px;
+  }
+
+  .map-editor-toolbar--compact .toolbar-separator,
+  .map-editor-toolbar--compact .map-touch-hint {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    width: auto;
+    flex: 0 0 auto;
+    overflow: visible;
+    flex-wrap: nowrap;
+    padding: 0;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-quick-tools > button {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--color-subtext1);
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    height: 44px;
+    min-width: 94px;
+    max-width: 120px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    border: 1px solid var(--color-surface1);
+    background: var(--color-surface0);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 16px;
+  }
+
+  .map-editor-toolbar--compact .map-zoom-slider {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .toolbar-right {
+    margin-left: 0;
+    flex-wrap: nowrap;
+  }
+
+  .map-editor-toolbar--compact .toolbar-label {
+    white-space: nowrap;
+  }
+
+  .map-editor-toolbar--compact .toolbar-check {
+    white-space: nowrap;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-event-actions {
+    flex-wrap: nowrap;
+  }
+}
