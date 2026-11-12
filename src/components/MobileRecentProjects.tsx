@@ -37,6 +37,7 @@ export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }:
   if (uniquePaths.length < 2) return null;
   const labels = projectLabels(uniquePaths);
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const searchEnabled = uniquePaths.length > 4;
   const visiblePaths = uniquePaths.filter((path, index) =>
     !normalizedQuery || labels[index].toLocaleLowerCase().includes(normalizedQuery) ||
     path.toLocaleLowerCase().includes(normalizedQuery),
@@ -45,9 +46,18 @@ export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }:
   return (
     <nav className="app-mobile-project-list" aria-label="Recent projects">
       <strong>Recent projects</strong>
-      {uniquePaths.length > 4 && (
+      {searchEnabled && (
         <input type="search" aria-label="Find recent project" placeholder="Find project…"
-          value={query} disabled={disabled} onChange={(event) => setQuery(event.target.value)} />
+          value={query} disabled={disabled} onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && query) {
+              event.stopPropagation();
+              setQuery("");
+            }
+          }} />
+      )}
+      {searchEnabled && normalizedQuery && visiblePaths.length > 0 && (
+        <p role="status" aria-live="polite">{visiblePaths.length} of {uniquePaths.length} projects</p>
       )}
       {visiblePaths.length === 0 && <p role="status">No matching projects</p>}
       {visiblePaths.map((path) => {
