@@ -492,3 +492,31 @@ test("invalid sprite brush selection is rejected atomically", () => {
     { x: 2, y: 2, width: 2, height: 2 }), null);
   assert.deepEqual([...data], [...image(3, 3)]);
 });
+
+test("shade-tolerant recolor preserves tonal offsets, alpha, selection and undo", () => {
+  const data = new Uint8ClampedArray([
+    100, 100, 100, 255, 110, 95, 105, 128,
+    180, 180, 180, 255, 105, 105, 105, 0,
+  ]);
+  const original = [...data];
+  const action = replaceSpriteColor(data, 4, 1, "#646464", "#326496",
+    { x: 0, y: 0, width: 3, height: 1 }, 12);
+  assert.equal(action?.pixels.length, 2);
+  assert.deepEqual([...data.slice(0, 8)], [50, 100, 150, 255, 60, 95, 155, 128]);
+  assert.deepEqual([...data.slice(8)], original.slice(8));
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(0, 8)], [50, 100, 150, 255, 60, 95, 155, 128]);
+});
+
+test("recolor tolerance rejects invalid values and keeps exact-match default", () => {
+  const data = image(2, 1, [100, 100, 100, 255]);
+  const original = [...data];
+  assert.equal(replaceSpriteColor(data, 2, 1, "#646464", "#ffffff", null, -1), null);
+  assert.equal(replaceSpriteColor(data, 2, 1, "#646464", "#ffffff", null, 256), null);
+  assert.deepEqual([...data], original);
+  assert.equal(replaceSpriteColor(data, 2, 1, "#646464", "#ffffff")?.pixels.length, 2);
+});
