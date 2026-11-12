@@ -462,3 +462,38 @@ describe("connected coordinate navigator", () => {
     expect(screen.queryByRole("button", { name: "Paste event at coordinates" })).toBeNull();
   });
 });
+
+describe("coordinate navigation project lifetime", () => {
+  it("closes and resets coordinate targeting when the source project changes", () => {
+    const tileInfo = { id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] };
+    const onMapDirty = vi.fn();
+    const props = {
+      tilesetInfo: tileInfo, tilesetImage: null, autotileImages: [],
+      selectedTileId: 384, onMapDirty, paletteVisible: true,
+      onTogglePalette: vi.fn(), graphicsRevision: 0, onCreateEvent: vi.fn(),
+    };
+    const makeMap = (id: number) => ({
+      id, width: 3, height: 3, tileset_id: 1, tiles: Array(27).fill(0), events: [],
+    });
+    const view = render(<MapEditor {...props} projectPath="/town" currentMapId={1} mapData={makeMap(1)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Map tile X coordinate" }), { target: { value: "2" } });
+    view.rerender(<MapEditor {...props} projectPath="/new-town" currentMapId={2} mapData={makeMap(2)} />);
+    expect(screen.queryByRole("region", { name: "Map coordinate navigator" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    expect((screen.getByRole("textbox", { name: "Map tile X coordinate" }) as HTMLInputElement).value).toBe("0");
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+
+  it("routes precise player start coordinates through the native save command", async () => {
+    const onSetStartPosition = vi.fn(async () => {});
+    const onMapDirty = vi.fn();
+    renderMap({ events: [], onSetStartPosition, onMapDirty });
+    fireEvent.click(screen.getByRole("button", { name: "Navigate to map coordinates" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Map tile X coordinate" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Map tile Y coordinate" }), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set player start at coordinates" }));
+    await waitFor(() => expect(onSetStartPosition).toHaveBeenCalledWith(2, 1));
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+});
