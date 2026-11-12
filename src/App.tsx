@@ -46,6 +46,7 @@ import {
 import { installEditorBackHandler } from "./services/editorBackNavigation";
 import { MobileRecentProjects } from "./components/MobileRecentProjects";
 import { MobileWorkspaceBar } from "./components/MobileWorkspaceBar";
+import { MobileOperationFeedback } from "./components/MobileOperationFeedback";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -1208,14 +1209,28 @@ function AppContent() {
         </div>
       </div>
 
-      {archiveProgress !== null && (
-        <div className="app-operation-status" role="status" aria-live="polite">
-          {archiveProgressDetail ??
-            (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
-        </div>
+      {mobileLayout ? (
+        <MobileOperationFeedback
+          progress={archiveProgress === null ? null
+            : archiveProgressDetail ??
+              (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
+          outcome={archiveOutcome}
+          error={error}
+          onDismissOutcome={() => setArchiveOutcome(null)}
+          onDismissError={() => setError(null)}
+        />
+      ) : (
+        <>
+          {archiveProgress !== null && (
+            <div className="app-operation-status" role="status" aria-live="polite">
+              {archiveProgressDetail ??
+                (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
+            </div>
+          )}
+          {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
+          {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
+        </>
       )}
-      {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
-      {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
       {mobileLayout && (
         <MobileWorkspaceBar
