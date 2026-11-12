@@ -188,6 +188,22 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   }, []);
 
   useEffect(() => {
+    // A new project must not inherit an imported image or pending image decode.
+    spriteImportId.current += 1;
+    if (spriteImportUrl.current) {
+      URL.revokeObjectURL(spriteImportUrl.current);
+      spriteImportUrl.current = null;
+    }
+    imageCanvasRef.current = null;
+    imageDataRef.current = null;
+    historyRef.current.clear();
+    setImportedSpriteName(null);
+    setDirty(false);
+    updateDirty("sprite-editor", false);
+    setSelection(null);
+    setClipboard(null);
+    setError(null);
+    setLoading(true);
     let cancelled = false;
     void listAssetFiles(projectPath, "character")
       .then((files) => {
@@ -208,7 +224,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [projectPath]);
+  }, [projectPath, updateDirty]);
 
   useEffect(() => {
     if (!selectedName) return;
