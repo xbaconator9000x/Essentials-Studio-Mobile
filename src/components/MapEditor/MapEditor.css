@@ -475,3 +475,37 @@
   .map-layer-visibility .toolbar-check { min-height: 44px; }
   .map-layer-visibility input { width: 20px; height: 20px; }
 }
+
+/* Single-handed map/event controls on portrait phones. */
+.map-toolbar-event-actions {
+  gap: 6px;
+}
+.map-toolbar-event-actions .toolbar-btn {
+  min-height: 44px;
+  min-width: 82px;
+}
+.map-event-placement-hint {
+  flex-basis: 100%;
+  color: var(--color-accent);
+}
+.map-event-placement-message {
+  color: var(--color-red, #e64553);
+}
+.map-zoom-slider {
+  width: clamp(72px, 16vw, 140px);
+  min-height: 34px;
+  accent-color: var(--color-accent);
+}
+.map-event-list-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 700px) {
+  .map-editor-toolbar { column-gap: 8px; row-gap: 6px; padding: 6px 8px; }
+  .map-toolbar-event-actions .toolbar-btn { min-height: 48px; }
+  .map-event-list-header-actions button { min-height: 44px; }
+  .map-editor-toolbar .toolbar-right { margin-left: 0; }
+  .map-zoom-slider { width: 90px; }
+}
