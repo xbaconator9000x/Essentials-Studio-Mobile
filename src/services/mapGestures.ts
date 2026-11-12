@@ -74,7 +74,11 @@ export function centerMapViewportOnTile(
 }
 
 export function rasterizeTileLine(start: GesturePoint, end: GesturePoint): GesturePoint[] {
-  if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return [];
+  // Touch cancellation, corrupt project coordinates and synthetic pointer events
+  // must never produce an unbounded tile allocation or unsafe map indices.
+  // A 32K-cell stroke is already larger than a practical RMXP editing gesture.
+  if (![start.x, start.y, end.x, end.y].every(Number.isSafeInteger) ||
+      Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) > 32_768) return [];
   let x = Math.floor(start.x);
   let y = Math.floor(start.y);
   const endX = Math.floor(end.x);
