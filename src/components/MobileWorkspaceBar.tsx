@@ -28,6 +28,7 @@ export function MobileWorkspaceBar({
   onSaveAll, onExportZip,
 }: Props) {
   const onMap = section === "maps";
+  const onMapList = section === "projects";
   return (
     <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions">
       <div className="app-mobile-workspace-context">
@@ -40,18 +41,25 @@ export function MobileWorkspaceBar({
       </div>
       <div className="app-mobile-workspace-actions" role="group" aria-label="Project and map actions">
         {onMap && (
-          <>
-            <button type="button" onClick={onShowProjects} disabled={busy}
-              aria-label="Choose another map">Maps</button>
-            <button type="button" className={editingEnabled ? "is-active" : ""}
-              aria-pressed={editingEnabled} aria-label={editingEnabled ? "Switch map to view mode" : "Enable map editing"}
-              disabled={busy} onClick={onToggleEditing}>
-              {editingEnabled ? "Editing on" : "View only"}
-            </button>
-            <button type="button" className={paletteVisible ? "is-active" : ""}
-              aria-pressed={paletteVisible} aria-label={paletteVisible ? "Hide tile palette" : "Open tile palette"}
-              disabled={busy} onClick={onTogglePalette}>Tiles</button>
-          </>
+          <button type="button" onClick={onShowProjects} disabled={busy}
+            aria-label="Choose another map">Maps</button>
+        )}
+        {(onMap || onMapList) && (
+          <button type="button" className={editingEnabled ? "is-active" : ""}
+            aria-pressed={editingEnabled}
+            aria-label={onMapList
+              ? (editingEnabled ? "Lock map organisation" : "Enable map organisation")
+              : (editingEnabled ? "Switch map to view mode" : "Enable map editing")}
+            disabled={busy} onClick={onToggleEditing}>
+            {onMapList
+              ? (editingEnabled ? "Editing maps" : "Edit maps")
+              : (editingEnabled ? "Editing on" : "View only")}
+          </button>
+        )}
+        {onMap && (
+          <button type="button" className={paletteVisible ? "is-active" : ""}
+            aria-pressed={paletteVisible} aria-label={paletteVisible ? "Hide tile palette" : "Open tile palette"}
+            disabled={busy} onClick={onTogglePalette}>Tiles</button>
         )}
         <button type="button" className="app-mobile-workspace-primary"
           aria-label="Save all changes" disabled={busy} onClick={onSaveAll}>
