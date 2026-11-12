@@ -63,9 +63,9 @@ jobs:
           retention-days: 7
 
   emulator-launch:
-    name: Install and launch x86_64 APK on accelerated macOS emulator
+    name: Install and launch x86_64 APK on accelerated Linux emulator
     needs: build-x86
-    runs-on: macos-15-intel
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
