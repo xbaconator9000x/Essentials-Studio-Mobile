@@ -58,12 +58,12 @@ export function TilesetPalette({
     ? Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE) : 0;
   const tileCols = tilesetImage
     ? Math.min(TILESET_COLUMNS, Math.floor((tilesetImage.naturalWidth || tilesetImage.width) / TILE_SIZE)) : 0;
-  const tileIdIsValid = (id: number) => Number.isSafeInteger(id)
+  const tileIdIsValid = useCallback((id: number) => Number.isSafeInteger(id)
     && id >= FIRST_REGULAR_TILE && id <= 32767
     && tileCols > 0 && tileRows > 0
     && (id - FIRST_REGULAR_TILE) % TILESET_COLUMNS < tileCols
-    && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) < tileRows;
-  const inputTileId = /^\\d+$/.test(tileIdInput.trim()) ? Number(tileIdInput.trim()) : NaN;
+    && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) < tileRows, [tileCols, tileRows]);
+  const inputTileId = /^[0-9]+$/.test(tileIdInput.trim()) ? Number(tileIdInput.trim()) : NaN;
   const canJump = tileIdIsValid(inputTileId);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function TilesetPalette({
     if (tileTop < panel.scrollTop) panel.scrollTop = tileTop;
     else if (tileTop + TILE_SIZE > panel.scrollTop + panel.clientHeight)
       panel.scrollTop = tileTop + TILE_SIZE - panel.clientHeight;
-  }, [selectedTileId, activeTab, tilesetImage]);
+  }, [selectedTileId, activeTab, tileIdIsValid]);
 
   const navigateTile = (dx: number, dy: number) => {
     if (!tileCols || !tileRows) return;
