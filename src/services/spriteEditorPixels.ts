@@ -357,20 +357,24 @@ export function paintSpritePixels(
   erase = false,
   mirrorHorizontal = false,
   mirrorVertical = false,
+  selection?: SpriteSelection | null,
 ): SpritePixelAction | null {
   const packedColor = erase ? 0 : parseColor(color);
   if (!isValidImage(data, width, height) || packedColor === null
       || !Number.isInteger(x) || !Number.isInteger(y)
       || !Number.isInteger(size) || size < 1 || size > 32
       || typeof mirrorHorizontal !== "boolean" || typeof mirrorVertical !== "boolean"
+      || (selection != null && !isValidSpriteSelection(selection, width, height))
       || x < 0 || y < 0 || x >= width || y >= height) return null;
 
+  const area = selection ?? { x: 0, y: 0, width, height };
   const changes = new Map<number, { before: number; after: number }>();
   const left = x - Math.floor(size / 2);
   const top = y - Math.floor(size / 2);
   // Reflect each painted pixel rather than the brush's anchor. This keeps
   // even-sized brushes exactly symmetric about the sprite's real centre.
   const addPixel = (px: number, py: number) => {
+    if (px < area.x || py < area.y || px >= area.x + area.width || py >= area.y + area.height) return;
     const pixel = py * width + px;
     if (changes.has(pixel)) return; // middle column/row is written only once
     const before = readPackedPixel(data, pixel);
