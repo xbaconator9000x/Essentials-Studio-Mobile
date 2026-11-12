@@ -1211,6 +1211,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   };
 
   const selectProjectSprite = (name: string) => {
+    // Switching characters invalidates an in-flight imported image as well as
+    // the previous project image. Otherwise its late onload can replace the
+    // newly selected character and mark the wrong sprite dirty.
+    spriteImportId.current += 1;
+    if (spriteImportUrl.current) {
+      URL.revokeObjectURL(spriteImportUrl.current);
+      spriteImportUrl.current = null;
+    }
+    setImportedSpriteName(null);
     setLoading(true);
     imageCanvasRef.current = null;
     imageDataRef.current = null;
