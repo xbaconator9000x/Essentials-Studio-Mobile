@@ -205,6 +205,10 @@ export function MapEditor({
     setSelectionStart(null);
     setSelectionEnd(null);
     setCursorTile(null);
+    // Menu coordinates and event actions belong to the previous map. Never
+    // leave a stale context menu open where it could mutate the next map.
+    setContextMenu(null);
+    setShowEventList(false);
     setNavigatorVisible(false);
     touchSelectionStartRef.current = null;
     touchGesturesRef.current.cancel();
@@ -218,6 +222,13 @@ export function MapEditor({
     paintChanges.current = [];
     cancelRectangle();
   }, [currentMapId, projectPath, cancelRectangle]);
+
+  // The tile clipboard is useful across maps of one project, but not across
+  // unrelated projects. Reset it on project switches to avoid pasting data
+  // copied from a different project into the newly opened project.
+  useEffect(() => {
+    setTileClipboard(null);
+  }, [projectPath]);
 
   const chooseLayer = useCallback((layer: number) => {
     setSelectedLayer(layer);
