@@ -285,12 +285,13 @@ export function extractSpritePalette(
 /** Exact RGB replacement in the selection or sprite, preserving alpha. */
 export function replaceSpriteColor(
   data: Uint8ClampedArray, width: number, height: number,
-  from: string, to: string, selection?: SpriteSelection | null,
+  from: string, to: string, selection?: SpriteSelection | null, tolerance = 0,
 ): SpritePixelAction | null {
   const area = selection ?? { x: 0, y: 0, width, height };
   const source = parseColor(from);
   const target = parseColor(to);
   if (source === null || target === null || source === target
+      || !Number.isSafeInteger(tolerance) || tolerance < 0 || tolerance > 255
       || !isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
       || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
   const changes = new Map<number, { before: number; after: number }>();
@@ -299,8 +300,20 @@ export function replaceSpriteColor(
       const pixel = y * width + x;
       const before = readPackedPixel(data, pixel);
       const alpha = before & 0xff;
-      if (alpha === 0 || (before >>> 8) !== (source >>> 8)) continue;
-      const after = ((target & 0xffffff00) | alpha) >>> 0;
+      if (alpha === 0) continue;
+      const r = (before >>> 24) & 255;
+      const g = (before >>> 16) & 255;
+      const b = (before >>> 8) & 255;
+      if (Math.max(Math.abs(r - ((source >>> 24) & 255)),
+        Math.abs(g - ((source >>> 16) & 255)),
+        Math.abs(b - ((source >>> 8) & 255))) > tolerance) continue;
+      // Preserve local shade differences relative to the sampled source color.
+      // Exact replacement (tolerance 0) remains backward-compatible.
+      const clamp = (value: number) => Math.max(0, Math.min(255, value));
+      const rr = clamp(((target >>> 24) & 255) + r - ((source >>> 24) & 255));
+      const gg = clamp(((target >>> 16) & 255) + g - ((source >>> 16) & 255));
+      const bb = clamp(((target >>> 8) & 255) + b - ((source >>> 8) & 255));
+      const after = ((rr << 24) | (gg << 16) | (bb << 8) | alpha) >>> 0;
       changes.set(pixel, { before, after });
     }
   }
