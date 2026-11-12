@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/services/mapEditor.ts'
       - 'src/services/mapGestures.ts'
+      - 'src/services/mapEventGraphics.ts'
+      - 'tests/mapEventGraphics.test.mjs'
       - 'src/services/mapEventPlacement.ts'
       - 'src/services/mapCoordinateNavigation.ts'
       - 'src/components/MapEditor/MapNavigator.tsx'
@@ -30,6 +32,8 @@ on:
     paths:
       - 'src/services/mapEditor.ts'
       - 'src/services/mapGestures.ts'
+      - 'src/services/mapEventGraphics.ts'
+      - 'tests/mapEventGraphics.test.mjs'
       - 'src/services/mapEventPlacement.ts'
       - 'src/services/mapCoordinateNavigation.ts'
       - 'src/components/MapEditor/MapNavigator.tsx'
@@ -63,7 +67,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify map fidelity and touch gestures
-        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs tests/mapEdgeEditing.test.mjs tests/mapPassability.test.mjs tests/mapEventPlacement.test.mjs tests/mapCoordinateNavigation.test.mjs
+        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs tests/mapEdgeEditing.test.mjs tests/mapPassability.test.mjs tests/mapEventPlacement.test.mjs tests/mapCoordinateNavigation.test.mjs tests/mapEventGraphics.test.mjs
       - name: Install frontend dependencies
         run: npm ci
       - name: Verify rendered map and tileset editing
