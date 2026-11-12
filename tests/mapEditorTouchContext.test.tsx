@@ -26,6 +26,7 @@ function renderMap({
   onCopyEvent = vi.fn(async () => {}),
   onDeleteEvent = vi.fn(),
   onOpenEvent = vi.fn(),
+  onCreateEvent = vi.fn(),
   onPasteEvent = vi.fn(async () => {}),
   onSetStartPosition = vi.fn(async () => {}),
   tiles = Array(27).fill(0) as number[],
@@ -38,6 +39,7 @@ function renderMap({
   onCopyEvent?: (id: number) => Promise<void>;
   onDeleteEvent?: (id: number, name: string) => void;
   onOpenEvent?: (id: number, name: string) => void;
+  onCreateEvent?: (x: number, y: number) => void;
   onPasteEvent?: (x: number, y: number) => Promise<void>;
   onSetStartPosition?: (x: number, y: number) => Promise<void>;
   tiles?: number[];
@@ -57,6 +59,7 @@ function renderMap({
       readOnly={readOnly}
       onMapDirty={onMapDirty}
       onOpenEvent={onOpenEvent}
+      onCreateEvent={onCreateEvent}
       onDeleteEvent={onDeleteEvent}
       onCopyEvent={onCopyEvent}
       onPasteEvent={onPasteEvent}
@@ -308,5 +311,78 @@ describe("touch map context actions", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Copy event 004 Guide" }));
 
     await waitFor(() => expect(onCopyEvent).toHaveBeenCalledWith(4));
+  });
+});
+
+describe("explicit mobile event placement", () => {
+  it("creates a real map event at an empty tapped tile and exits placement mode", () => {
+    const onCreateEvent = vi.fn();
+    const onMapDirty = vi.fn();
+    const view = renderMap({ events: [], onCreateEvent, onMapDirty });
+    fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
+    expect(screen.getByRole("button", { name: "Events layer" }).getAttribute("aria-pressed")).toBe("true");
+    const canvas = view.container.querySelector("canvas")!;
+    dispatchTouch(canvas, "pointerdown", 100);
+    dispatchTouch(canvas, "pointerup", 150);
+    expect(onCreateEvent).toHaveBeenCalledExactlyOnceWith(1, 1);
+    expect(screen.getByRole("button", { name: "Place new map event" })).toBeTruthy();
+    // Event creation is owned by the project bridge; do not mark tile painting dirty.
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
+
+  it("prevents placing events on occupied tiles until the user selects an empty tile", () => {
+    const onCreateEvent = vi.fn();
+    const view = renderMap({ onCreateEvent });
+    fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
+    fireEvent.click(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
+    expect(onCreateEvent).not.toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toContain("already contains an event");
+    expect(screen.getByRole("button", { name: "Cancel new event placement" })).toBeTruthy();
+    rendererApi.screenToTile.mockReturnValue({ x: 2, y: 0 });
+    fireEvent.click(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
+    expect(onCreateEvent).toHaveBeenCalledExactlyOnceWith(2, 0);
+  });
+
+  it("routes copied-event placement through project paste and prevents accidental duplicate taps", async () => {
+    const pending: { resolve?: () => void } = {};
+    const onPasteEvent = vi.fn(() => new Promise<void>(resolve => { pending.resolve = resolve; }));
+    const view = renderMap({ events: [], hasClipboardEvent: true, onPasteEvent });
+    fireEvent.click(screen.getByRole("button", { name: "Place copied map event" }));
+    const canvas = view.container.querySelector("canvas")!;
+    fireEvent.click(canvas, { clientX: 48, clientY: 48 });
+    await waitFor(() => expect(onPasteEvent).toHaveBeenCalledExactlyOnceWith(1, 1));
+    fireEvent.click(canvas, { clientX: 48, clientY: 48 });
+    expect(onPasteEvent).toHaveBeenCalledTimes(1);
+    pending.resolve?.();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Place copied map event" })).toBeTruthy());
+  });
+
+  it("offers new event on empty-tile long press and makes empty event maps browsable", () => {
+    const onCreateEvent = vi.fn();
+    const view = renderMap({ events: [], onCreateEvent });
+    fireEvent.contextMenu(view.container.querySelector("canvas")!, { clientX: 48, clientY: 48 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "New Event" }));
+    expect(onCreateEvent).toHaveBeenCalledWith(1, 1);
+    fireEvent.click(screen.getByRole("button", { name: "Events (0)" }));
+    expect(screen.getByText("No events on this map.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create a new map event" }));
+    expect(screen.getByRole("button", { name: "Cancel new event placement" })).toBeTruthy();
+    expect(screen.queryByText("No events on this map.")).toBeNull();
+  });
+
+  it("cancels the placement flow when switching to a tile layer or toggling it off", () => {
+    renderMap({ events: [] });
+    fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
+    fireEvent.click(screen.getByRole("button", { name: "Layer 1" }));
+    expect(screen.getByRole("button", { name: "Place new map event" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel new event placement" }));
+    expect(screen.getByRole("button", { name: "Place new map event" })).toBeTruthy();
+  });
+
+  it("does not allow event placement in read-only map previews", () => {
+    renderMap({ readOnly: true });
+    expect(screen.queryByRole("button", { name: "Place new map event" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Place copied map event" })).toBeNull();
   });
 });
