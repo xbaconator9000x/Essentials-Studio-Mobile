@@ -380,3 +380,52 @@ test("invalid sprite transform commands never mutate pixel buffers", () => {
   assert.equal(rotateSquareSpritePixels(data, 2, 2, "sideways"), null);
   assert.deepEqual([...data], original);
 });
+
+test("mirrored strokes paint pixel-exact horizontal, vertical and quadrant symmetry", () => {
+  const data = image(5, 5);
+  const horizontal = paintSpritePixels(data, 5, 5, 0, 1, "#ff5500", 1, false, true, false);
+  assert.equal(horizontal?.pixels.length, 2);
+  assert.deepEqual([0, 1, 2, 3, 4].map(x => data[(1 * 5 + x) * 4]), [255, 0, 0, 0, 255]);
+  const vertical = paintSpritePixels(data, 5, 5, 2, 0, "#00aa00", 1, false, false, true);
+  assert.equal(vertical?.pixels.length, 2);
+  assert.deepEqual([0, 1, 2, 3, 4].map(y => data[(y * 5 + 2) * 4 + 1]), [170, 0, 0, 0, 170]);
+  const quadrants = paintSpritePixels(data, 5, 5, 0, 0, "#0000ff", 1, false, true, true);
+  assert.equal(quadrants?.pixels.length, 4);
+  assert.deepEqual([0, 4, 20, 24].map(p => data[p * 4 + 2]), [255, 255, 255, 255]);
+  const middle = paintSpritePixels(data, 5, 5, 2, 2, "#ffffff", 1, false, true, true);
+  assert.equal(middle?.pixels.length, 1);
+});
+
+test("even-sized brush mirrors painted footprint exactly, including clipping", () => {
+  const data = image(8, 3);
+  const action = paintSpritePixels(data, 8, 3, 2, 1, "#123456", 2, false, true, false);
+  assert.equal(action?.pixels.length, 8);
+  const alphaRows = Array.from({ length: 3 }, (_, y) => Array.from({ length: 8 }, (_, x) => data[(y * 8 + x) * 4 + 3]));
+  assert.deepEqual(alphaRows, [
+    [0, 255, 255, 0, 0, 255, 255, 0],
+    [0, 255, 255, 0, 0, 255, 255, 0],
+    Array(8).fill(0),
+  ]);
+});
+
+test("mirrored erasing is one reversible edit, leaving unmirrored pixels alone", () => {
+  const data = image(5, 1, [99, 88, 77, 255]);
+  const before = [...data];
+  const action = paintSpritePixels(data, 5, 1, 1, 0, "#000000", 1, true, true, false);
+  assert.equal(action?.pixels.length, 2);
+  assert.deepEqual([0, 1, 2, 3, 4].map(x => data[x * 4 + 3]), [255, 0, 255, 0, 255]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], before);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([0, 1, 2, 3, 4].map(x => data[x * 4 + 3]), [255, 0, 255, 0, 255]);
+});
+
+test("mirroring modes reject invalid flags and never mutate malformed buffers", () => {
+  const data = image(2, 2);
+  const prior = [...data];
+  assert.equal(paintSpritePixels(data, 2, 2, 0, 0, "#ffffff", 1, false, "yes", false), null);
+  assert.equal(paintSpritePixels(data, 2, 2, 0, 0, "#ffffff", 1, false, false, null), null);
+  assert.deepEqual([...data], prior);
+});
