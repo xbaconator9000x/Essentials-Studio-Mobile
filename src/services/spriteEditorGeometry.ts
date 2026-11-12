@@ -28,16 +28,15 @@ export function fitSpriteViewport(
     return { zoom: 1, offsetX: 0, offsetY: 0 };
   }
 
-  const zoom = Math.max(
-    1,
-    Math.min(
-      Math.floor(maxZoom),
-      Math.floor(Math.min(
-        (viewportWidth - 32) / imageWidth,
-        (viewportHeight - 32) / imageHeight,
-      )),
-    ),
-  );
+  // Large RMXP character sheets must remain fully visible on portrait phones.
+  // Preserve integer pixel scaling when the image fits; use fractional scaling
+  // only when a 1× image would be cropped by the available canvas.
+  const availableWidth = Math.max(1, viewportWidth - Math.min(32, viewportWidth * 0.1));
+  const availableHeight = Math.max(1, viewportHeight - Math.min(32, viewportHeight * 0.1));
+  const fitScale = Math.min(availableWidth / imageWidth, availableHeight / imageHeight);
+  const zoom = fitScale < 1
+    ? Math.min(1, fitScale)
+    : Math.max(1, Math.min(Math.floor(maxZoom), Math.floor(fitScale)));
   return {
     zoom,
     offsetX: (viewportWidth - imageWidth * zoom) / 2,
