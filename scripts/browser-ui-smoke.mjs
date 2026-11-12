@@ -308,7 +308,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileNavigation = page.getByRole("navigation", { name: "Main navigation" });
   await mobileNavigation.getByRole("button", { name: "Sprites", exact: true }).click();
-  await page.getByRole("button", { name: "Open Sprite Editor (experimental)" }).click();
+  await page.getByRole("button", { name: "Open Sprite Editor" }).click();
   const spriteEditor = page.getByRole("dialog", { name: "Sprite editor" });
   await spriteEditor.waitFor({ timeout: 15_000 });
   await spriteEditor.getByRole("button", { name: "Tools ▸" }).click();
@@ -392,6 +392,43 @@ try {
   assert.equal(sha(original), originalHash, "Original ZIP must not change");
   assert.deepEqual(pageErrors, [], "No uncaught browser JavaScript errors");
   await page.screenshot({ path: join(evidence, "browser-export-complete.png"), fullPage: true });
+
+  // Verify the actual React portrait layout using a rights-cleared project.
+  // These checks are browser viewport evidence, NOT Android KVM acceptance.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  const workspaceActions = page.locator(".app-mobile-workspace-bar");
+  await workspaceActions.waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Save All must be directly available on a phone, not hidden in Settings");
+  assert.equal(await workspaceActions.getByRole("button", { name: "Export project ZIP" }).isVisible(), true,
+    "ZIP export must be directly available on a phone");
+  await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
+  await page.getByRole("combobox", { name: "Select active map tool" }).waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "hidden" });
+  const mobileMetrics = await page.evaluate(() => ({
+    canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
+    compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
+    commandStripHeight: document.querySelector(".app-mobile-workspace-bar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(mobileMetrics.canvasHeight >= 120,
+    "Portrait editor must preserve a usable canvas after toolbars: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.compactToolbarHeight <= 92,
+    "Compact portrait toolbar should not expand into multiple obstructing rows: " + JSON.stringify(mobileMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Choose another map" }).click();
+  await page.locator(".app-mobile-project-summary").waitFor({ state: "visible" });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Save All must stay available when navigating back to the map list");
+  await page.screenshot({ path: join(evidence, "browser-mobile-project-list.png"), fullPage: true });
+  assert.deepEqual(pageErrors, [], "Portrait navigation must not produce uncaught React errors");
+
   const receipt = {
     status: "real Chromium map/event/PBS UI → Rust saves → native ZIP export → reimport passed",
     originalZipSha256: originalHash,
@@ -408,6 +445,8 @@ try {
       sourcePngUnchanged: true,
     },
     reactAndNativeProcessRestartPassed: true,
+    browserPortraitWorkspaceVerified: true,
+    mobileMetrics,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
