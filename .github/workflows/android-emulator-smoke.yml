@@ -73,6 +73,10 @@ jobs:
         with:
           name: android-x86-debug-${{ github.sha }}
           path: src-tauri/gen/android/app/build/outputs/apk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: android-actions/setup-android@v4
       - name: Confirm downloaded APK and source identity
         run: |
