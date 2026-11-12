@@ -152,6 +152,37 @@ describe("sprite editor integration", () => {
     expect((screen.getByRole("textbox", { name: "Quick sprite copy name" }) as HTMLInputElement).value).toBe("NewHero_copy");
   });
 
+  it("clears imported-copy metadata when switching to another project character", async () => {
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero"]);
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const urls = { createObjectURL: vi.fn(() => "blob:switch-import"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 8;
+      height = 6;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", urls);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+    renderEditor();
+    await screen.findByDisplayValue("Guide");
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/synthetic-project", "Guide"));
+    fireEvent.change(screen.getByLabelText("Quick import image as sprite copy"), {
+      target: { files: [new File(["sprite"], "Visitor.png")] },
+    });
+    await screen.findByText("Unsaved imported sprite");
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1));
+    const picker = screen.getByRole("combobox", { name: "Quick select project character sprite" });
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.change(picker, { target: { value: "Hero" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/synthetic-project", "Hero"));
+    expect(screen.queryByText("Unsaved imported sprite")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Quick imported sprite copy name" })).toBeNull();
+  });
+
   it("exports the unscaled source PNG without saving or changing the project", async () => {
     renderEditor();
     await screen.findByDisplayValue("Guide");
