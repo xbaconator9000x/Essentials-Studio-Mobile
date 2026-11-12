@@ -478,6 +478,24 @@ export function MapEditor({
     onMapDirty();
   }, [mapData, readOnly, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
 
+  const translateSelectedTiles = useCallback((dx: number, dy: number, mode: "move" | "copy") => {
+    if (!mapData || readOnly || shortcutsDisabled || !selectionStart || !selectionEnd
+        || selectedLayer === 3 || isPainting.current || isTouchPainting.current) return;
+    const left = Math.min(selectionStart.x, selectionEnd.x);
+    const right = Math.max(selectionStart.x, selectionEnd.x);
+    const top = Math.min(selectionStart.y, selectionEnd.y);
+    const bottom = Math.max(selectionStart.y, selectionEnd.y);
+    const changes = translateMapTileRegion(mapData,
+      { x1: left, y1: top, x2: right, y2: bottom }, selectedLayer, dx, dy, mode);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setSelectionStart({ x: left + dx, y: top + dy });
+    setSelectionEnd({ x: right + dx, y: bottom + dy });
+    setRenderTick(tick => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
+
   const pasteTilesAtCursor = useCallback(() => {
     const origin = cursorTile ?? selectionStart;
     if (!mapData || !tileClipboard || !origin || selectedLayer === 3 || readOnly) return;
@@ -1360,6 +1378,8 @@ export function MapEditor({
           onCopyTiles={copySelectedTiles}
           canClearTiles={!readOnly && !!selectionStart && !!selectionEnd && selectedLayer !== 3}
           onClearTiles={clearSelectedTiles}
+          canTranslateTiles={!readOnly && !shortcutsDisabled && canCopyTiles}
+          onTranslateTiles={translateSelectedTiles}
           onPasteTiles={pasteTilesAtCursor}
           preserveEmptyPaste={preserveEmptyPaste}
           onPreserveEmptyPasteChange={setPreserveEmptyPaste}
