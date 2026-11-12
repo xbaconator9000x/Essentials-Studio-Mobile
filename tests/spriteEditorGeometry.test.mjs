@@ -128,6 +128,9 @@ test("trace pinch clamps scale and offsets and ignores invalid gestures", () => 
 
 test("invalid pointer gestures cannot allocate unbounded sprite strokes", () => {
   assert.deepEqual(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 1_000_000, y: 0 }), []);
+  assert.deepEqual(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 32_769, y: 0 }), []);
+  assert.equal(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 32_768, y: 0 }).length, 32_769);
+  assert.deepEqual(rasterizeSpriteLine({ x: -32_769, y: 0 }, { x: 0, y: 0 }), []);
   assert.deepEqual(rasterizeSpriteLine({ x: NaN, y: 0 }, { x: 1, y: 1 }), []);
   assert.deepEqual(rasterizeSpriteLine({ x: 0.5, y: 0 }, { x: 1, y: 1 }), []);
   assert.equal(rasterizeSpriteLine({ x: 0, y: 0 }, { x: 3, y: 0 }).length, 4);
