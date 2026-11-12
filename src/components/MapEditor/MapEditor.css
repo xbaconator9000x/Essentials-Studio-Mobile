@@ -509,3 +509,22 @@
   .map-editor-toolbar .toolbar-right { margin-left: 0; }
   .map-zoom-slider { width: 90px; }
 }
+
+/* The expanded phone toolbar may contain several rows of controls.
+   Keep the canvas usable while letting those rows scroll independently. */
+@media (max-width: 700px) {
+  .map-editor-toolbar {
+    max-height: min(36vh, 232px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-content: flex-start;
+    scrollbar-width: thin;
+  }
+  .map-editor-canvas-container { min-height: 120px; }
+  .map-editor-status {
+    gap: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+}
