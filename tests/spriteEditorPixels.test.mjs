@@ -579,11 +579,11 @@ test("grayscale and invert preserve alpha and untouched selection pixels with re
 
 test("contrast transformations clamp channels, preserve transparency and reject invalid bulk edits", () => {
   const data = image(2, 1);
-  data.set([0, 128, 255, 100, 10, 20, 30, 0]);
+  data.set([32, 128, 224, 100, 10, 20, 30, 0]);
   const original = data.slice();
   const action = transformSpriteColors(data, 2, 1, "contrast-up");
   assert.ok(action);
-  assert.deepEqual(Array.from(data.slice(0, 4)), [0, 128, 255, 100]);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [13, 128, 243, 100]);
   assert.deepEqual(data.slice(4), original.slice(4));
   assert.equal(transformSpriteColors(data, 2, 1, "not-an-operation"), null);
   assert.equal(transformSpriteColors(data, 2, 1, "invert", { x: 0, y: 0, width: 3, height: 1 }), null);
@@ -591,5 +591,5 @@ test("contrast transformations clamp channels, preserve transparency and reject 
   assert.deepEqual(data.slice(4), original.slice(4));
   const down = transformSpriteColors(data, 2, 1, "contrast-down");
   assert.ok(down);
-  assert.deepEqual(Array.from(data.slice(0, 4)), [26, 128, 230, 100]);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [36, 128, 220, 100]);
 });
