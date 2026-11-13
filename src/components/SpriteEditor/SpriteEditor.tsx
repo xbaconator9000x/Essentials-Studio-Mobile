@@ -36,6 +36,7 @@ import {
   adjustSpriteBrightness,
   transformSpriteColors,
   shiftSpriteHue,
+  simplifySpritePixels,
   type SpritePixelAction,
   type SpriteClipboardImage,
   type SpriteSelection,
@@ -119,6 +120,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [spritePalette, setSpritePalette] = useState<string[]>([]);
   const [replaceFrom, setReplaceFrom] = useState("#000000");
   const [replaceTolerance, setReplaceTolerance] = useState(0);
+  const [posterizeLevels, setPosterizeLevels] = useState(4);
+  const [alphaCutoff, setAlphaCutoff] = useState(128);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [zoom, setZoom] = useState(4);
@@ -596,7 +599,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, []);
 
-  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace" | "lighten" | "darken" | "grayscale" | "invert" | "contrast-up" | "contrast-down" | "hue-forward" | "hue-backward") => {
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace" | "lighten" | "darken" | "grayscale" | "invert" | "contrast-up" | "contrast-down" | "hue-forward" | "hue-backward" | "posterize" | "alpha-threshold") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -609,7 +612,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("90° rotation requires a square selection or square sprite; select a square region first");
       return;
     }
-    const action = operation === "hue-forward" || operation === "hue-backward"
+    const action = operation === "posterize" || operation === "alpha-threshold"
+      ? simplifySpritePixels(image.data, source.width, source.height, operation, operation === "posterize" ? posterizeLevels : alphaCutoff, area)
+      : operation === "hue-forward" || operation === "hue-backward"
       ? shiftSpriteHue(image.data, source.width, source.height, operation === "hue-forward" ? 30 : -30, area)
       : operation === "grayscale" || operation === "invert" || operation === "contrast-up" || operation === "contrast-down"
       ? transformSpriteColors(image.data, source.width, source.height, operation, area)
@@ -633,7 +638,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
     setError(null);
-  }, [brushColor, loading, replaceFrom, replaceTolerance, saving, selection, updateDirty]);
+  }, [alphaCutoff, brushColor, loading, posterizeLevels, replaceFrom, replaceTolerance, saving, selection, updateDirty]);
 
   const exportCurrentSprite = useCallback(async () => {
     const source = imageCanvasRef.current;
@@ -1526,6 +1531,18 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("contrast-down")} aria-label="Decrease sprite selection contrast">Contrast −</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("hue-backward")} aria-label="Shift sprite selection hue backward">Hue −30°</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("hue-forward")} aria-label="Shift sprite selection hue forward">Hue +30°</button>
+              <label className="sprite-editor-quick-color">Posterize levels ({posterizeLevels})
+                <input type="range" aria-label="Posterize channel levels" min={2} max={16} step={1}
+                  value={posterizeLevels} disabled={loading || saving}
+                  onChange={(event) => setPosterizeLevels(Number(event.currentTarget.value))} />
+              </label>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("posterize")}>Posterize RGB</button>
+              <label className="sprite-editor-quick-color">Alpha cutoff ({alphaCutoff})
+                <input type="range" aria-label="Alpha transparency cutoff" min={0} max={255} step={1}
+                  value={alphaCutoff} disabled={loading || saving}
+                  onChange={(event) => setAlphaCutoff(Number(event.currentTarget.value))} />
+              </label>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("alpha-threshold")}>Make alpha binary</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
