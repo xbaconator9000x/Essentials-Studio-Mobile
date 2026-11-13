@@ -730,3 +730,61 @@
 @media (min-width: 701px) {
   .map-toolbar-compact-tabs { display: none; }
 }
+
+/* The task-based mobile toolbar supersedes the legacy single-line rail.
+   In particular, never hide its Pan/More buttons: the previous selector
+   .map-toolbar-quick-tools > button made those commands unreachable. */
+@media (max-width: 700px) {
+  .map-editor-toolbar.map-editor-toolbar--compact {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    align-content: start;
+    gap: 6px;
+    max-height: min(30dvh, 220px);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  .map-editor-toolbar--compact > button:first-child {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+  }
+  .map-editor-toolbar--compact > :not(button:first-child):not(.map-toolbar-compact-tabs) {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 1 1 120px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    width: 100%;
+    max-width: none;
+  }
+  .map-editor-toolbar--compact .toolbar-right {
+    flex-wrap: wrap;
+  }
+  .map-editor-toolbar--compact .map-zoom-slider {
+    display: block;
+  }
+}
