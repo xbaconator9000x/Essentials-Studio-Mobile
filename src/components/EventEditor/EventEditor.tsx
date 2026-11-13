@@ -597,8 +597,17 @@ export function EventEditor({
           </div>
         )}
 
+        <div className="event-editor-mobile-tabs" role="group" aria-label="Event editing workspace">
+          <button type="button" className={mobilePanel === "commands" ? "active" : ""}
+            aria-pressed={mobilePanel === "commands"} onClick={() => setMobilePanel("commands")}>Commands</button>
+          <button type="button" className={mobilePanel === "properties" ? "active" : ""}
+            aria-pressed={mobilePanel === "properties"} onClick={() => {
+              setMobilePanel("properties");
+              setPropertiesCollapsed(false);
+            }}>Page properties</button>
+        </div>
         {/* Body */}
-        <div className="event-editor-body">
+        <div className={`event-editor-body event-editor-body--${mobilePanel}`}>
           {loading ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#8c8fa1" }}>
               Loading event data...
