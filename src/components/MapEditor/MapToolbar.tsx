@@ -134,7 +134,7 @@ export function MapToolbar({
   const [selectionActionsExpanded, setSelectionActionsExpanded] = useState(false);
   const [offsetX, setOffsetX] = useState("1");
   const [offsetY, setOffsetY] = useState("0");
-  const validOffset = /^-?\\d+$/.test(offsetX) && /^-?\\d+$/.test(offsetY)
+  const validOffset = /^-?[0-9]+$/.test(offsetX) && /^-?[0-9]+$/.test(offsetY)
     && Number.isSafeInteger(Number(offsetX)) && Number.isSafeInteger(Number(offsetY))
     && (Number(offsetX) !== 0 || Number(offsetY) !== 0);
   const [quickToolsExpanded, setQuickToolsExpanded] = useState(false);
