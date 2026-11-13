@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PaintTool } from "../../types";
 import type { TileClipboard } from "../../services/mapEditor";
 import {
@@ -118,6 +118,11 @@ export function MapToolbar({
   navigatorVisible = false,
   onToggleNavigator,
 }: MapToolbarProps) {
+  const previousPaintTool = useRef<PaintTool>("pencil");
+  useEffect(() => {
+    if (paintTool !== "pan") previousPaintTool.current = paintTool;
+  }, [paintTool]);
+  const togglePan = () => setPaintTool(paintTool === "pan" ? previousPaintTool.current : "pan");
   const [compactPanel, setCompactPanel] = useState<"edit" | "events" | "view">("edit");
   // Event placement is a modal map interaction. Keep its cancel button and
   // instructions visible even when the user selected another mobile panel.
@@ -196,6 +201,11 @@ export function MapToolbar({
               ))}
             </select>
           </label>
+          <button type="button" className={`toolbar-btn ${paintTool === "pan" ? "active" : ""}`}
+            aria-label={paintTool === "pan" ? "Return to previous drawing tool" : "Temporarily pan map"}
+            aria-pressed={paintTool === "pan"} onClick={togglePan}>
+            {paintTool === "pan" ? "Resume draw" : "Pan map"}
+          </button>
           <button type="button" className="toolbar-btn" aria-expanded={quickToolsExpanded}
             onClick={() => setQuickToolsExpanded(value => !value)}>{quickToolsExpanded ? "Less" : "More tools"}</button>
           {quickToolsExpanded && PAINT_TOOLS.map(({ tool, label }) => (
