@@ -134,7 +134,6 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
-  const [mobileAdvancedTools, setMobileAdvancedTools] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(
     () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches),
