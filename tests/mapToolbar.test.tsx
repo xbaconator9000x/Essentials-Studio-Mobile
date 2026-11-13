@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapToolbar } from "../src/components/MapEditor/MapToolbar";
@@ -543,5 +544,18 @@ describe("portrait map zoom and event actions", () => {
     expect(onToggleEventPlacement).toHaveBeenNthCalledWith(1, "create");
     expect(onToggleEventPlacement).toHaveBeenNthCalledWith(2, "paste");
     expect(screen.getByRole("button", { name: "Events (0)" })).toBeTruthy();
+  });
+});
+
+
+describe("portrait canvas-first CSS regression", () => {
+  it("keeps the compact command rail single-row and horizontally scrollable", () => {
+    const css = readFileSync(new URL("../src/components/MapEditor/MapEditor.css", import.meta.url), "utf8");
+    const rule = css.slice(css.lastIndexOf("/* Browser-verified canvas-first constraint:"));
+    expect(rule).toContain("display: flex;");
+    expect(rule).toContain("flex-flow: row nowrap;");
+    expect(rule).toContain("max-height: 92px;");
+    expect(rule).toContain("overflow-x: auto;");
+    expect(rule).toContain("touch-action: pan-x;");
   });
 });
