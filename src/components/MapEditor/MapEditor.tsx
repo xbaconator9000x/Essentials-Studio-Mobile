@@ -10,6 +10,8 @@ import {
   copyTileRegion,
   pasteTileRegion,
   clearMapTileRegion,
+  translateMapTileRegion,
+  swapMapTileLayers,
   sampleMapTile,
   UndoStack,
   type MapAction,
