@@ -788,3 +788,57 @@
     display: block;
   }
 }
+
+/* Browser-verified canvas-first constraint: the compact toolbar must never
+   consume a 220px vertical panel on a 390px portrait viewport. Keep task tabs
+   and active controls in a single horizontally scrollable command rail. */
+@media (max-width: 700px) {
+  .map-editor-toolbar.map-editor-toolbar--compact {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    align-content: center;
+    gap: 6px;
+    min-height: 0;
+    height: auto;
+    max-height: 92px;
+    padding: 4px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+  }
+  .map-editor-toolbar--compact > *,
+  .map-editor-toolbar--compact > :not(button:first-child):not(.map-toolbar-compact-tabs) {
+    grid-column: auto;
+    grid-row: auto;
+    flex: 0 0 auto;
+    min-width: 0;
+    width: auto;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs {
+    flex: 0 0 auto;
+    width: auto;
+    gap: 3px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs .toolbar-btn {
+    flex: 0 0 auto;
+    padding-inline: 7px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions,
+  .map-editor-toolbar--compact .toolbar-right {
+    width: auto;
+    flex-wrap: nowrap;
+    overflow: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 0 0 auto;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    width: auto;
+    min-width: 90px;
+    max-width: 125px;
+  }
+}
