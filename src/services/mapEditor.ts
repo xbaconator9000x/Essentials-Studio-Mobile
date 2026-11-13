@@ -364,6 +364,39 @@ export function clearMapTileRegion(
  * A source snapshot prevents overlap corruption. The destination is clipped
  * to map bounds and all three XP layers remain independent. This is a single
  * undoable edit; events and metadata are never moved. */
+/** Exchange two XP tile layers within a rectangular selection, without
+ * flattening autotiles or changing events. A canonical delta makes the entire
+ * exchange one reversible operation. */
+export function swapMapTileLayers(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  firstLayer: number,
+  secondLayer: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(firstLayer) || !validLayer(secondLayer)
+      || firstLayer === secondLayer
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const firstBefore = map.tiles.slice(firstLayer * area, (firstLayer + 1) * area);
+  const secondBefore = map.tiles.slice(secondLayer * area, (secondLayer + 1) * area);
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const index = y * map.width + x;
+      map.tiles[firstLayer * area + index] = secondBefore[index];
+      map.tiles[secondLayer * area + index] = firstBefore[index];
+    }
+  }
+  return [
+    ...canonicalMapLayerChanges(map, firstLayer, firstBefore),
+    ...canonicalMapLayerChanges(map, secondLayer, secondBefore),
+  ];
+}
+
 export function translateMapTileRegion(
   map: MapRenderData,
   rect: { x1: number; y1: number; x2: number; y2: number },
