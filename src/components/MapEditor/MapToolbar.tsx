@@ -118,6 +118,10 @@ export function MapToolbar({
   navigatorVisible = false,
   onToggleNavigator,
 }: MapToolbarProps) {
+  const [compactPanel, setCompactPanel] = useState<"edit" | "events" | "view">("edit");
+  const [selectionActionsExpanded, setSelectionActionsExpanded] = useState(false);
+  const [quickToolsExpanded, setQuickToolsExpanded] = useState(false);
+  const [quickLayersExpanded, setQuickLayersExpanded] = useState(false);
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => readBooleanPanelPreference(TOOLS_COLLAPSED_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia(COMPACT_LAYOUT_QUERY).matches),
@@ -147,6 +151,16 @@ export function MapToolbar({
       >
         {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
       </button>
+      {toolsCollapsed && (
+        <div className="map-toolbar-compact-tabs" role="group" aria-label="Mobile map workspace">
+          {(["edit", "events", "view"] as const).map(panel => (
+            <button key={panel} type="button" className={`toolbar-btn ${compactPanel === panel ? "active" : ""}`}
+              aria-pressed={compactPanel === panel} onClick={() => setCompactPanel(panel)}>
+              {panel === "edit" ? "Draw" : panel === "events" ? `Events (${eventCount})` : "View"}
+            </button>
+          ))}
+        </div>
+      )}
       {!toolsCollapsed && !readOnly && <div className="toolbar-group">
         <span className="toolbar-label">Tool:</span>
         {PAINT_TOOLS.map(({ tool, label }) => (
@@ -166,7 +180,7 @@ export function MapToolbar({
           </span>
         )}
       </div>}
-      {toolsCollapsed && !readOnly && (
+      {toolsCollapsed && compactPanel === "edit" && !readOnly && (
         <div className="toolbar-group map-toolbar-quick-tools" role="group" aria-label="Quick map tools">
           <label className="map-toolbar-native-tool-select">
             <span>Tool</span>
@@ -177,7 +191,9 @@ export function MapToolbar({
               ))}
             </select>
           </label>
-          {PAINT_TOOLS.map(({ tool, label }) => (
+          <button type="button" className="toolbar-btn" aria-expanded={quickToolsExpanded}
+            onClick={() => setQuickToolsExpanded(value => !value)}>{quickToolsExpanded ? "Less" : "More tools"}</button>
+          {quickToolsExpanded && PAINT_TOOLS.map(({ tool, label }) => (
             <button
               key={tool}
               className={`toolbar-btn ${paintTool === tool ? "active" : ""}`}
@@ -192,18 +208,18 @@ export function MapToolbar({
         </div>
       )}
 
-      <div className="toolbar-separator" />
+      {!toolsCollapsed && <div className="toolbar-separator" />}
 
       {/* Touch users have no physical Ctrl/Cmd+Z/Y keyboard. Keep map history
           accessible directly and route it through the same dirty-save path. */}
-      <div className="toolbar-group" aria-label="Map edit history">
+      {(!toolsCollapsed || compactPanel === "edit") && <div className="toolbar-group" aria-label="Map edit history">
         <button className="toolbar-btn" onClick={onUndo} disabled={historyDisabled || readOnly}
           title="Undo tile edit" aria-label="Undo tile edit">Undo</button>
         <button className="toolbar-btn" onClick={onRedo} disabled={historyDisabled || readOnly}
           title="Redo tile edit" aria-label="Redo tile edit">Redo</button>
-      </div>
+      </div>}
 
-      <div className="toolbar-separator" />
+      {!toolsCollapsed && <div className="toolbar-separator" />}
 
       {!toolsCollapsed && <div className="toolbar-group" role="group" aria-label="Map layers">
         <span className="toolbar-label">Layer:</span>
@@ -220,9 +236,11 @@ export function MapToolbar({
           </button>
         ))}
       </div>}
-      {toolsCollapsed && (
+      {toolsCollapsed && compactPanel === "edit" && (
         <div className="toolbar-group map-toolbar-quick-layers" role="group" aria-label="Quick map layers">
-          {MAP_LAYERS.map(({ layer, label, name }) => (
+          <button type="button" className="toolbar-btn" aria-expanded={quickLayersExpanded}
+            onClick={() => setQuickLayersExpanded(value => !value)}>{quickLayersExpanded ? "Hide layers" : "Layers"}</button>
+          {quickLayersExpanded && MAP_LAYERS.map(({ layer, label, name }) => (
             <button
               key={layer}
               className={`toolbar-btn ${selectedLayer === layer ? "active" : ""}`}
@@ -256,7 +274,7 @@ export function MapToolbar({
         </div>
       )}
 
-      {toolsCollapsed && (
+      {toolsCollapsed && compactPanel === "view" && (
         <div className="toolbar-group map-layer-visibility" role="group" aria-label="Quick visible tile layers">
           {([0, 1, 2] as const).map((layer) => (
             <label className="toolbar-check" key={layer}>
@@ -273,7 +291,7 @@ export function MapToolbar({
         </div>
       )}
 
-      {toolsCollapsed && (
+      {toolsCollapsed && compactPanel === "view" && (
         <label className="toolbar-check map-toolbar-quick-grid">
           <input
             type="checkbox"
@@ -285,8 +303,11 @@ export function MapToolbar({
         </label>
       )}
 
-      {!readOnly && (toolsCollapsed || paintTool === "select") && (
+      {!readOnly && (!toolsCollapsed ? paintTool === "select" : compactPanel === "edit" && paintTool === "select") && (
         <div className="toolbar-group map-toolbar-selection-actions" role="group" aria-label="Tile selection actions">
+          {toolsCollapsed && <button type="button" className="toolbar-btn" aria-expanded={selectionActionsExpanded}
+            onClick={() => setSelectionActionsExpanded(value => !value)}>{selectionActionsExpanded ? "Less selection" : "Selection actions"}</button>}
+          {(!toolsCollapsed || selectionActionsExpanded) && <>
           <button
             className="toolbar-btn"
             onClick={onCopyTiles}
@@ -340,10 +361,11 @@ export function MapToolbar({
               Clipboard {tileClipboard.width}×{tileClipboard.height}
             </span>
           )}
+          </>}
         </div>
       )}
 
-      <div className="toolbar-separator" />
+      {!toolsCollapsed && <div className="toolbar-separator" />}
 
       {!toolsCollapsed && <div className="toolbar-group">
         <label className="toolbar-check">
@@ -356,7 +378,7 @@ export function MapToolbar({
         </label>
       </div>}
 
-      <label className="toolbar-check toolbar-pin-toggle">
+      {(!toolsCollapsed || compactPanel === "view") && <label className="toolbar-check toolbar-pin-toggle">
         <input
           type="checkbox"
           aria-label="Show event pins"
@@ -364,9 +386,9 @@ export function MapToolbar({
           onChange={(e) => setShowEventPins(e.target.checked)}
         />
         Pins
-      </label>
+      </label>}
 
-      <label className="toolbar-check toolbar-collision-toggle">
+      {(!toolsCollapsed || compactPanel === "view") && <label className="toolbar-check toolbar-collision-toggle">
         <input
           type="checkbox"
           aria-label="Show collision overlay"
@@ -375,12 +397,12 @@ export function MapToolbar({
           onChange={(event) => setShowCollisionOverlay(event.target.checked)}
         />
         Collision
-      </label>
+      </label>}
 
-      {onToggleNavigator && <button type="button" className={`toolbar-btn ${navigatorVisible ? "active" : ""}`}
+      {(!toolsCollapsed || compactPanel === "view") && onToggleNavigator && <button type="button" className={`toolbar-btn ${navigatorVisible ? "active" : ""}`}
         aria-label="Navigate to map coordinates" aria-expanded={navigatorVisible}
         aria-controls="map-coordinate-navigator" onClick={onToggleNavigator}>Go to X,Y</button>}
-      <div className="toolbar-group map-toolbar-event-actions" role="group" aria-label="Map event placement">
+      {(!toolsCollapsed || compactPanel === "events") && <div className="toolbar-group map-toolbar-event-actions" role="group" aria-label="Map event placement">
         {!readOnly && canCreateEvent && onToggleEventPlacement && (
           <button type="button" className={`toolbar-btn ${eventPlacementMode === "create" ? "active" : ""}`}
             aria-label={eventPlacementMode === "create" ? "Cancel new event placement" : "Place new map event"}
@@ -397,13 +419,13 @@ export function MapToolbar({
             onClick={() => onToggleEventPlacement("paste")}
           >{eventPlacementMode === "paste" ? "Cancel paste" : "Paste event"}</button>
         )}
-      </div>
+      </div>}
       {eventPlacementMode && (
         <span className="toolbar-label map-event-placement-hint" role="status">
           {eventPlacementPending ? "Saving event…" : `Tap an empty map tile to ${eventPlacementMode === "create" ? "create" : "paste"} an event. Tap the active button to cancel.`}
         </span>
       )}
-      {(
+      {(!toolsCollapsed || compactPanel === "events") && (
         <button
           className="toolbar-btn"
           aria-expanded={eventListVisible}
@@ -413,24 +435,24 @@ export function MapToolbar({
           Events ({eventCount})
         </button>
       )}
-      {hasClipboardEvent && (
+      {(!toolsCollapsed || compactPanel === "events") && hasClipboardEvent && (
         <span className="toolbar-label" role="status">
           Event copied; long-press a map tile to paste
         </span>
       )}
-      <span className="toolbar-label map-touch-hint">
+      {(!toolsCollapsed || compactPanel === "events") && <span className="toolbar-label map-touch-hint">
         {paintTool === "rectangle" ? "Drag to preview a rectangle; release to paint. Two fingers cancel and zoom." : "Long-press a map tile for event actions"}
-      </span>
+      </span>}
 
-      <button
+      {(!toolsCollapsed || compactPanel === "edit") && <button
         className="toolbar-btn"
         aria-pressed={paletteVisible}
         onClick={onTogglePalette}
       >
         {paletteVisible ? "Hide palette" : "Show palette"}
-      </button>
+      </button>}
 
-      <div className="toolbar-group toolbar-right">
+      {(!toolsCollapsed || compactPanel === "view") && <div className="toolbar-group toolbar-right">
         <span className="toolbar-label">
           Zoom: {Math.round(zoom * 100)}%
         </span>
@@ -446,7 +468,7 @@ export function MapToolbar({
           title="Reset zoom" aria-label="Reset map zoom">1:1</button>
         {onFitMap && <button type="button" className="toolbar-btn toolbar-btn-sm"
           aria-label="Fit entire map to viewport" onClick={onFitMap}>Fit</button>}
-      </div>
+      </div>}
     </div>
   );
 }
