@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, mirrorMapTileRegion, copyMapTileRegionToLayer, mirrorMapTileRegion,
+  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, mirrorMapTileRegion, copyMapTileRegionToLayer,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
