@@ -2100,3 +2100,26 @@ describe("exact sprite zoom controls", () => {
     expect(view.container.querySelector('[aria-label="Sprite canvas"]')).toBeTruthy();
   });
 });
+
+
+describe("portrait sprite task workspace", () => {
+  it("switches between drawing, asset import and transforms without mutating sprite data", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const view = renderEditor();
+    await screen.findByDisplayValue("Guide");
+    const panel = view.container.querySelector(".sprite-editor-quick-tools") as HTMLElement;
+    expect(panel.dataset.activePanel).toBe("draw");
+    expect(screen.getByRole("button", { name: "Draw" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Sprites & trace" }));
+    expect(panel.dataset.activePanel).toBe("assets");
+    expect(screen.getByRole("button", { name: "Sprites & trace" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Transform" }));
+    expect(panel.dataset.activePanel).toBe("transform");
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    expect(panel.dataset.activePanel).toBe("draw");
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+});
