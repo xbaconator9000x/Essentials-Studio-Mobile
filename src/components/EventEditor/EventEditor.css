@@ -1307,3 +1307,44 @@
     background: var(--color-mantle);
   }
 }
+
+/* The event editor keeps page properties and command history mounted while
+   presenting one editing surface at a time on narrow touch screens. */
+.event-editor-mobile-tabs { display: none; }
+@media (max-width: 700px) {
+  .event-editor-mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--color-mantle);
+    border-bottom: 1px solid var(--color-surface0);
+    flex-shrink: 0;
+  }
+  .event-editor-mobile-tabs button {
+    min-height: 44px;
+    border: 1px solid var(--color-surface1);
+    border-radius: 5px;
+    background: var(--color-surface0);
+    color: var(--color-text);
+    font: inherit;
+  }
+  .event-editor-mobile-tabs button.active {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-surface1);
+  }
+  .event-editor-body--commands > .event-page-properties { display: none; }
+  .event-editor-body--properties > .event-command-panel { display: none; }
+  .event-editor-body--properties > .event-page-properties {
+    display: block;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    border-right: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .event-editor-body--properties .event-page-properties-content { display: block; }
+}
