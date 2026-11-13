@@ -288,6 +288,51 @@ export function extractSpritePalette(
  * Returns one canonical reversible pixel action for Save All and undo/redo. */
 /** Reversible pixel-level color transforms. Preserve original alpha and all
  * transparent RGB bytes; limit work to a valid bounded sprite selection. */
+/** Rotate hue by a signed angle without modifying alpha, saturation or luminance.
+ * Work is bounded and applied atomically as one undoable pixel action. */
+export function shiftSpriteHue(
+  data: Uint8ClampedArray, width: number, height: number,
+  degrees: number, selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS
+      || !Number.isSafeInteger(degrees) || degrees < -360 || degrees > 360
+      || degrees % 360 === 0) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = area.y; y < area.y + area.height; y++) for (let x = area.x; x < area.x + area.width; x++) {
+    const pixel = y * width + x;
+    const before = readPackedPixel(data, pixel);
+    const alpha = before & 255;
+    if (!alpha) continue;
+    const r = ((before >>> 24) & 255) / 255;
+    const g = ((before >>> 16) & 255) / 255;
+    const b = ((before >>> 8) & 255) / 255;
+    const maximum = Math.max(r, g, b);
+    const minimum = Math.min(r, g, b);
+    const chroma = maximum - minimum;
+    if (chroma === 0) continue;
+    let hue = maximum === r ? ((g - b) / chroma) % 6
+      : maximum === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4;
+    hue = ((hue * 60 + degrees) % 360 + 360) % 360;
+    const lightness = (maximum + minimum) / 2;
+    const saturation = chroma / (1 - Math.abs(2 * lightness - 1));
+    const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const h = hue / 60;
+    const secondary = c * (1 - Math.abs(h % 2 - 1));
+    const channels = h < 1 ? [c, secondary, 0] : h < 2 ? [secondary, c, 0]
+      : h < 3 ? [0, c, secondary] : h < 4 ? [0, secondary, c]
+      : h < 5 ? [secondary, 0, c] : [c, 0, secondary];
+    const offset = lightness - c / 2;
+    const rgb = channels.map(value => Math.max(0, Math.min(255, Math.round((value + offset) * 255))));
+    const after = ((rgb[0] << 24) | (rgb[1] << 16) | (rgb[2] << 8) | alpha) >>> 0;
+    if (after !== before) changes.set(pixel, { before, after });
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 export function transformSpriteColors(
   data: Uint8ClampedArray, width: number, height: number,
   operation: "grayscale" | "invert" | "contrast-up" | "contrast-down",
