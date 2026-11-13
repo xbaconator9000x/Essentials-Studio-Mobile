@@ -29,6 +29,7 @@ interface MapToolbarProps {
   onClearTiles: () => void;
   canTranslateTiles: boolean;
   onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
+  onSwapSelectedLayers: (targetLayer: number) => void;
   onPasteTiles: () => void;
   preserveEmptyPaste: boolean;
   onPreserveEmptyPasteChange: (value: boolean) => void;
@@ -94,6 +95,7 @@ export function MapToolbar({
   onClearTiles,
   canTranslateTiles,
   onTranslateTiles,
+  onSwapSelectedLayers,
   onPasteTiles,
   preserveEmptyPaste,
   onPreserveEmptyPasteChange,
@@ -309,6 +311,16 @@ export function MapToolbar({
               aria-label="Duplicate selected tiles right"
               onClick={() => onTranslateTiles(1, 0, "copy")}>Duplicate →</button>
           </div>
+          {selectedLayer >= 0 && selectedLayer <= 2 && (
+            <div className="toolbar-group" role="group" aria-label="Exchange selected map layers">
+              {([0, 1, 2] as const).filter(layer => layer !== selectedLayer).map(layer => (
+                <button key={layer} type="button" className="toolbar-btn"
+                  disabled={!canTranslateTiles}
+                  aria-label={`Swap selected layer ${selectedLayer + 1} with layer ${layer + 1}`}
+                  onClick={() => onSwapSelectedLayers(layer)}>Swap L{layer + 1}</button>
+              ))}
+            </div>
+          )}
           <button
             className="toolbar-btn"
             onClick={onPasteTiles}
