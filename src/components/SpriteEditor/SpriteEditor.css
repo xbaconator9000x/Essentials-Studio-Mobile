@@ -578,3 +578,31 @@
     flex-shrink: 0;
   }
 }
+
+/* Compact sprite workspace: show only the active editing task instead of
+   stacking asset imports, painting, tracing and transforms over the canvas. */
+.sprite-editor-mobile-tabs { display: flex; gap: 6px; flex: 1 0 100%; }
+.sprite-editor-mobile-tabs button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-surface1);
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+.sprite-editor-mobile-tabs button[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-surface2);
+  color: var(--color-accent);
+}
+.sprite-editor-quick-tools[data-active-panel="draw"] [data-mobile-panel]:not([data-mobile-panel="draw"]),
+.sprite-editor-quick-tools[data-active-panel="assets"] [data-mobile-panel]:not([data-mobile-panel="assets"]),
+.sprite-editor-quick-tools[data-active-panel="transform"] [data-mobile-panel]:not([data-mobile-panel="transform"]) {
+  display: none;
+}
+@media (max-width: 700px) {
+  .sprite-editor-quick-tools { max-height: min(28vh, 200px); overflow-y: auto; overscroll-behavior: contain; }
+  .sprite-editor-mobile-tabs { position: sticky; top: 0; z-index: 2; background: var(--color-base); padding-block: 3px; }
+}
