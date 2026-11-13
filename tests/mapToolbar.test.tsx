@@ -363,7 +363,7 @@ describe("mobile map toolbar", () => {
     expect(setSelectedLayer).toHaveBeenCalledWith(3);
 
     view.rerender(toolbar(3, false, null));
-    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
+    fireEvent.click(screen.getByRole("button", { name: "Selection actions" }));
     expect((screen.getByRole("button", { name: "Copy selected tiles" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(true);
 
