@@ -156,7 +156,7 @@ export function MapToolbar({
           {(["edit", "events", "view"] as const).map(panel => (
             <button key={panel} type="button" className={`toolbar-btn ${compactPanel === panel ? "active" : ""}`}
               aria-pressed={compactPanel === panel} onClick={() => setCompactPanel(panel)}>
-              {panel === "edit" ? "Draw" : panel === "events" ? `Events (${eventCount})` : "View"}
+              {panel === "edit" ? "Draw" : panel === "events" ? "Event tools" : "View"}
             </button>
           ))}
         </div>
