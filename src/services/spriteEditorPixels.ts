@@ -288,6 +288,47 @@ export function extractSpritePalette(
  * Returns one canonical reversible pixel action for Save All and undo/redo. */
 /** Reversible pixel-level color transforms. Preserve original alpha and all
  * transparent RGB bytes; limit work to a valid bounded sprite selection. */
+/** Reduce sprite RGB to evenly spaced channel levels, or threshold opacity.
+ * Operations preserve fully transparent RGBA bytes and are atomic/undoable.
+ * Posterization retains the original alpha; thresholding retains RGB.
+ */
+export function simplifySpritePixels(
+  data: Uint8ClampedArray, width: number, height: number,
+  operation: "posterize" | "alpha-threshold",
+  parameter: number, selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS
+      || !Number.isSafeInteger(parameter)
+      || (operation === "posterize" && (parameter < 2 || parameter > 16))
+      || (operation === "alpha-threshold" && (parameter < 0 || parameter > 255))
+      || (operation !== "posterize" && operation !== "alpha-threshold")) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = area.y; y < area.y + area.height; y++) {
+    for (let x = area.x; x < area.x + area.width; x++) {
+      const pixel = y * width + x;
+      const before = readPackedPixel(data, pixel);
+      const alpha = before & 255;
+      if (alpha === 0) continue;
+      let after: number;
+      if (operation === "posterize") {
+        const quantize = (channel: number) =>
+          Math.round(Math.round(channel * (parameter - 1) / 255) * 255 / (parameter - 1));
+        after = ((quantize((before >>> 24) & 255) << 24)
+          | (quantize((before >>> 16) & 255) << 16)
+          | (quantize((before >>> 8) & 255) << 8) | alpha) >>> 0;
+      } else {
+        after = ((before & 0xffffff00) | (alpha >= parameter ? 255 : 0)) >>> 0;
+      }
+      if (after !== before) changes.set(pixel, { before, after });
+    }
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 /** Rotate hue by a signed angle without modifying alpha, saturation or luminance.
  * Work is bounded and applied atomically as one undoable pixel action. */
 export function shiftSpriteHue(
