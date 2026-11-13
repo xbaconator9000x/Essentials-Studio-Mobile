@@ -30,7 +30,7 @@ interface MapToolbarProps {
   canTranslateTiles: boolean;
   onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
   onSwapSelectedLayers: (targetLayer: number) => void;
-  onCopySelectedTilesToLayer: (targetLayer: number, emptyMode: "preserve" | "replace") => void;
+  onCopySelectedTilesToLayer?: (targetLayer: number, emptyMode: "preserve" | "replace") => void;
   onPasteTiles: () => void;
   preserveEmptyPaste: boolean;
   onPreserveEmptyPasteChange: (value: boolean) => void;
@@ -377,7 +377,7 @@ export function MapToolbar({
               ))}
             </div>
           )}
-          {selectedLayer >= 0 && selectedLayer <= 2 && (
+          {onCopySelectedTilesToLayer && selectedLayer >= 0 && selectedLayer <= 2 && (
             <div className="toolbar-group" role="group" aria-label="Copy selection between map layers">
               {([0, 1, 2] as const).filter(layer => layer !== selectedLayer).map(layer => (
                 <button key={layer} type="button" className="toolbar-btn"
