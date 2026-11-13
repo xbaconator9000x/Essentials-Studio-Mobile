@@ -11,6 +11,7 @@ import {
   pasteTileRegion,
   clearMapTileRegion,
   translateMapTileRegion,
+  mirrorMapTileRegion,
   swapMapTileLayers,
   copyMapTileRegionToLayer,
   sampleMapTile,
@@ -495,6 +496,19 @@ export function MapEditor({
     rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
     setSelectionStart({ x: left + dx, y: top + dy });
     setSelectionEnd({ x: right + dx, y: bottom + dy });
+    setRenderTick(tick => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
+
+  const mirrorSelectedTiles = useCallback((axis: "horizontal" | "vertical") => {
+    if (!mapData || readOnly || shortcutsDisabled || !selectionStart || !selectionEnd
+        || selectedLayer === 3 || isPainting.current || isTouchPainting.current) return;
+    const changes = mirrorMapTileRegion(mapData,
+      { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
+      selectedLayer, axis);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
     setRenderTick(tick => tick + 1);
     onMapDirty();
   }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
@@ -1409,6 +1423,7 @@ export function MapEditor({
           onClearTiles={clearSelectedTiles}
           canTranslateTiles={!readOnly && !shortcutsDisabled && canCopyTiles}
           onTranslateTiles={translateSelectedTiles}
+          onMirrorSelectedTiles={mirrorSelectedTiles}
           onSwapSelectedLayers={swapSelectedLayers}
           onCopySelectedTilesToLayer={copySelectedTilesToLayer}
           onPasteTiles={pasteTilesAtCursor}
