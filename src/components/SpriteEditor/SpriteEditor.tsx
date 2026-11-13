@@ -931,7 +931,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setSelection(normalizeSpriteSelection(pixel, pixel, imageCanvasRef.current!.width, imageCanvasRef.current!.height));
       return;
     }
-    if (tool === "fill" || tool === "eyedropper") {
+    if (tool === "fill" || tool === "match-fill" || tool === "eyedropper") {
       if (event.pointerType === "touch") {
         pendingTouchPaint.current = { id: event.pointerId, point };
       } else {
@@ -1021,7 +1021,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         tracePan.y + (point.y - tracePan.point.y) / (source.height * zoom) * 100,
       )));
     } else if (pendingTouchPaint.current?.id === event.pointerId) {
-      if (tool === "fill" || tool === "eyedropper") return;
+      if (tool === "fill" || tool === "match-fill" || tool === "eyedropper") return;
       const start = pendingTouchPaint.current.point;
       pendingTouchPaint.current = null;
       lastPaintPixel.current = pixelAtClient(start.x, start.y);
@@ -1624,6 +1624,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 ["eraser", "Erase (E)"],
                 ["eyedropper", "Pick (I)"],
                 ["fill", "Fill (G)"],
+                ["match-fill", "Match fill"],
                 ["select", "Select (S)"],
                 ["pan", "Pan (P)"],
               ] as [SpriteTool, string][]).map(([name, label]) => (
