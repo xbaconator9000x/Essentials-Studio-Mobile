@@ -29,6 +29,7 @@ interface MapToolbarProps {
   onClearTiles: () => void;
   canTranslateTiles: boolean;
   onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
+  onMirrorSelectedTiles?: (axis: "horizontal" | "vertical") => void;
   onSwapSelectedLayers: (targetLayer: number) => void;
   onCopySelectedTilesToLayer?: (targetLayer: number, emptyMode: "preserve" | "replace") => void;
   onPasteTiles: () => void;
@@ -96,6 +97,7 @@ export function MapToolbar({
   onClearTiles,
   canTranslateTiles,
   onTranslateTiles,
+  onMirrorSelectedTiles,
   onSwapSelectedLayers,
   onCopySelectedTilesToLayer,
   onPasteTiles,
@@ -384,6 +386,16 @@ export function MapToolbar({
               disabled={!canTranslateTiles || !validOffset}
               onClick={() => onTranslateTiles(Number(offsetX), Number(offsetY), "copy")}>Copy offset</button>
           </div>
+          {onMirrorSelectedTiles && (
+            <div className="toolbar-group" role="group" aria-label="Mirror selected tile positions">
+              <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
+                aria-label="Mirror selected tiles horizontally"
+                onClick={() => onMirrorSelectedTiles("horizontal")}>Mirror ↔</button>
+              <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
+                aria-label="Mirror selected tiles vertically"
+                onClick={() => onMirrorSelectedTiles("vertical")}>Mirror ↕</button>
+            </div>
+          )}
           {selectedLayer >= 0 && selectedLayer <= 2 && (
             <div className="toolbar-group" role="group" aria-label="Exchange selected map layers">
               {([0, 1, 2] as const).filter(layer => layer !== selectedLayer).map(layer => (
