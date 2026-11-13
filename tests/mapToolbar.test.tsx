@@ -692,3 +692,31 @@ describe("arbitrary selection tile offsets", () => {
     expect((screen.getByRole("button", { name: "Duplicate selection by tile offset" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+
+describe("mirror selection mobile controls", () => {
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
+  it("invokes horizontal and vertical transforms and disables them for read-only selection", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const onMirrorSelectedTiles = vi.fn();
+    const props = {
+      paintTool: "select" as const, setPaintTool: vi.fn(), tileClipboard: null,
+      selectedLayer: 0, setSelectedLayer: vi.fn(), showGrid: true, setShowGrid: vi.fn(),
+      zoom: 1, setZoom: vi.fn(), onUndo: vi.fn(), onRedo: vi.fn(),
+      ...noTileClipboardActions, canCopyTiles: true, canTranslateTiles: true,
+      canClearTiles: true, onClearTiles: vi.fn(), onTranslateTiles: vi.fn(),
+      onMirrorSelectedTiles, onSwapSelectedLayers: vi.fn(), preserveEmptyPaste: false,
+      onPreserveEmptyPasteChange: vi.fn(), showEventPins: true,
+      setShowEventPins: vi.fn(), paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Selection actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mirror selected tiles horizontally" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mirror selected tiles vertically" }));
+    expect(onMirrorSelectedTiles).toHaveBeenNthCalledWith(1, "horizontal");
+    expect(onMirrorSelectedTiles).toHaveBeenNthCalledWith(2, "vertical");
+    view.rerender(<MapToolbar {...props} canTranslateTiles={false} />);
+    expect((screen.getByRole("button", { name: "Mirror selected tiles horizontally" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
