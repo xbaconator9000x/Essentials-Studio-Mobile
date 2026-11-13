@@ -286,6 +286,46 @@ export function extractSpritePalette(
 /** Adjust RGB brightness without changing alpha, transparent pixels or image dimensions.
  * Selection bounds and the one-million-pixel edit budget are checked before mutation.
  * Returns one canonical reversible pixel action for Save All and undo/redo. */
+/** Reversible pixel-level color transforms. Preserve original alpha and all
+ * transparent RGB bytes; limit work to a valid bounded sprite selection. */
+export function transformSpriteColors(
+  data: Uint8ClampedArray, width: number, height: number,
+  operation: "grayscale" | "invert" | "contrast-up" | "contrast-down",
+  selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS
+      || !["grayscale", "invert", "contrast-up", "contrast-down"].includes(operation)) return null;
+  const changes = new Map<number, { before: number; after: number }>();
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  for (let y = area.y; y < area.y + area.height; y++) for (let x = area.x; x < area.x + area.width; x++) {
+    const pixel = y * width + x;
+    const before = readPackedPixel(data, pixel);
+    const alpha = before & 255;
+    if (!alpha) continue;
+    let r = (before >>> 24) & 255;
+    let g = (before >>> 16) & 255;
+    let b = (before >>> 8) & 255;
+    if (operation === "grayscale") {
+      const luminance = clamp(0.2126 * r + 0.7152 * g + 0.0722 * b);
+      r = g = b = luminance;
+    } else if (operation === "invert") {
+      r = 255 - r; g = 255 - g; b = 255 - b;
+    } else {
+      const factor = operation === "contrast-up" ? 1.2 : 0.8;
+      r = clamp((r - 128) * factor + 128);
+      g = clamp((g - 128) * factor + 128);
+      b = clamp((b - 128) * factor + 128);
+    }
+    const after = ((r << 24) | (g << 16) | (b << 8) | alpha) >>> 0;
+    if (before !== after) changes.set(pixel, { before, after });
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 export function adjustSpriteBrightness(
   data: Uint8ClampedArray, width: number, height: number,
   delta: number, selection?: SpriteSelection | null,
