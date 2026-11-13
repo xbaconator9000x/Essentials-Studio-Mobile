@@ -16,6 +16,7 @@ import {
   extractSpritePalette,
   replaceSpriteColor,
   adjustSpriteBrightness,
+  transformSpriteColors,
 } from "../src/services/spriteEditorPixels.ts";
 
 function image(width, height, color = [0, 0, 0, 0]) {
@@ -554,4 +555,41 @@ test("darken clamps channels, ignores fully transparent pixels and rejects inval
   }
   assert.equal(adjustSpriteBrightness(data, 2, 1, 16, { x: 1, y: 0, width: 2, height: 1 }), null);
   assert.deepEqual([...data], before);
+});
+
+
+test("grayscale and invert preserve alpha and untouched selection pixels with reversible actions", () => {
+  const data = image(3, 1);
+  data.set([255, 0, 0, 128, 0, 255, 0, 255, 15, 30, 45, 0]);
+  const original = data.slice();
+  const history = new SpritePixelHistory();
+  const gray = transformSpriteColors(data, 3, 1, "grayscale", { x: 0, y: 0, width: 1, height: 1 });
+  assert.ok(gray);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [54, 54, 54, 128]);
+  assert.deepEqual(Array.from(data.slice(4)), Array.from(original.slice(4)));
+  assert.equal(history.push(gray), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual(data, original);
+  assert.equal(history.redo(data), true);
+  const inverted = transformSpriteColors(data, 3, 1, "invert");
+  assert.ok(inverted);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [201, 201, 201, 128]);
+  assert.deepEqual(Array.from(data.slice(8, 12)), [15, 30, 45, 0]);
+});
+
+test("contrast transformations clamp channels, preserve transparency and reject invalid bulk edits", () => {
+  const data = image(2, 1);
+  data.set([0, 128, 255, 100, 10, 20, 30, 0]);
+  const original = data.slice();
+  const action = transformSpriteColors(data, 2, 1, "contrast-up");
+  assert.ok(action);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [0, 128, 255, 100]);
+  assert.deepEqual(data.slice(4), original.slice(4));
+  assert.equal(transformSpriteColors(data, 2, 1, "not-an-operation"), null);
+  assert.equal(transformSpriteColors(data, 2, 1, "invert", { x: 0, y: 0, width: 3, height: 1 }), null);
+  assert.equal(transformSpriteColors(data, 0, 1, "invert"), null);
+  assert.deepEqual(data.slice(4), original.slice(4));
+  const down = transformSpriteColors(data, 2, 1, "contrast-down");
+  assert.ok(down);
+  assert.deepEqual(Array.from(data.slice(0, 4)), [26, 128, 230, 100]);
 });
