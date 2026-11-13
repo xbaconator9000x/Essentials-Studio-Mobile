@@ -659,3 +659,36 @@ describe("cross-layer copy controls", () => {
     expect((screen.getByRole("button", { name: "Copy selected tiles to layer 3" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+
+describe("arbitrary selection tile offsets", () => {
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
+  it("moves and duplicates by signed X/Y offsets while rejecting zero and invalid values", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const onTranslateTiles = vi.fn();
+    const props = {
+      paintTool: "select" as const, setPaintTool: vi.fn(), tileClipboard: null,
+      selectedLayer: 0, setSelectedLayer: vi.fn(), showGrid: true, setShowGrid: vi.fn(),
+      zoom: 1, setZoom: vi.fn(), onUndo: vi.fn(), onRedo: vi.fn(),
+      ...noTileClipboardActions, canCopyTiles: true, canTranslateTiles: true,
+      canClearTiles: true, onClearTiles: vi.fn(), onTranslateTiles,
+      onSwapSelectedLayers: vi.fn(), preserveEmptyPaste: false,
+      onPreserveEmptyPasteChange: vi.fn(), showEventPins: true,
+      setShowEventPins: vi.fn(), paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Selection actions" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Selection horizontal tile offset" }), { target: { value: "-3" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Selection vertical tile offset" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Move selection by tile offset" }));
+    expect(onTranslateTiles).toHaveBeenCalledWith(-3, 2, "move");
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate selection by tile offset" }));
+    expect(onTranslateTiles).toHaveBeenCalledWith(-3, 2, "copy");
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Selection horizontal tile offset" }), { target: { value: "0" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Selection vertical tile offset" }), { target: { value: "0" } });
+    expect((screen.getByRole("button", { name: "Move selection by tile offset" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<MapToolbar {...props} canTranslateTiles={false} />);
+    expect((screen.getByRole("button", { name: "Duplicate selection by tile offset" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
