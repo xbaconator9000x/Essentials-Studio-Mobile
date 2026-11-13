@@ -306,6 +306,23 @@ export function MapToolbar({
         </div>
       )}
 
+      {toolsCollapsed && compactPanel === "view" && selectedLayer >= 0 && selectedLayer <= 2 && (
+        <div className="toolbar-group" role="group" aria-label="Layer visibility presets">
+          <button type="button" className="toolbar-btn"
+            aria-label="Show all tile layers"
+            disabled={showLayers.every(Boolean)}
+            onClick={() => ([0, 1, 2] as const).forEach(layer => {
+              if (!showLayers[layer]) onToggleLayerVisibility(layer, true);
+            })}>Show all</button>
+          <button type="button" className="toolbar-btn"
+            aria-label={`Show only layer ${selectedLayer + 1}`}
+            disabled={showLayers.every((visible, layer) => layer === selectedLayer || !visible)}
+            onClick={() => ([0, 1, 2] as const).forEach(layer => {
+              if (layer !== selectedLayer && showLayers[layer]) onToggleLayerVisibility(layer, false);
+            })}>Solo L{selectedLayer + 1}</button>
+        </div>
+      )}
+
       {toolsCollapsed && compactPanel === "view" && (
         <label className="toolbar-check map-toolbar-quick-grid">
           <input
