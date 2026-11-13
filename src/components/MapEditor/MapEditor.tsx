@@ -496,6 +496,19 @@ export function MapEditor({
     onMapDirty();
   }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
 
+  const swapSelectedLayers = useCallback((targetLayer: number) => {
+    if (!mapData || readOnly || shortcutsDisabled || !selectionStart || !selectionEnd
+        || selectedLayer < 0 || selectedLayer > 2 || targetLayer === selectedLayer) return;
+    const changes = swapMapTileLayers(mapData,
+      { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
+      selectedLayer, targetLayer);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick(tick => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
+
   const pasteTilesAtCursor = useCallback(() => {
     const origin = cursorTile ?? selectionStart;
     if (!mapData || !tileClipboard || !origin || selectedLayer === 3 || readOnly) return;
@@ -1380,6 +1393,7 @@ export function MapEditor({
           onClearTiles={clearSelectedTiles}
           canTranslateTiles={!readOnly && !shortcutsDisabled && canCopyTiles}
           onTranslateTiles={translateSelectedTiles}
+          onSwapSelectedLayers={swapSelectedLayers}
           onPasteTiles={pasteTilesAtCursor}
           preserveEmptyPaste={preserveEmptyPaste}
           onPreserveEmptyPasteChange={setPreserveEmptyPaste}
