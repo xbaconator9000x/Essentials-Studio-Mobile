@@ -18,6 +18,7 @@ import {
   replaceSpriteColor,
   adjustSpriteBrightness,
   transformSpriteColors,
+  shiftSpriteHue,
 } from "../src/services/spriteEditorPixels.ts";
 
 function image(width, height, color = [0, 0, 0, 0]) {
@@ -678,4 +679,35 @@ test("match fill rejects oversized disconnected sets without partial writes", ()
   assert.deepEqual(data, original);
   assert.equal(fillMatchingSpritePixels(data, 1001, 1000, -1, 0, "#abcdef"), null);
   assert.equal(fillMatchingSpritePixels(data, 1001, 1000, 0, 0, "invalid"), null);
+});
+
+
+test("hue shift preserves alpha, transparent pixels, neutral shades and selection boundaries", () => {
+  const data = image(4, 1);
+  data.set([255, 0, 0, 255], 0);
+  data.set([255, 0, 0, 128], 4);
+  data.set([123, 45, 67, 0], 8);
+  data.set([80, 80, 80, 255], 12);
+  const original = data.slice();
+  const action = shiftSpriteHue(data, 4, 1, 120, { x: 0, y: 0, width: 3, height: 1 });
+  assert.equal(action?.pixels.length, 2);
+  assert.deepEqual([...data.slice(0, 4)], [0, 255, 0, 255]);
+  assert.deepEqual([...data.slice(4, 8)], [0, 255, 0, 128]);
+  assert.deepEqual([...data.slice(8)], [...original.slice(8)]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual(data, original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(0, 4)], [0, 255, 0, 255]);
+});
+
+test("hue shift rejects invalid rotations and oversized edits without mutation", () => {
+  const data = image(1001, 1000, [255, 0, 0, 255]);
+  const original = data.slice();
+  for (const angle of [0, 360, 361, 0.5, NaN])
+    assert.equal(shiftSpriteHue(data, 1001, 1000, angle), null);
+  assert.equal(shiftSpriteHue(data, 1001, 1000, 30), null);
+  assert.deepEqual(data, original);
+  assert.equal(shiftSpriteHue(data, 1001, 1000, 30, { x: 0, y: 0, width: 1, height: 1 })?.pixels.length, 1);
 });
