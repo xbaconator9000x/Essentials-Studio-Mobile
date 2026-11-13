@@ -316,9 +316,10 @@ export function MapToolbar({
             })}>Show all</button>
           <button type="button" className="toolbar-btn"
             aria-label={`Show only layer ${selectedLayer + 1}`}
-            disabled={showLayers.every((visible, layer) => layer === selectedLayer || !visible)}
+            disabled={showLayers.every((visible, layer) => visible === (layer === selectedLayer))}
             onClick={() => ([0, 1, 2] as const).forEach(layer => {
-              if (layer !== selectedLayer && showLayers[layer]) onToggleLayerVisibility(layer, false);
+              const shouldShow = layer === selectedLayer;
+              if (showLayers[layer] !== shouldShow) onToggleLayerVisibility(layer, shouldShow);
             })}>Solo L{selectedLayer + 1}</button>
         </div>
       )}
