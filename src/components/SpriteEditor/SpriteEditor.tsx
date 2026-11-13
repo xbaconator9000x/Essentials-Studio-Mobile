@@ -133,6 +133,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
+  const [mobileAdvancedTools, setMobileAdvancedTools] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(
     () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches),
@@ -1319,8 +1321,17 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         {exportStatus && <span role="status" className="sprite-editor-shortcuts">{exportStatus}</span>}
         {controlsCollapsed && error && <span className="sprite-editor-error" role="alert">{error}</span>}
         {controlsCollapsed && (
-          <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing">
-            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite assets">
+          <div className="sprite-editor-quick-tools" role="toolbar" aria-label="Quick sprite editing"
+            data-active-panel={mobilePanel}>
+            <div className="sprite-editor-mobile-tabs" role="group" aria-label="Sprite mobile workspace">
+              {(["draw", "assets", "transform"] as const).map(panel => (
+                <button key={panel} type="button" aria-pressed={mobilePanel === panel}
+                  onClick={() => setMobilePanel(panel)}>
+                  {panel === "draw" ? "Draw" : panel === "assets" ? "Sprites & trace" : "Transform"}
+                </button>
+              ))}
+            </div>
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite assets" data-mobile-panel="assets">
               <select
                 aria-label="Quick select project character sprite"
                 value={selectedName}
@@ -1344,7 +1355,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 />
               </label>
             </div>
-            <label className="sprite-editor-quick-import">
+            <label className="sprite-editor-quick-import" data-mobile-panel="assets">
               Trace image
               <input
                 type="file"
@@ -1358,7 +1369,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               />
             </label>
             {importedSpriteName !== null && (
-              <label className="sprite-editor-quick-copy-name">
+              <label className="sprite-editor-quick-copy-name" data-mobile-panel="assets">
                 Copy as
                 <input
                   type="text"
@@ -1373,6 +1384,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             {traceImage && (
               <button
                 type="button"
+                data-mobile-panel="assets"
                 aria-label="Position trace with touch"
                 aria-pressed={positionTraceWithTouch}
                 onClick={() => setPositionTraceWithTouch((enabled) => !enabled)}
@@ -1382,7 +1394,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             )}
             {traceImage && (
               <>
-                <label className="sprite-editor-quick-range">
+                <label className="sprite-editor-quick-range" data-mobile-panel="assets">
                   Opacity {traceOpacity}%
                   <input
                     type="range"
@@ -1393,7 +1405,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                     onChange={(event) => setTraceOpacity(Number(event.target.value))}
                   />
                 </label>
-                <label className="sprite-editor-quick-range">
+                <label className="sprite-editor-quick-range" data-mobile-panel="assets">
                   Scale {traceScale}%
                   <input
                     type="range"
@@ -1407,7 +1419,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               </>
             )}
             {importedSpriteName === null && (
-              <div className="sprite-editor-quick-group" role="group" aria-label="Quick sprite save controls">
+              <div className="sprite-editor-quick-group" role="group" aria-label="Quick sprite save controls" data-mobile-panel="assets">
                 <select aria-label="Quick sprite save mode" value={saveMode} disabled={saving}
                   onChange={(event) => setSaveMode(event.currentTarget.value === "original" ? "original" : "copy")}>
                   <option value="copy">Save copy</option>
@@ -1420,7 +1432,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </label>}
               </div>
             )}
-            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite tools" data-mobile-panel="draw">
               {([
                 ["brush", "Brush"],
                 ["eraser", "Erase"],
@@ -1440,7 +1452,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 </button>
               ))}
             </div>
-            <div className="sprite-editor-quick-group sprite-editor-mirror-options" role="group" aria-label="Sprite drawing guides">
+            <div className="sprite-editor-quick-group sprite-editor-mirror-options" role="group" aria-label="Sprite drawing guides" data-mobile-panel="draw">
               <label><input type="checkbox" aria-label="Show sprite pixel grid" checked={showPixelGrid}
                 onChange={(event) => { const value = event.currentTarget.checked; setShowPixelGrid(value); writePanelPreference(PIXEL_GRID_PREFERENCE, value); }} />Grid</label>
               <label><input type="checkbox" aria-label="Mirror sprite brush horizontally" checked={mirrorHorizontal}
@@ -1448,7 +1460,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <label><input type="checkbox" aria-label="Mirror sprite brush vertically" checked={mirrorVertical}
                 onChange={(event) => { const value = event.currentTarget.checked; setMirrorVertical(value); writePanelPreference(MIRROR_VERTICAL_PREFERENCE, value); }} />Mirror ↕</label>
             </div>
-            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite zoom controls">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite zoom controls" data-mobile-panel="draw">
               <button type="button" aria-label="Zoom in" onClick={() => zoomViewportAt(2)}>Zoom +</button>
               <button type="button" aria-label="Zoom out" onClick={() => zoomViewportAt(0.5)}>Zoom −</button>
               <label className="sprite-editor-quick-range">Zoom {Math.round(zoom * 10) / 10}×
@@ -1456,7 +1468,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   value={zoom} onChange={(event) => setExactZoom(Number(event.currentTarget.value))} />
               </label>
             </div>
-            <label className="sprite-editor-quick-color">
+            <label className="sprite-editor-quick-color" data-mobile-panel="draw">
               Color
               <input
                 type="color"
@@ -1465,7 +1477,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onChange={(event) => setBrushColor(event.target.value)}
               />
             </label>
-            <label className="sprite-editor-quick-size">
+            <label className="sprite-editor-quick-size" data-mobile-panel="draw">
               Size
               <input
                 type="range"
@@ -1476,7 +1488,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onChange={(event) => setBrushSize(Number(event.target.value))}
               />
             </label>
-            <div className="sprite-editor-quick-swatches" role="group" aria-label="Quick sprite colors">
+            <div data-mobile-panel="draw" className="sprite-editor-quick-swatches" role="group" aria-label="Quick sprite colors">
               {QUICK_SPRITE_COLORS.map((color) => (
                 <button
                   key={color}
@@ -1488,7 +1500,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 />
               ))}
             </div>
-            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite transform tools">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite transform tools" data-mobile-panel="transform">
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("horizontal")}>Flip H</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("vertical")}>Flip V</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
@@ -1506,12 +1518,12 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               </label>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("replace")}>Replace color</button>
             </div>
-            {spritePalette.length > 0 && <div className="sprite-editor-swatches" role="group" aria-label="Extracted sprite colors">
+            {spritePalette.length > 0 && <div data-mobile-panel="transform" className="sprite-editor-swatches" role="group" aria-label="Extracted sprite colors">
               {spritePalette.map((color) => <button key={color} type="button" aria-label={`Use sprite color ${color}`}
                 aria-pressed={brushColor === color} style={{ backgroundColor: color }}
                 onClick={() => setBrushColor(color)} />)}
             </div>}
-            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions">
+            <div className="sprite-editor-quick-group" role="group" aria-label="Sprite selection actions" data-mobile-panel="transform">
               <label><input type="checkbox" aria-label="Move selected pixels with selection arrows" checked={moveSelectedPixels} onChange={(event) => setMoveSelectedPixels(event.currentTarget.checked)} />Move pixels</label>
               <label><input type="checkbox" aria-label="Duplicate selected pixels when nudging" checked={duplicateSelectedPixels} disabled={!moveSelectedPixels} onChange={(event) => setDuplicateSelectedPixels(event.currentTarget.checked)} />Duplicate pixels</label>
               <button type="button" disabled={loading || saving} onClick={selectEntireSprite}>Select all</button>
