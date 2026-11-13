@@ -15,6 +15,7 @@ import {
   rotateSquareSpritePixels,
   extractSpritePalette,
   replaceSpriteColor,
+  adjustSpriteBrightness,
 } from "../src/services/spriteEditorPixels.ts";
 
 function image(width, height, color = [0, 0, 0, 0]) {
@@ -519,4 +520,38 @@ test("recolor tolerance rejects invalid values and keeps exact-match default", (
   assert.equal(replaceSpriteColor(data, 2, 1, "#646464", "#ffffff", null, 256), null);
   assert.deepEqual([...data], original);
   assert.equal(replaceSpriteColor(data, 2, 1, "#646464", "#ffffff")?.pixels.length, 2);
+});
+
+
+test("brightness adjusts selected opaque and translucent RGB, preserves alpha and supports undo/redo", () => {
+  const data = image(3, 1);
+  data.set([250, 3, 100, 255], 0);
+  data.set([100, 110, 120, 128], 4);
+  data.set([4, 5, 6, 0], 8);
+  const before = [...data];
+  const history = new SpritePixelHistory();
+  const action = adjustSpriteBrightness(data, 3, 1, 16, { x: 0, y: 0, width: 2, height: 1 });
+  assert.equal(action?.pixels.length, 2);
+  assert.deepEqual([...data.slice(0, 8)], [255, 19, 116, 255, 116, 126, 136, 128]);
+  assert.deepEqual([...data.slice(8)], [4, 5, 6, 0]);
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], before);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(4, 8)], [116, 126, 136, 128]);
+});
+
+test("darken clamps channels, ignores fully transparent pixels and rejects invalid requests atomically", () => {
+  const data = image(2, 1);
+  data.set([10, 20, 30, 64], 0);
+  data.set([10, 20, 30, 0], 4);
+  const action = adjustSpriteBrightness(data, 2, 1, -16);
+  assert.equal(action?.pixels.length, 1);
+  assert.deepEqual([...data], [0, 4, 14, 64, 10, 20, 30, 0]);
+  const before = [...data];
+  for (const delta of [0, NaN, 1.5, -256, 256]) {
+    assert.equal(adjustSpriteBrightness(data, 2, 1, delta), null);
+  }
+  assert.equal(adjustSpriteBrightness(data, 2, 1, 16, { x: 1, y: 0, width: 2, height: 1 }), null);
+  assert.deepEqual([...data], before);
 });
