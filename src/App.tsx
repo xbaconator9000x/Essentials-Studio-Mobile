@@ -703,7 +703,7 @@ function AppContent() {
    * (used when reloading the current map after property changes, or on initial
    * project open when dirty state has already been cleared).
    */
-  const handleSelectMap = useCallback(async (mapId: number, skipGuard = false) => {
+  const handleSelectMap = useCallback(async (mapId: number, skipGuard = false, openMobileEditor = false) => {
     const path = projectRef.current?.path;
     if (!path) return;
     const lease = mapSelectionCoordinator.current.begin();
@@ -771,6 +771,9 @@ function AppContent() {
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
       rememberLastMapId(path, mapId);
+      // Only navigate away from the map tree after the destination has loaded
+      // and all unsaved-edit guards have accepted the transition.
+      if (openMobileEditor && isCurrent()) setMobileSection("maps");
       // Re-selecting/reloading the same map must not silently unmount an open
       // event editor with unsaved dialogue or command edits.
       if (changedMap) setEditingEvent(null);
@@ -1289,8 +1292,7 @@ function AppContent() {
           mapInfos={project.map_infos}
           currentMapId={currentMapId}
           onSelectMap={(id) => {
-            if (mobileLayout) setMobileSection("maps");
-            void handleSelectMap(id);
+            void handleSelectMap(id, false, mobileLayout);
           }}
           onCreateMap={handleCreateMap}
           onDeleteMap={handleDeleteMap}
