@@ -479,6 +479,47 @@ export function paintSpritePixels(
 /** Four-connected bucket fill, optionally constrained to the active selection.
  * The edit is computed before writing, so limit failures never partially paint.
  * RGBA equality is exact, preserving RPG Maker XP sprite transparency. */
+/** Replace all pixels matching the sampled RGBA value within the active selection.
+ * Unlike bucket fill this deliberately includes disconnected islands. Changes are
+ * staged before mutation so exceeding the undo limit cannot corrupt the sprite. */
+export function fillMatchingSpritePixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  color: string,
+  selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  if (!isValidImage(data, width, height) || !Number.isSafeInteger(x) || !Number.isSafeInteger(y)
+      || x < 0 || y < 0 || x >= width || y >= height
+      || (selection != null && !isValidSpriteSelection(selection, width, height))) return null;
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height) return null;
+  const replacement = parseColor(color);
+  if (replacement === null) return null;
+  const target = readPackedPixel(data, y * width + x);
+  if (target === replacement) return null;
+  const indices: number[] = [];
+  for (let py = area.y; py < area.y + area.height; py++) {
+    for (let px = area.x; px < area.x + area.width; px++) {
+      const index = py * width + px;
+      if (readPackedPixel(data, index) !== target) continue;
+      if (indices.length >= MAX_SPRITE_EDIT_PIXELS) return null;
+      indices.push(index);
+    }
+  }
+  if (!indices.length) return null;
+  const pixels = Uint32Array.from(indices);
+  const action = {
+    pixels,
+    before: new Uint32Array(indices.length).fill(target),
+    after: new Uint32Array(indices.length).fill(replacement),
+  };
+  applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 export function fillSpritePixels(
   data: Uint8ClampedArray,
   width: number,
