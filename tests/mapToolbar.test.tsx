@@ -22,6 +22,34 @@ describe("collapsed XP layer visibility", () => {
     vi.unstubAllGlobals();
   });
 
+  it("solos the active RMXP tile layer and restores all layers without changing map data", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onToggleLayerVisibility = vi.fn();
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 1, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(), ...noTileClipboardActions,
+      showLayers: [true, true, true] as [boolean, boolean, boolean],
+      onToggleLayerVisibility,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show only layer 2" }));
+    expect(onToggleLayerVisibility.mock.calls).toEqual([[0, false], [2, false]]);
+    onToggleLayerVisibility.mockClear();
+    view.rerender(<MapToolbar {...props} showLayers={[false, true, false]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show all tile layers" }));
+    expect(onToggleLayerVisibility.mock.calls).toEqual([[0, true], [2, true]]);
+    expect(props.onUndo).not.toHaveBeenCalled();
+    expect(props.onRedo).not.toHaveBeenCalled();
+  });
+
   it("allows hiding other layers while keeping the active layer visible", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
