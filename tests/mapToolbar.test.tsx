@@ -587,3 +587,42 @@ describe("portrait canvas-first CSS regression", () => {
     expect(rule).toContain("touch-action: pan-x;");
   });
 });
+
+describe("portrait layer solo visibility integrity", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("reveals a hidden active layer while hiding the other two without changing tiles", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onToggleLayerVisibility = vi.fn();
+    const setSelectedLayer = vi.fn();
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 1, setSelectedLayer,
+      showLayers: [true, false, true] as [boolean, boolean, boolean],
+      onToggleLayerVisibility,
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(), ...noTileClipboardActions,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show only layer 2" }));
+    expect(onToggleLayerVisibility.mock.calls).toEqual([
+      [0, false], [1, true], [2, false],
+    ]);
+    expect(setSelectedLayer).not.toHaveBeenCalled();
+
+    view.rerender(<MapToolbar {...props} showLayers={[false, true, false]} />);
+    expect((screen.getByRole("button", { name: "Show only layer 2" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Show all tile layers" }));
+    expect(onToggleLayerVisibility.mock.calls.slice(3)).toEqual([[0, true], [2, true]]);
+  });
+});
