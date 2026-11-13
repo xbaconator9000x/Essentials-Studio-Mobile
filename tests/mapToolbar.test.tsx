@@ -627,3 +627,35 @@ describe("portrait layer solo visibility integrity", () => {
     expect(onToggleLayerVisibility.mock.calls.slice(3)).toEqual([[0, true], [2, true]]);
   });
 });
+
+
+describe("cross-layer copy controls", () => {
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
+  it("copies selection to the other two XP layers and honors transparent-cell preference", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const onCopySelectedTilesToLayer = vi.fn();
+    const props = {
+      paintTool: "select" as const, setPaintTool: vi.fn(), tileClipboard: null,
+      selectedLayer: 1, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(),
+      ...noTileClipboardActions,
+      canCopyTiles: true, canTranslateTiles: true, canClearTiles: true,
+      onClearTiles: vi.fn(), onTranslateTiles: vi.fn(), onSwapSelectedLayers: vi.fn(),
+      onCopySelectedTilesToLayer,
+      preserveEmptyPaste: true, onPreserveEmptyPasteChange: vi.fn(),
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Selection actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected tiles to layer 3" }));
+    expect(onCopySelectedTilesToLayer).toHaveBeenCalledWith(2, "preserve");
+    view.rerender(<MapToolbar {...props} preserveEmptyPaste={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected tiles to layer 1" }));
+    expect(onCopySelectedTilesToLayer).toHaveBeenCalledWith(0, "replace");
+    view.rerender(<MapToolbar {...props} canTranslateTiles={false} />);
+    expect((screen.getByRole("button", { name: "Copy selected tiles to layer 3" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
