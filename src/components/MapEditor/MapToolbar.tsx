@@ -254,7 +254,7 @@ export function MapToolbar({
       {toolsCollapsed && compactPanel === "edit" && (
         <div className="toolbar-group map-toolbar-quick-layers" role="group" aria-label="Quick map layers">
           <button type="button" className="toolbar-btn" aria-expanded={quickLayersExpanded}
-            onClick={() => setQuickLayersExpanded(value => !value)}>{quickLayersExpanded ? "Hide layers" : "Layers"}</button>
+            onClick={() => setQuickLayersExpanded(value => !value)}>{quickLayersExpanded ? "Hide layers" : `Layer: ${MAP_LAYERS.find(item => item.layer === selectedLayer)?.label ?? "All"}`}</button>
           {quickLayersExpanded && MAP_LAYERS.map(({ layer, label, name }) => (
             <button
               key={layer}
