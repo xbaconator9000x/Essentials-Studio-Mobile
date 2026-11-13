@@ -119,6 +119,11 @@ export function MapToolbar({
   onToggleNavigator,
 }: MapToolbarProps) {
   const [compactPanel, setCompactPanel] = useState<"edit" | "events" | "view">("edit");
+  // Event placement is a modal map interaction. Keep its cancel button and
+  // instructions visible even when the user selected another mobile panel.
+  useEffect(() => {
+    if (eventPlacementMode !== null) setCompactPanel("events");
+  }, [eventPlacementMode]);
   const [selectionActionsExpanded, setSelectionActionsExpanded] = useState(false);
   const [quickToolsExpanded, setQuickToolsExpanded] = useState(false);
   const [quickLayersExpanded, setQuickLayersExpanded] = useState(false);
@@ -149,7 +154,7 @@ export function MapToolbar({
           return next;
         })}
       >
-        {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
+        {toolsCollapsed ? "Expand toolbar" : "Compact toolbar"}
       </button>
       {toolsCollapsed && (
         <div className="map-toolbar-compact-tabs" role="group" aria-label="Mobile map workspace">
@@ -420,7 +425,7 @@ export function MapToolbar({
           >{eventPlacementMode === "paste" ? "Cancel paste" : "Paste event"}</button>
         )}
       </div>}
-      {eventPlacementMode && (
+      {eventPlacementMode && (!toolsCollapsed || compactPanel === "events") && (
         <span className="toolbar-label map-event-placement-hint" role="status">
           {eventPlacementPending ? "Saving event…" : `Tap an empty map tile to ${eventPlacementMode === "create" ? "create" : "paste"} an event. Tap the active button to cancel.`}
         </span>
