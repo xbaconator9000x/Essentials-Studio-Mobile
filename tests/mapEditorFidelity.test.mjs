@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction, translateMapTileRegion,
+  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
@@ -346,4 +346,37 @@ test("duplicate selection preserves source across all XP layers and rejects out-
   assert.deepEqual(translateMapTileRegion(data, { x1: 2, y1: 0, x2: 2, y2: 0 }, -1, 1, 0), []);
   revertAction(data, { type: "paste", changes, timestamp: 0 });
   assert.deepEqual(data.tiles, before);
+});
+
+test("selected tile layer swap preserves all XP data outside the region and supports undo redo", () => {
+  const data = map(4, 3);
+  const area = 12;
+  data.tiles[1] = 384;
+  data.tiles[area + 1] = 48;
+  data.tiles[area * 2 + 1] = -1;
+  data.tiles[2] = 500;
+  data.events.push({ id: 1, x: 1, y: 0, name: "Guard" });
+  const original = structuredClone(data);
+  const changes = swapMapTileLayers(data, { x1: 1, y1: 0, x2: 1, y2: 0 }, 0, 2);
+  assert.equal(changes.length, 2);
+  assert.equal(data.tiles[1], -1);
+  assert.equal(data.tiles[area * 2 + 1], 384);
+  assert.equal(data.tiles[2], 500);
+  assert.equal(data.tiles[area + 1], 48);
+  assert.deepEqual(data.events, original.events);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, original);
+  applyAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.equal(data.tiles[1], -1);
+  assert.equal(data.tiles[area * 2 + 1], 384);
+});
+
+test("layer exchange rejects invalid layers and rectangles without mutation", () => {
+  const data = map();
+  const original = structuredClone(data);
+  for (const layers of [[0, 0], [-1, 2], [0, 3]]) {
+    assert.deepEqual(swapMapTileLayers(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, ...layers), []);
+  }
+  assert.deepEqual(swapMapTileLayers(data, { x1: 99, y1: 99, x2: 100, y2: 100 }, 0, 1), []);
+  assert.deepEqual(data, original);
 });
