@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, copyMapTileRegionToLayer,
+  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, copyMapTileRegionToLayer, mirrorMapTileRegion,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
@@ -428,5 +428,57 @@ test("cross-layer copy rejects invalid layer pairs, rectangles and modes atomica
   assert.deepEqual(copyMapTileRegionToLayer(data, { x1: NaN, y1: 0, x2: 1, y2: 1 }, 0, 1), []);
   assert.deepEqual(copyMapTileRegionToLayer(data, { x1: 30, y1: 0, x2: 40, y2: 1 }, 0, 1), []);
   assert.deepEqual(copyMapTileRegionToLayer(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 0, 1, "invalid"), []);
+  assert.deepEqual(data, before);
+});
+
+
+test("horizontal mirror of selection is reversible and leaves other layers and events intact", () => {
+  const data = map(4, 3);
+  const area = 12;
+  data.tiles[0] = 384;
+  data.tiles[1] = 0;
+  data.tiles[2] = -1;
+  data.tiles[3] = 700;
+  data.tiles[area] = 999;
+  data.events.push({ id: 1, name: "Guard", x: 0, y: 0 });
+  const before = structuredClone(data);
+  const changes = mirrorMapTileRegion(data, { x1: 2, y1: 0, x2: 0, y2: 0 }, 0, "horizontal");
+  assert.equal(changes.length, 2);
+  assert.deepEqual(data.tiles.slice(0, 4), [-1, 0, 384, 700]);
+  assert.equal(data.tiles[area], 999);
+  assert.deepEqual(data.events, before.events);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, before);
+  applyAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles.slice(0, 4), [-1, 0, 384, 700]);
+});
+
+test("vertical mirror can transform all three XP layers without touching map metadata", () => {
+  const data = map(2, 3);
+  const area = 6;
+  for (let layer = 0; layer < 3; layer++) {
+    data.tiles[layer * area] = 384 + layer;
+    data.tiles[layer * area + 4] = 1000 + layer;
+  }
+  const before = structuredClone(data);
+  const changes = mirrorMapTileRegion(data, { x1: 0, y1: 0, x2: 0, y2: 2 }, -1, "vertical");
+  assert.equal(changes.length, 6);
+  for (let layer = 0; layer < 3; layer++) {
+    assert.equal(data.tiles[layer * area], 1000 + layer);
+    assert.equal(data.tiles[layer * area + 4], 384 + layer);
+  }
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, before);
+});
+
+test("mirror rejects invalid layers, axes and rectangles without mutation", () => {
+  const data = map();
+  const before = structuredClone(data);
+  for (const layer of [-2, 3, 0.5, NaN]) {
+    assert.deepEqual(mirrorMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, layer, "vertical"), []);
+  }
+  assert.deepEqual(mirrorMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 0, "diagonal"), []);
+  assert.deepEqual(mirrorMapTileRegion(data, { x1: 100, y1: 0, x2: 101, y2: 1 }, 0, "horizontal"), []);
+  assert.deepEqual(mirrorMapTileRegion(data, { x1: Infinity, y1: 0, x2: 1, y2: 1 }, 0, "vertical"), []);
   assert.deepEqual(data, before);
 });
