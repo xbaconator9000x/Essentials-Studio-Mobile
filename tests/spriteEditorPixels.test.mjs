@@ -19,6 +19,7 @@ import {
   adjustSpriteBrightness,
   transformSpriteColors,
   shiftSpriteHue,
+  simplifySpritePixels,
 } from "../src/services/spriteEditorPixels.ts";
 
 function image(width, height, color = [0, 0, 0, 0]) {
@@ -710,4 +711,44 @@ test("hue shift rejects invalid rotations and oversized edits without mutation",
   assert.equal(shiftSpriteHue(data, 1001, 1000, 30), null);
   assert.deepEqual(data, original);
   assert.equal(shiftSpriteHue(data, 1001, 1000, 30, { x: 0, y: 0, width: 1, height: 1 })?.pixels.length, 1);
+});
+
+test("posterize respects selection, alpha, transparent RGB and reversible history", () => {
+  const data = image(3, 1);
+  data.set([100, 150, 200, 123], 0);
+  data.set([77, 88, 99, 0], 4);
+  data.set([100, 150, 200, 255], 8);
+  const original = [...data];
+  const action = simplifySpritePixels(data, 3, 1, "posterize", 2, { x: 0, y: 0, width: 2, height: 1 });
+  assert.equal(action?.pixels.length, 1);
+  assert.deepEqual([...data.slice(0, 4)], [0, 255, 255, 123]);
+  assert.deepEqual([...data.slice(4, 8)], [77, 88, 99, 0]);
+  assert.deepEqual([...data.slice(8, 12)], original.slice(8));
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data], original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(0, 4)], [0, 255, 255, 123]);
+});
+
+test("alpha threshold is bounded, preserves transparent RGB, and rejects invalid edits atomically", () => {
+  const data = image(4, 1);
+  data.set([11, 22, 33, 0], 0);
+  data.set([44, 55, 66, 127], 4);
+  data.set([77, 88, 99, 128], 8);
+  data.set([100, 110, 120, 255], 12);
+  const action = simplifySpritePixels(data, 4, 1, "alpha-threshold", 128);
+  assert.equal(action?.pixels.length, 2);
+  assert.deepEqual([...data.slice(0, 4)], [11, 22, 33, 0]);
+  assert.deepEqual([...data.slice(4, 8)], [44, 55, 66, 0]);
+  assert.deepEqual([...data.slice(8, 12)], [77, 88, 99, 255]);
+  const snapshot = [...data];
+  for (const [op, value] of [["posterize", 1], ["posterize", 17], ["alpha-threshold", -1], ["alpha-threshold", 256], ["unknown", 2]]) {
+    assert.equal(simplifySpritePixels(data, 4, 1, op, value), null);
+    assert.deepEqual([...data], snapshot);
+  }
+  assert.equal(simplifySpritePixels(data, 4, 1, "posterize", 4, { x: 4, y: 0, width: 1, height: 1 }), null);
+  assert.deepEqual([...data], snapshot);
+  assert.equal(simplifySpritePixels(image(1001, 1000, [10, 20, 30, 255]), 1001, 1000, "posterize", 4), null);
 });
