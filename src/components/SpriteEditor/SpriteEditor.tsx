@@ -32,6 +32,7 @@ import {
   rotateSquareSpritePixels,
   extractSpritePalette,
   replaceSpriteColor,
+  adjustSpriteBrightness,
   type SpritePixelAction,
   type SpriteClipboardImage,
   type SpriteSelection,
@@ -592,7 +593,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, []);
 
-  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace") => {
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace" | "lighten" | "darken") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -605,7 +606,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("90° rotation requires a square selection or square sprite; select a square region first");
       return;
     }
-    const action = operation === "replace"
+    const action = operation === "lighten" || operation === "darken"
+      ? adjustSpriteBrightness(image.data, source.width, source.height, operation === "lighten" ? 16 : -16, area)
+      : operation === "replace"
       ? replaceSpriteColor(image.data, source.width, source.height, replaceFrom, brushColor, area, replaceTolerance)
       : operation === "clockwise" || operation === "counterclockwise"
         ? rotateSquareSpritePixels(image.data, source.width, source.height, operation, area)
@@ -1505,6 +1508,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("rotate180")}>Rotate 180°</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("clockwise")}>Rotate 90° ↻</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("counterclockwise")}>Rotate 90° ↺</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("lighten")} aria-label="Lighten sprite selection">Lighten +16</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("darken")} aria-label="Darken sprite selection">Darken −16</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
