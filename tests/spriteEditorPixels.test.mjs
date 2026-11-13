@@ -631,3 +631,20 @@ test("oversized-fill rejection does not poison subsequent small edits", () => {
   assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
   assert.deepEqual([...data.slice(4, 8)], [12, 34, 56, 255]);
 });
+
+
+test("flood fill at image edges and selection borders does not escape or abort traversal", () => {
+  const data = image(5, 4, [10, 20, 30, 255]);
+  const original = data.slice();
+  const action = fillSpritePixels(data, 5, 4, 0, 0, "#abcdef",
+    { x: 0, y: 0, width: 3, height: 2 });
+  assert.ok(action);
+  assert.equal(action.pixels.length, 6);
+  assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
+  assert.deepEqual(data.slice((2 * 5 + 0) * 4, (2 * 5 + 1) * 4), original.slice((2 * 5 + 0) * 4, (2 * 5 + 1) * 4));
+  assert.deepEqual(data.slice((0 * 5 + 3) * 4, (0 * 5 + 4) * 4), original.slice((0 * 5 + 3) * 4, (0 * 5 + 4) * 4));
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual(data, original);
+});
