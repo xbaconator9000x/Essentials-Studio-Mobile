@@ -414,7 +414,7 @@ describe("mobile map toolbar", () => {
     );
     const view = render(toolbar(true));
 
-    expect(screen.getByRole("button", { name: "Use pen map tool" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Select active map tool" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View" }));
     const pins = screen.getByRole("checkbox", { name: "Show event pins" });
     expect((pins as HTMLInputElement).checked).toBe(true);
