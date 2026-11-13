@@ -617,3 +617,17 @@ test("flood fill at one million pixels succeeds and remains undoable", () => {
   assert.equal(history.undo(data), true);
   assert.deepEqual([...data.slice(-4)], [12, 34, 56, 255]);
 });
+
+
+test("oversized-fill rejection does not poison subsequent small edits", () => {
+  const width = 1001, height = 1000;
+  const data = image(width, height, [12, 34, 56, 255]);
+  assert.equal(fillSpritePixels(data, width, height, 0, 0, "#abcdef"), null);
+  // Make one isolated transparent pixel, then fill only that pixel.
+  data.set([0, 0, 0, 0], 0);
+  const action = fillSpritePixels(data, width, height, 0, 0, "#abcdef");
+  assert.ok(action);
+  assert.equal(action.pixels.length, 1);
+  assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
+  assert.deepEqual([...data.slice(4, 8)], [12, 34, 56, 255]);
+});
