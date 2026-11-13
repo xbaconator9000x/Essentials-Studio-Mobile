@@ -204,7 +204,7 @@ describe("mobile map toolbar", () => {
     );
 
     expect(matchMedia).toHaveBeenCalledWith("(max-width: 700px)");
-    fireEvent.click(screen.getByRole("button", { name: "Layers" }));
+    fireEvent.click(screen.getByRole("button", { name: /Layer: L1|Layer: L2|Layer: L3|Layer: Ev|Layer: All/ }));
     expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
@@ -358,7 +358,7 @@ describe("mobile map toolbar", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Show map grid" }));
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));
     expect(setShowGrid).toHaveBeenCalledWith(false);
-    fireEvent.click(screen.getByRole("button", { name: "Layers" }));
+    fireEvent.click(screen.getByRole("button", { name: /Layer: L1|Layer: L2|Layer: L3|Layer: Ev|Layer: All/ }));
     fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(3);
 
