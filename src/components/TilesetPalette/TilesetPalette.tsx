@@ -50,6 +50,12 @@ export function TilesetPalette({
   onClose,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("tiles");
+  const [recentTileIds, setRecentTileIds] = useState<number[]>([]);
+  const selectTile = useCallback((id: number) => {
+    onSelectTile(id);
+    setRecentTileIds(previous => [id, ...previous.filter(tile => tile !== id)].slice(0, 8));
+  }, [onSelectTile]);
+  useEffect(() => { setRecentTileIds([]); }, [tilesetInfo]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverTileId, setHoverTileId] = useState<number | null>(null);
   const [tileIdInput, setTileIdInput] = useState(String(selectedTileId));
@@ -86,7 +92,7 @@ export function TilesetPalette({
     const x = Math.max(0, Math.min(tileCols - 1, index % TILESET_COLUMNS + dx));
     const y = Math.max(0, Math.min(tileRows - 1, Math.floor(index / TILESET_COLUMNS) + dy));
     const target = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
-    if (tileIdIsValid(target)) onSelectTile(target);
+    if (tileIdIsValid(target)) selectTile(target);
   };
 
   // Render the tileset grid onto canvas
@@ -148,9 +154,9 @@ export function TilesetPalette({
       const canvas = canvasRef.current;
       if (!canvas || !tilesetImage) return;
       const tileId = regularTileIdAt(canvas, tilesetImage, e.clientX, e.clientY);
-      if (tileId !== null) onSelectTile(tileId);
+      if (tileId !== null) selectTile(tileId);
     },
-    [onSelectTile, tilesetImage],
+    [selectTile, tilesetImage],
   );
 
   const handleTilesetMove = useCallback(
@@ -181,8 +187,8 @@ export function TilesetPalette({
     x = Math.max(0, Math.min(cols - 1, x));
     y = Math.max(0, Math.min(rows - 1, y));
     const tileId = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
-    if (tileId <= 32767) onSelectTile(tileId);
-  }, [onSelectTile, selectedTileId, tilesetImage]);
+    if (tileId <= 32767) selectTile(tileId);
+  }, [selectTile, selectedTileId, tilesetImage]);
 
   // Handle autotile selection
   const handleAutotileClick = useCallback(
@@ -190,7 +196,7 @@ export function TilesetPalette({
       // Select the "full" autotile pattern (pattern 0 = all same)
       // tileId = (slot + 1) * 48
       const tileId = (slot + 1) * 48;
-      onSelectTile(tileId);
+      selectTile(tileId);
     },
     [onSelectTile]
   );
@@ -229,6 +235,17 @@ export function TilesetPalette({
         <button className="palette-close" onClick={onClose} aria-label="Close tileset palette">×</button>
       </div>
 
+      <div className="palette-recent-tiles" role="group" aria-label="Recently selected tiles">
+        <span className="palette-recent-label">Recent</span>
+        {recentTileIds.length ? recentTileIds.map(id => (
+          <button key={id} type="button" className={selectedTileId === id ? "active" : ""}
+            aria-label={`Select recent tile ${id}`} aria-pressed={selectedTileId === id}
+            onClick={() => { selectTile(id); setActiveTab(id < FIRST_REGULAR_TILE ? "autotiles" : "tiles"); }}>
+            {id}
+          </button>
+        )) : <span className="palette-recent-label">Select tiles to build shortcuts</span>}
+      </div>
+
       {/* Tab bar */}
       <div className="palette-tabs">
         <button
@@ -258,7 +275,7 @@ export function TilesetPalette({
             <div className="palette-tile-navigation" role="group" aria-label="Tile selection controls">
               <form onSubmit={event => {
                 event.preventDefault();
-                if (canJump) onSelectTile(inputTileId);
+                if (canJump) selectTile(inputTileId);
               }}>
                 <label htmlFor="palette-tile-id">Tile ID</label>
                 <input id="palette-tile-id" type="number" inputMode="numeric"
