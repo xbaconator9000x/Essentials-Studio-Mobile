@@ -29,7 +29,7 @@ interface MapToolbarProps {
   onClearTiles: () => void;
   canTranslateTiles: boolean;
   onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
-  onMirrorSelectedTiles?: (axis: "horizontal" | "vertical") => void;
+  onMirrorSelectedTiles?: (axis: "horizontal" | "vertical" | "rotate180") => void;
   onSwapSelectedLayers: (targetLayer: number) => void;
   onCopySelectedTilesToLayer?: (targetLayer: number, emptyMode: "preserve" | "replace") => void;
   onPasteTiles: () => void;
@@ -394,6 +394,9 @@ export function MapToolbar({
               <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
                 aria-label="Mirror selected tiles vertically"
                 onClick={() => onMirrorSelectedTiles("vertical")}>Mirror ↕</button>
+              <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
+                aria-label="Rotate selected tile positions 180 degrees"
+                onClick={() => onMirrorSelectedTiles("rotate180")}>Rotate 180°</button>
             </div>
           )}
           {selectedLayer >= 0 && selectedLayer <= 2 && (
