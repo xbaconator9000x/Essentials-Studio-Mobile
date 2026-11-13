@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion,
+  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, copyMapTileRegionToLayer,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
@@ -379,4 +379,54 @@ test("layer exchange rejects invalid layers and rectangles without mutation", ()
   }
   assert.deepEqual(swapMapTileLayers(data, { x1: 99, y1: 99, x2: 100, y2: 100 }, 0, 1), []);
   assert.deepEqual(data, original);
+});
+
+
+test("cross-layer copy preserves transparent source cells, source and events, and supports undo/redo", () => {
+  const data = map(4, 2);
+  const area = 8;
+  data.tiles[0] = 384;
+  data.tiles[1] = 0;
+  data.tiles[area] = 800;
+  data.tiles[area + 1] = -1;
+  data.tiles[area * 2] = 700;
+  data.events.push({ id: 9, x: 0, y: 0, name: "NPC" });
+  const before = structuredClone(data);
+  const changes = copyMapTileRegionToLayer(data, { x1: 0, y1: 0, x2: 1, y2: 0 }, 0, 1);
+  assert.deepEqual(changes, [{ x: 0, y: 0, layer: 1, oldTileId: 800, newTileId: 384 }]);
+  assert.equal(data.tiles[area + 1], -1);
+  assert.equal(data.tiles[area * 2], 700);
+  assert.deepEqual(data.events, before.events);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, before);
+  applyAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.equal(data.tiles[area], 384);
+});
+
+test("cross-layer replace copies zero and signed tile IDs, reverses selection and clips bounds", () => {
+  const data = map(3, 2);
+  const area = 6;
+  data.tiles[0] = -1;
+  data.tiles[1] = 0;
+  data.tiles[area * 2] = 384;
+  data.tiles[area * 2 + 1] = 385;
+  const before = data.tiles.slice();
+  const changes = copyMapTileRegionToLayer(data, { x1: 1, y1: 0, x2: -3, y2: 0 }, 0, 2, "replace");
+  assert.equal(changes.length, 2);
+  assert.equal(data.tiles[area * 2], -1);
+  assert.equal(data.tiles[area * 2 + 1], 0);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data.tiles, before);
+});
+
+test("cross-layer copy rejects invalid layer pairs, rectangles and modes atomically", () => {
+  const data = map();
+  const before = structuredClone(data);
+  for (const pair of [[0, 0], [-1, 1], [1, 3]]) {
+    assert.deepEqual(copyMapTileRegionToLayer(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, ...pair), []);
+  }
+  assert.deepEqual(copyMapTileRegionToLayer(data, { x1: NaN, y1: 0, x2: 1, y2: 1 }, 0, 1), []);
+  assert.deepEqual(copyMapTileRegionToLayer(data, { x1: 30, y1: 0, x2: 40, y2: 1 }, 0, 1), []);
+  assert.deepEqual(copyMapTileRegionToLayer(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, 0, 1, "invalid"), []);
+  assert.deepEqual(data, before);
 });
