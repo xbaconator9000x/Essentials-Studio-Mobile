@@ -606,3 +606,89 @@
   .sprite-editor-quick-tools { max-height: min(28vh, 200px); overflow-y: auto; overscroll-behavior: contain; }
   .sprite-editor-mobile-tabs { position: sticky; top: 0; z-index: 2; background: var(--color-base); padding-block: 3px; }
 }
+
+
+/* Portrait usability: the image viewport must retain space even when the
+   Android keyboard or a long transform panel reduces the visual viewport.
+   Scroll controls within their own region, never the drawing surface. */
+@media (max-width: 700px) and (orientation: portrait) {
+  .sprite-editor-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .sprite-editor {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
+    border: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sprite-editor-header {
+    flex: 0 0 auto;
+  }
+
+  .sprite-editor-workspace {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sprite-editor-tools {
+    max-height: min(34dvh, 260px);
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+  }
+
+  .sprite-editor-quick-tools {
+    flex: 0 0 auto;
+    max-height: min(22dvh, 148px);
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: contain;
+  }
+
+  .sprite-editor-canvas-wrap {
+    flex: 1 1 0;
+    min-height: 96px;
+    overscroll-behavior: contain;
+  }
+
+  .sprite-editor-quick-tools button:focus-visible,
+  .sprite-editor-tools button:focus-visible,
+  .sprite-editor-header button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+  }
+}
+
+/* A landscape phone has much less vertical room. Keep the canvas beside a
+   bounded tool pane rather than stacking the pane above the canvas. */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+  .sprite-editor {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .sprite-editor-workspace {
+    flex-direction: row;
+    min-height: 0;
+  }
+
+  .sprite-editor-tools {
+    width: min(35vw, 260px);
+    min-width: 0;
+    max-height: none;
+    border-right: 1px solid var(--color-surface0);
+    border-bottom: 0;
+    overscroll-behavior-y: contain;
+  }
+
+  .sprite-editor-canvas-wrap {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+  }
+}
