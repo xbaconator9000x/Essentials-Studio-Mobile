@@ -35,6 +35,7 @@ import {
   replaceSpriteColor,
   adjustSpriteBrightness,
   transformSpriteColors,
+  shiftSpriteHue,
   type SpritePixelAction,
   type SpriteClipboardImage,
   type SpriteSelection,
@@ -595,7 +596,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
   }, []);
 
-  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace" | "lighten" | "darken" | "grayscale" | "invert" | "contrast-up" | "contrast-down") => {
+  const transformSprite = useCallback((operation: "horizontal" | "vertical" | "rotate180" | "clockwise" | "counterclockwise" | "replace" | "lighten" | "darken" | "grayscale" | "invert" | "contrast-up" | "contrast-down" | "hue-forward" | "hue-backward") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -608,7 +609,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError("90° rotation requires a square selection or square sprite; select a square region first");
       return;
     }
-    const action = operation === "grayscale" || operation === "invert" || operation === "contrast-up" || operation === "contrast-down"
+    const action = operation === "hue-forward" || operation === "hue-backward"
+      ? shiftSpriteHue(image.data, source.width, source.height, operation === "hue-forward" ? 30 : -30, area)
+      : operation === "grayscale" || operation === "invert" || operation === "contrast-up" || operation === "contrast-down"
       ? transformSpriteColors(image.data, source.width, source.height, operation, area)
       : operation === "lighten" || operation === "darken"
       ? adjustSpriteBrightness(image.data, source.width, source.height, operation === "lighten" ? 16 : -16, area)
@@ -1521,6 +1524,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("invert")} aria-label="Invert sprite selection colors">Invert colors</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("contrast-up")} aria-label="Increase sprite selection contrast">Contrast +</button>
               <button type="button" disabled={loading || saving} onClick={() => transformSprite("contrast-down")} aria-label="Decrease sprite selection contrast">Contrast −</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("hue-backward")} aria-label="Shift sprite selection hue backward">Hue −30°</button>
+              <button type="button" disabled={loading || saving} onClick={() => transformSprite("hue-forward")} aria-label="Shift sprite selection hue forward">Hue +30°</button>
               <button type="button" disabled={loading || saving} onClick={refreshSpritePalette}>Extract colors</button>
               <label className="sprite-editor-quick-color">Replace from
                 <input type="color" aria-label="Replace source color" value={replaceFrom}
