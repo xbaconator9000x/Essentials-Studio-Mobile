@@ -500,7 +500,7 @@ export function MapEditor({
     onMapDirty();
   }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
 
-  const mirrorSelectedTiles = useCallback((axis: "horizontal" | "vertical") => {
+  const mirrorSelectedTiles = useCallback((axis: "horizontal" | "vertical" | "rotate180") => {
     if (!mapData || readOnly || shortcutsDisabled || !selectionStart || !selectionEnd
         || selectedLayer === 3 || isPainting.current || isTouchPainting.current) return;
     const changes = mirrorMapTileRegion(mapData,
