@@ -52,7 +52,7 @@ export function EventEditor({
   pbsIndex,
 }: Props) {
   const { value: event, set: setEvent, setWithoutHistory, resetHistory, undo, redo, canUndo, canRedo } = useUndoable<RpgEvent>(null);
-  const { saveAll: saveProjectAll } = useProjectSave();
+  const { saveAll: saveProjectAll, unregister: unregisterSavedEvent } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [loading, setLoading] = useState(true);
@@ -355,7 +355,7 @@ export function EventEditor({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [event, dirty, renderRevision, projectPath, mapId, eventId, onClose]);
+  }, [event, dirty, renderRevision, projectPath, mapId, eventId, onClose, unregisterSavedEvent]);
   persistRef.current = persist;
 
   // Include open event dialogs in Save All, project switching and ZIP export.
