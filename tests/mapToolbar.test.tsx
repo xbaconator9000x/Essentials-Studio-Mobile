@@ -39,6 +39,7 @@ describe("collapsed XP layer visibility", () => {
       eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
     };
     const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     const active = screen.getByRole("checkbox", { name: "Show tile layer 2" }) as HTMLInputElement;
     expect(active.disabled).toBe(true);
     expect(active.checked).toBe(true);
@@ -123,6 +124,7 @@ describe("mobile map toolbar", () => {
     );
 
     expect(screen.getByRole("button", { name: "Tools ▸" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show collision overlay" }));
     expect(setShowCollisionOverlay).toHaveBeenCalledWith(true);
     expect(onMediaChange).toBeDefined();
@@ -160,6 +162,7 @@ describe("mobile map toolbar", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Event tools" }));
     expect(screen.getByRole("status").textContent).toContain("long-press a map tile to paste");
   });
 
@@ -201,6 +204,7 @@ describe("mobile map toolbar", () => {
     );
 
     expect(matchMedia).toHaveBeenCalledWith("(max-width: 700px)");
+    fireEvent.click(screen.getByRole("button", { name: "Layers" }));
     expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
@@ -346,15 +350,20 @@ describe("mobile map toolbar", () => {
     );
     const view = render(toolbar(0, false, null));
 
+    fireEvent.click(screen.getByRole("button", { name: "More tools" }));
     expect(screen.getByRole("button", { name: "Use pen map tool" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Use erase map tool" }));
     expect(setPaintTool).toHaveBeenCalledWith("eraser");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show map grid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
     expect(setShowGrid).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Layers" }));
     fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
     expect(setSelectedLayer).toHaveBeenCalledWith(3);
 
     view.rerender(toolbar(3, false, null));
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▸" }));
     expect((screen.getByRole("button", { name: "Copy selected tiles" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Paste tiles at cursor" }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -406,6 +415,7 @@ describe("mobile map toolbar", () => {
     const view = render(toolbar(true));
 
     expect(screen.getByRole("button", { name: "Use pen map tool" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     const pins = screen.getByRole("checkbox", { name: "Show event pins" });
     expect((pins as HTMLInputElement).checked).toBe(true);
     fireEvent.click(pins);
@@ -475,6 +485,7 @@ describe("portrait map zoom and event actions", () => {
       canCreateEvent canPasteEvent hasClipboardEvent
       eventPlacementMode={null} onToggleEventPlacement={onToggleEventPlacement} onFitMap={onFitMap}
     />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     fireEvent.click(screen.getByRole("button", { name: "Zoom in map" }));
     expect(setZoom).toHaveBeenCalledWith(1.25);
     fireEvent.click(screen.getByRole("button", { name: "Zoom out map" }));
@@ -483,6 +494,7 @@ describe("portrait map zoom and event actions", () => {
     expect(setZoom).toHaveBeenCalledWith(2.5);
     fireEvent.click(screen.getByRole("button", { name: "Fit entire map to viewport" }));
     expect(onFitMap).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Event tools" }));
     fireEvent.click(screen.getByRole("button", { name: "Place new map event" }));
     fireEvent.click(screen.getByRole("button", { name: "Place copied map event" }));
     expect(onToggleEventPlacement).toHaveBeenNthCalledWith(1, "create");
