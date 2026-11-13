@@ -460,6 +460,49 @@ describe("mobile map toolbar", () => {
 });
 
 describe("portrait map zoom and event actions", () => {
+  it("offers touch pan without losing the selected drawing tool", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const setPaintTool = vi.fn();
+    const props = {
+      paintTool: "eraser" as const, setPaintTool,
+      tileClipboard: null, selectedLayer: 0, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(), ...noTileClipboardActions,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Temporarily pan map" }));
+    expect(setPaintTool).toHaveBeenLastCalledWith("pan");
+    view.rerender(<MapToolbar {...props} paintTool="pan" />);
+    fireEvent.click(screen.getByRole("button", { name: "Return to previous drawing tool" }));
+    expect(setPaintTool).toHaveBeenLastCalledWith("eraser");
+  });
+
+  it("shows event placement controls when placement becomes active", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 3, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(), ...noTileClipboardActions,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 1, eventListVisible: false, onToggleEventList: vi.fn(),
+      canCreateEvent: true, onToggleEventPlacement: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    expect(screen.queryByRole("button", { name: "Cancel new event placement" })).toBeNull();
+    view.rerender(<MapToolbar {...props} eventPlacementMode="create" />);
+    expect(screen.getByRole("button", { name: "Cancel new event placement" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Tap an empty map tile");
+  });
+
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
