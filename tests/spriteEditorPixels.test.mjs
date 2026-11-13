@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   fillSpritePixels,
+  fillMatchingSpritePixels,
   paintSpritePixels,
   spriteColorAt,
   normalizeSpriteSelection,
@@ -647,4 +648,34 @@ test("flood fill at image edges and selection borders does not escape or abort t
   assert.equal(history.push(action), true);
   assert.equal(history.undo(data), true);
   assert.deepEqual(data, original);
+});
+
+
+test("match fill changes disconnected equal RGBA islands but not distinct alpha or selection exterior", () => {
+  const data = image(4, 2, [5, 6, 7, 255]);
+  data.set([9, 9, 9, 255], 4);
+  data.set([5, 6, 7, 128], 8);
+  const original = data.slice();
+  const selection = { x: 0, y: 0, width: 3, height: 2 };
+  const action = fillMatchingSpritePixels(data, 4, 2, 0, 0, "#abcdef", selection);
+  assert.equal(action?.pixels.length, 4);
+  assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
+  assert.deepEqual([...data.slice(4, 8)], [9, 9, 9, 255]);
+  assert.deepEqual([...data.slice(8, 12)], [5, 6, 7, 128]);
+  assert.deepEqual([...data.slice(12, 16)], [5, 6, 7, 255]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual(data, original);
+  assert.equal(history.redo(data), true);
+  assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
+});
+
+test("match fill rejects oversized disconnected sets without partial writes", () => {
+  const data = image(1001, 1000, [1, 2, 3, 255]);
+  const original = data.slice();
+  assert.equal(fillMatchingSpritePixels(data, 1001, 1000, 0, 0, "#abcdef"), null);
+  assert.deepEqual(data, original);
+  assert.equal(fillMatchingSpritePixels(data, 1001, 1000, -1, 0, "#abcdef"), null);
+  assert.equal(fillMatchingSpritePixels(data, 1001, 1000, 0, 0, "invalid"), null);
 });
