@@ -12,6 +12,7 @@ import {
   clearMapTileRegion,
   translateMapTileRegion,
   swapMapTileLayers,
+  copyMapTileRegionToLayer,
   sampleMapTile,
   UndoStack,
   type MapAction,
@@ -504,6 +505,19 @@ export function MapEditor({
     const changes = swapMapTileLayers(mapData,
       { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
       selectedLayer, targetLayer);
+    if (!changes.length) return;
+    undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
+    rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
+    setRenderTick(tick => tick + 1);
+    onMapDirty();
+  }, [mapData, readOnly, shortcutsDisabled, selectionStart, selectionEnd, selectedLayer, onMapDirty]);
+
+  const copySelectedTilesToLayer = useCallback((targetLayer: number, emptyMode: "preserve" | "replace") => {
+    if (!mapData || readOnly || shortcutsDisabled || !selectionStart || !selectionEnd
+        || selectedLayer < 0 || selectedLayer > 2 || targetLayer === selectedLayer) return;
+    const changes = copyMapTileRegionToLayer(mapData,
+      { x1: selectionStart.x, y1: selectionStart.y, x2: selectionEnd.x, y2: selectionEnd.y },
+      selectedLayer, targetLayer, emptyMode);
     if (!changes.length) return;
     undoStackRef.current.push({ type: "paste", changes, timestamp: Date.now() });
     rendererRef.current?.setMapData(mapData.tiles, mapData.width, mapData.height);
@@ -1396,6 +1410,7 @@ export function MapEditor({
           canTranslateTiles={!readOnly && !shortcutsDisabled && canCopyTiles}
           onTranslateTiles={translateSelectedTiles}
           onSwapSelectedLayers={swapSelectedLayers}
+          onCopySelectedTilesToLayer={copySelectedTilesToLayer}
           onPasteTiles={pasteTilesAtCursor}
           preserveEmptyPaste={preserveEmptyPaste}
           onPreserveEmptyPasteChange={setPreserveEmptyPaste}
