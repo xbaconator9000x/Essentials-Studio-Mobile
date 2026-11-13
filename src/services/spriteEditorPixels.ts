@@ -283,6 +283,35 @@ export function extractSpritePalette(
 }
 
 /** Exact RGB replacement in the selection or sprite, preserving alpha. */
+/** Adjust RGB brightness without changing alpha, transparent pixels or image dimensions.
+ * Selection bounds and the one-million-pixel edit budget are checked before mutation.
+ * Returns one canonical reversible pixel action for Save All and undo/redo. */
+export function adjustSpriteBrightness(
+  data: Uint8ClampedArray, width: number, height: number,
+  delta: number, selection?: SpriteSelection | null,
+): SpritePixelAction | null {
+  const area = selection ?? { x: 0, y: 0, width, height };
+  if (!Number.isSafeInteger(delta) || delta < -255 || delta > 255 || delta === 0
+      || !isValidImage(data, width, height) || !isValidSpriteSelection(area, width, height)
+      || area.width * area.height > MAX_SPRITE_EDIT_PIXELS) return null;
+  const clamp = (value: number) => Math.max(0, Math.min(255, value));
+  const changes = new Map<number, { before: number; after: number }>();
+  for (let y = area.y; y < area.y + area.height; y++) for (let x = area.x; x < area.x + area.width; x++) {
+    const pixel = y * width + x;
+    const before = readPackedPixel(data, pixel);
+    const alpha = before & 255;
+    if (!alpha) continue;
+    const red = clamp(((before >>> 24) & 255) + delta);
+    const green = clamp(((before >>> 16) & 255) + delta);
+    const blue = clamp(((before >>> 8) & 255) + delta);
+    const after = ((red << 24) | (green << 16) | (blue << 8) | alpha) >>> 0;
+    if (before !== after) changes.set(pixel, { before, after });
+  }
+  const action = createAction(changes);
+  if (action) applySpritePixelAction(data, action, "after");
+  return action;
+}
+
 export function replaceSpriteColor(
   data: Uint8ClampedArray, width: number, height: number,
   from: string, to: string, selection?: SpriteSelection | null, tolerance = 0,
