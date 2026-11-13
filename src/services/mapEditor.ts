@@ -367,6 +367,35 @@ export function clearMapTileRegion(
 /** Exchange two XP tile layers within a rectangular selection, without
  * flattening autotiles or changing events. A canonical delta makes the entire
  * exchange one reversible operation. */
+/** Copy selected XP tile cells between layers without touching events or metadata.
+ * The source is snapshotted first, so this remains deterministic and undoable.
+ * In preserve mode zero source cells leave the destination unchanged. */
+export function copyMapTileRegionToLayer(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  sourceLayer: number,
+  destinationLayer: number,
+  emptyMode: "preserve" | "replace" = "preserve",
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(sourceLayer) || !validLayer(destinationLayer)
+      || sourceLayer === destinationLayer || (emptyMode !== "preserve" && emptyMode !== "replace")
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const source = map.tiles.slice(sourceLayer * area, (sourceLayer + 1) * area);
+  const before = map.tiles.slice(destinationLayer * area, (destinationLayer + 1) * area);
+  for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+    const index = y * map.width + x;
+    if (emptyMode === "replace" || source[index] !== 0)
+      map.tiles[destinationLayer * area + index] = source[index];
+  }
+  return canonicalMapLayerChanges(map, destinationLayer, before);
+}
+
 export function swapMapTileLayers(
   map: MapRenderData,
   rect: { x1: number; y1: number; x2: number; y2: number },
