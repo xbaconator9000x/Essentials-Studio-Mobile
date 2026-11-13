@@ -46,7 +46,7 @@ test("flood fill updates only the four-connected region and rejects oversized re
   assert.deepEqual([...data.slice(16, 20)], [1, 2, 3, 255]);
 
   const large = image(1001, 1000);
-  assert.throws(() => fillSpritePixels(large, 1001, 1000, 0, 0, "#abcdef"), /one-million-pixel/);
+  assert.equal(fillSpritePixels(large, 1001, 1000, 0, 0, "#abcdef"), null);
   assert.deepEqual([...large.slice(0, 4)], [0, 0, 0, 0]);
 });
 
