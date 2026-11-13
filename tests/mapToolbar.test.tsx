@@ -604,10 +604,11 @@ describe("portrait layer solo visibility integrity", () => {
     const props = {
       paintTool: "pencil" as const, setPaintTool: vi.fn(),
       tileClipboard: null, selectedLayer: 1, setSelectedLayer,
+      ...noTileClipboardActions,
       showLayers: [true, false, true] as [boolean, boolean, boolean],
       onToggleLayerVisibility,
       showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
-      onUndo: vi.fn(), onRedo: vi.fn(), ...noTileClipboardActions,
+      onUndo: vi.fn(), onRedo: vi.fn(),
       showEventPins: true, setShowEventPins: vi.fn(),
       paletteVisible: true, onTogglePalette: vi.fn(),
       eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
