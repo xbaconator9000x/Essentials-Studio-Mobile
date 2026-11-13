@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paintTile, paintRectangle, floodFill, clearMapTileRegion, copyTileRegion, pasteTileRegion, sampleMapTile,
-  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, copyMapTileRegionToLayer, mirrorMapTileRegion,
+  applyAction, revertAction, swapMapTileLayers, translateMapTileRegion, mirrorMapTileRegion, copyMapTileRegionToLayer, mirrorMapTileRegion,
 } from "../src/services/mapEditor.ts";
 
 function map(width = 3, height = 2) {
@@ -481,4 +481,31 @@ test("mirror rejects invalid layers, axes and rectangles without mutation", () =
   assert.deepEqual(mirrorMapTileRegion(data, { x1: 100, y1: 0, x2: 101, y2: 1 }, 0, "horizontal"), []);
   assert.deepEqual(mirrorMapTileRegion(data, { x1: Infinity, y1: 0, x2: 1, y2: 1 }, 0, "vertical"), []);
   assert.deepEqual(data, before);
+});
+
+
+test("180-degree tile-region rotation supports rectangular regions, signed IDs and one-step undo", () => {
+  const data = map(4, 3);
+  const area = 12;
+  data.tiles[0] = 384;
+  data.tiles[1] = -1;
+  data.tiles[4] = 48;
+  data.tiles[5] = 1024;
+  data.tiles[area + 0] = 700;
+  data.tiles[area * 2 + 0] = 800;
+  data.events.push({ id: 7, name: "NPC", x: 0, y: 0 });
+  const before = structuredClone(data);
+  const changes = mirrorMapTileRegion(data, { x1: 0, y1: 0, x2: 1, y2: 1 }, -1, "rotate180");
+  assert.equal(data.tiles[0], 1024);
+  assert.equal(data.tiles[1], 48);
+  assert.equal(data.tiles[4], -1);
+  assert.equal(data.tiles[5], 384);
+  assert.equal(data.tiles[area], 0);
+  assert.equal(data.tiles[area + 5], 700);
+  assert.equal(data.tiles[area * 2 + 5], 800);
+  assert.deepEqual(data.events, before.events);
+  revertAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.deepEqual(data, before);
+  applyAction(data, { type: "paste", changes, timestamp: 0 });
+  assert.equal(data.tiles[0], 1024);
 });
