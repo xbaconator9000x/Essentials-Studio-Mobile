@@ -59,6 +59,7 @@ export function EventEditor({
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [editingCommand, setEditingCommand] = useState<number | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"commands" | "properties">("commands");
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth <= 700
   );
