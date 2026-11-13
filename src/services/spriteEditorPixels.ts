@@ -1,4 +1,4 @@
-export type SpriteTool = "brush" | "eraser" | "eyedropper" | "fill" | "select" | "pan";
+export type SpriteTool = "brush" | "eraser" | "eyedropper" | "fill" | "match-fill" | "select" | "pan";
 
 export interface SpritePixelAction {
   pixels: Uint32Array;
