@@ -154,7 +154,7 @@ export function MapToolbar({
           return next;
         })}
       >
-        {toolsCollapsed ? "Expand toolbar" : "Compact toolbar"}
+        {toolsCollapsed ? "Tools ▸" : "Tools ▾"}
       </button>
       {toolsCollapsed && (
         <div className="map-toolbar-compact-tabs" role="group" aria-label="Mobile map workspace">
