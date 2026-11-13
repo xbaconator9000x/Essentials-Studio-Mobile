@@ -593,3 +593,27 @@ test("contrast transformations clamp channels, preserve transparency and reject 
   assert.ok(down);
   assert.deepEqual(Array.from(data.slice(0, 4)), [36, 128, 220, 100]);
 });
+
+
+test("flood fill over one million pixels is rejected atomically without throwing", () => {
+  const width = 1001, height = 1000;
+  const data = image(width, height, [12, 34, 56, 255]);
+  const before = data.slice();
+  assert.doesNotThrow(() => {
+    assert.equal(fillSpritePixels(data, width, height, 0, 0, "#abcdef"), null);
+  });
+  assert.deepEqual(data, before);
+});
+
+test("flood fill at one million pixels succeeds and remains undoable", () => {
+  const width = 1000, height = 1000;
+  const data = image(width, height, [12, 34, 56, 255]);
+  const action = fillSpritePixels(data, width, height, 0, 0, "#abcdef");
+  assert.ok(action);
+  assert.equal(action.pixels.length, 1_000_000);
+  assert.deepEqual([...data.slice(0, 4)], [171, 205, 239, 255]);
+  const history = new SpritePixelHistory();
+  assert.equal(history.push(action), true);
+  assert.equal(history.undo(data), true);
+  assert.deepEqual([...data.slice(-4)], [12, 34, 56, 255]);
+});
