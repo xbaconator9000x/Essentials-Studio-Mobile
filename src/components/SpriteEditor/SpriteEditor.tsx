@@ -19,6 +19,7 @@ import {
 import {
   applySpritePixelAction,
   fillSpritePixels,
+  fillMatchingSpritePixels,
   paintSpritePixels,
   spriteColorAt,
   SpritePixelHistory,
@@ -663,9 +664,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
     let action: SpritePixelAction | null = null;
     try {
-      if (tool === "fill") {
+      if (tool === "fill" || tool === "match-fill") {
         historyRef.current.begin();
-        action = fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection);
+        action = tool === "match-fill"
+          ? fillMatchingSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection)
+          : fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection);
         if (action) {
           if (!historyRef.current.push(action)) {
             applySpritePixelAction(imageData.data, action, "before");
@@ -1443,6 +1446,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 ["eraser", "Erase"],
                 ["eyedropper", "Pick"],
                 ["fill", "Fill"],
+                ["match-fill", "Match fill"],
                 ["select", "Select"],
                 ["pan", "Pan"],
               ] as [SpriteTool, string][]).map(([name, label]) => (
