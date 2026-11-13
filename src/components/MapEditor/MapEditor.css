@@ -692,3 +692,41 @@
     flex-wrap: nowrap;
   }
 }
+
+/* Task-focused portrait workspace: one toolbar row for navigation, the active
+   editor panel below it. Desktop keeps the original full command surface. */
+@media (max-width: 700px) {
+  .map-editor-toolbar--compact {
+    max-height: min(28vh, 190px);
+    gap: 6px;
+    padding: 6px;
+    align-content: flex-start;
+  }
+  .map-toolbar-compact-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 4px;
+  }
+  .map-toolbar-compact-tabs .toolbar-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 1 1 125px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-selection-actions > .toolbar-group {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .map-editor-toolbar--compact .toolbar-separator { display: none; }
+}
+@media (min-width: 701px) {
+  .map-toolbar-compact-tabs { display: none; }
+}
