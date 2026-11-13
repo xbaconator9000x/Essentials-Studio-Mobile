@@ -336,6 +336,8 @@ export function EventEditor({
         setDirty(false);
         if (closeOnSuccess) {
           console.info("[event-save] requesting close after write", { eventId, mapId });
+          // Remove the completed editor synchronously before a rapid Save All/export.
+          unregisterSavedEvent(`event-${projectPath}-${mapId}-${eventId}`);
           onClose();
         }
       } else {
