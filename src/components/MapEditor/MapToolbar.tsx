@@ -303,7 +303,7 @@ export function MapToolbar({
         </label>
       )}
 
-      {!readOnly && (!toolsCollapsed ? paintTool === "select" : compactPanel === "edit" && paintTool === "select") && (
+      {!readOnly && (!toolsCollapsed ? paintTool === "select" : compactPanel === "edit") && (
         <div className="toolbar-group map-toolbar-selection-actions" role="group" aria-label="Tile selection actions">
           {toolsCollapsed && <button type="button" className="toolbar-btn" aria-expanded={selectionActionsExpanded}
             onClick={() => setSelectionActionsExpanded(value => !value)}>{selectionActionsExpanded ? "Less selection" : "Selection actions"}</button>}
