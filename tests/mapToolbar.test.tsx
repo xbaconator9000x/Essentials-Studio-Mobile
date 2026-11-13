@@ -550,7 +550,7 @@ describe("portrait map zoom and event actions", () => {
 
 describe("portrait canvas-first CSS regression", () => {
   it("keeps the compact command rail single-row and horizontally scrollable", () => {
-    const css = readFileSync(new URL("../src/components/MapEditor/MapEditor.css", import.meta.url), "utf8");
+    const css = readFileSync("src/components/MapEditor/MapEditor.css", "utf8");
     const rule = css.slice(css.lastIndexOf("/* Browser-verified canvas-first constraint:"));
     expect(rule).toContain("display: flex;");
     expect(rule).toContain("flex-flow: row nowrap;");
