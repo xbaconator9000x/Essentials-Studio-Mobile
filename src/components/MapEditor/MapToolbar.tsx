@@ -132,6 +132,11 @@ export function MapToolbar({
     if (eventPlacementMode !== null) setCompactPanel("events");
   }, [eventPlacementMode]);
   const [selectionActionsExpanded, setSelectionActionsExpanded] = useState(false);
+  const [offsetX, setOffsetX] = useState("1");
+  const [offsetY, setOffsetY] = useState("0");
+  const validOffset = /^-?\\d+$/.test(offsetX) && /^-?\\d+$/.test(offsetY)
+    && Number.isSafeInteger(Number(offsetX)) && Number.isSafeInteger(Number(offsetY))
+    && (Number(offsetX) !== 0 || Number(offsetY) !== 0);
   const [quickToolsExpanded, setQuickToolsExpanded] = useState(false);
   const [quickLayersExpanded, setQuickLayersExpanded] = useState(false);
   const [toolsCollapsed, setToolsCollapsed] = useState(
@@ -366,6 +371,18 @@ export function MapToolbar({
             <button type="button" className="toolbar-btn" disabled={!canTranslateTiles}
               aria-label="Duplicate selected tiles right"
               onClick={() => onTranslateTiles(1, 0, "copy")}>Duplicate →</button>
+          </div>
+          <div className="toolbar-group" role="group" aria-label="Offset selected map tiles">
+            <label className="toolbar-label">X <input type="number" inputMode="numeric" aria-label="Selection horizontal tile offset"
+              value={offsetX} onChange={event => setOffsetX(event.currentTarget.value)} style={{ width: "4.5em" }} /></label>
+            <label className="toolbar-label">Y <input type="number" inputMode="numeric" aria-label="Selection vertical tile offset"
+              value={offsetY} onChange={event => setOffsetY(event.currentTarget.value)} style={{ width: "4.5em" }} /></label>
+            <button type="button" className="toolbar-btn" aria-label="Move selection by tile offset"
+              disabled={!canTranslateTiles || !validOffset}
+              onClick={() => onTranslateTiles(Number(offsetX), Number(offsetY), "move")}>Move offset</button>
+            <button type="button" className="toolbar-btn" aria-label="Duplicate selection by tile offset"
+              disabled={!canTranslateTiles || !validOffset}
+              onClick={() => onTranslateTiles(Number(offsetX), Number(offsetY), "copy")}>Copy offset</button>
           </div>
           {selectedLayer >= 0 && selectedLayer <= 2 && (
             <div className="toolbar-group" role="group" aria-label="Exchange selected map layers">
