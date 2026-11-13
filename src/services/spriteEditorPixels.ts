@@ -513,21 +513,22 @@ export function fillSpritePixels(
     const pixel = queue[readIndex++];
     const px = pixel % width;
     const py = Math.floor(pixel / width);
-    const enqueue = (nx: number, ny: number) => {
+    const enqueue = (nx: number, ny: number): boolean => {
       if (nx < area.x || nx >= area.x + area.width
           || ny < area.y || ny >= area.y + area.height) return;
       const local = (ny - area.y) * area.width + nx - area.x;
-      if (seen[local]) return;
+      if (seen[local]) return true;
       const neighbor = ny * width + nx;
-      if (readPackedPixel(data, neighbor) !== target) return;
-      if (writeIndex >= queue.length) throw new Error("Fill region exceeds the one-million-pixel edit limit");
+      if (readPackedPixel(data, neighbor) !== target) return true;
+      // Reject oversized fills without throwing or changing any pixels.
+      // The queue is a bounded staging buffer: no writes occur until traversal completes.
+      if (writeIndex >= queue.length) return false;
       seen[local] = 1;
       queue[writeIndex++] = neighbor;
+      return true;
     };
-    enqueue(px - 1, py);
-    enqueue(px + 1, py);
-    enqueue(px, py - 1);
-    enqueue(px, py + 1);
+    if (!enqueue(px - 1, py) || !enqueue(px + 1, py)
+        || !enqueue(px, py - 1) || !enqueue(px, py + 1)) return null;
   }
 
   const pixels = queue.slice(0, writeIndex);
