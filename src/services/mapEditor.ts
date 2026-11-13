@@ -434,10 +434,10 @@ export function mirrorMapTileRegion(
   map: MapRenderData,
   rect: { x1: number; y1: number; x2: number; y2: number },
   activeLayer: number,
-  axis: "horizontal" | "vertical",
+  axis: "horizontal" | "vertical" | "rotate180",
 ): TileChange[] {
   if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
-      || (axis !== "horizontal" && axis !== "vertical")
+      || (axis !== "horizontal" && axis !== "vertical" && axis !== "rotate180")
       || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
   const left = Math.max(0, Math.min(rect.x1, rect.x2));
   const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
@@ -449,8 +449,8 @@ export function mirrorMapTileRegion(
   for (const layer of activeLayer === -1 ? [0, 1, 2] : [activeLayer]) {
     const before = map.tiles.slice(layer * area, (layer + 1) * area);
     for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
-      const sourceX = axis === "horizontal" ? left + right - x : x;
-      const sourceY = axis === "vertical" ? top + bottom - y : y;
+      const sourceX = axis !== "vertical" ? left + right - x : x;
+      const sourceY = axis !== "horizontal" ? top + bottom - y : y;
       map.tiles[layer * area + y * map.width + x] = before[sourceY * map.width + sourceX];
     }
     changes.push(...canonicalMapLayerChanges(map, layer, before));
