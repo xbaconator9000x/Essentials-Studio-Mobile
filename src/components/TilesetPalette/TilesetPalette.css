@@ -262,3 +262,39 @@
   .palette-tile-navigation button,
   .palette-tile-navigation input { min-height: 44px; font-size: 16px; }
 }
+
+/* Reusable tile shortcuts stay outside the scrollable tileset canvas. */
+.palette-recent-tiles {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-surface0);
+  scrollbar-width: thin;
+}
+.palette-recent-label {
+  flex: 0 0 auto;
+  color: var(--color-subtext1);
+  font-size: 11px;
+}
+.palette-recent-tiles button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  min-width: 42px;
+  padding: 4px 7px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 5px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+.palette-recent-tiles button.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+@media (max-width: 700px) {
+  .palette-recent-tiles button { min-height: 44px; min-width: 48px; }
+  .tileset-palette { width: min(96vw, 400px); }
+  .palette-tabs button { font-size: 13px; }
+}
