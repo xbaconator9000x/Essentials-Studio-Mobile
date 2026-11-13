@@ -426,6 +426,38 @@ export function swapMapTileLayers(
   ];
 }
 
+/** Mirror selected XP tile positions, independently on one or all tile layers.
+ * Tile IDs are preserved byte-for-byte (including signed i16 sentinels and
+ * autotile pattern IDs); this is a positional transform, not sprite flipping.
+ * No events, metadata or tiles outside the rectangle are changed. */
+export function mirrorMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+  axis: "horizontal" | "vertical",
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || (axis !== "horizontal" && axis !== "vertical")
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const changes: TileChange[] = [];
+  for (const layer of activeLayer === -1 ? [0, 1, 2] : [activeLayer]) {
+    const before = map.tiles.slice(layer * area, (layer + 1) * area);
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+      const sourceX = axis === "horizontal" ? left + right - x : x;
+      const sourceY = axis === "vertical" ? top + bottom - y : y;
+      map.tiles[layer * area + y * map.width + x] = before[sourceY * map.width + sourceX];
+    }
+    changes.push(...canonicalMapLayerChanges(map, layer, before));
+  }
+  return changes;
+}
+
 export function translateMapTileRegion(
   map: MapRenderData,
   rect: { x1: number; y1: number; x2: number; y2: number },
