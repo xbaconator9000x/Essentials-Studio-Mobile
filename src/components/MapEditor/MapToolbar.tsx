@@ -30,6 +30,7 @@ interface MapToolbarProps {
   canTranslateTiles: boolean;
   onTranslateTiles: (dx: number, dy: number, mode: "move" | "copy") => void;
   onSwapSelectedLayers: (targetLayer: number) => void;
+  onCopySelectedTilesToLayer: (targetLayer: number, emptyMode: "preserve" | "replace") => void;
   onPasteTiles: () => void;
   preserveEmptyPaste: boolean;
   onPreserveEmptyPasteChange: (value: boolean) => void;
@@ -96,6 +97,7 @@ export function MapToolbar({
   canTranslateTiles,
   onTranslateTiles,
   onSwapSelectedLayers,
+  onCopySelectedTilesToLayer,
   onPasteTiles,
   preserveEmptyPaste,
   onPreserveEmptyPasteChange,
@@ -372,6 +374,18 @@ export function MapToolbar({
                   disabled={!canTranslateTiles}
                   aria-label={`Swap selected layer ${selectedLayer + 1} with layer ${layer + 1}`}
                   onClick={() => onSwapSelectedLayers(layer)}>Swap L{layer + 1}</button>
+              ))}
+            </div>
+          )}
+          {selectedLayer >= 0 && selectedLayer <= 2 && (
+            <div className="toolbar-group" role="group" aria-label="Copy selection between map layers">
+              {([0, 1, 2] as const).filter(layer => layer !== selectedLayer).map(layer => (
+                <button key={layer} type="button" className="toolbar-btn"
+                  disabled={!canTranslateTiles}
+                  aria-label={`Copy selected tiles to layer ${layer + 1}`}
+                  onClick={() => onCopySelectedTilesToLayer(layer, preserveEmptyPaste ? "preserve" : "replace")}>
+                  Copy → L{layer + 1}
+                </button>
               ))}
             </div>
           )}
