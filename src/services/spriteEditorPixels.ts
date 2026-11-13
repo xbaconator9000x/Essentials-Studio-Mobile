@@ -515,7 +515,7 @@ export function fillSpritePixels(
     const py = Math.floor(pixel / width);
     const enqueue = (nx: number, ny: number): boolean => {
       if (nx < area.x || nx >= area.x + area.width
-          || ny < area.y || ny >= area.y + area.height) return;
+          || ny < area.y || ny >= area.y + area.height) return true;
       const local = (ny - area.y) * area.width + nx - area.x;
       if (seen[local]) return true;
       const neighbor = ny * width + nx;
