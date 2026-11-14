@@ -179,3 +179,19 @@ export function getCommandIcon(code: number): string {
   if (code >= 301 && code <= 340) return "⚔";
   return "•";
 }
+
+/** Paste a copied visual block at the destination indentation without sharing
+ * mutable parameter objects or stale source Marshal indices with its origin.
+ * Preserve relative indentation inside the copied block.
+ */
+export function prepareCommandBlockPaste(block: EventCommand[], destinationIndent: number): EventCommand[] {
+  if (!block.length || !Number.isInteger(destinationIndent) || destinationIndent < 0) return [];
+  const baseIndent = block[0].indent;
+  if (!Number.isInteger(baseIndent) || baseIndent < 0) return [];
+  if (block.some((cmd) => !Number.isInteger(cmd.indent) || cmd.indent < baseIndent)) return [];
+  return block.map((cmd) => {
+    const copy = { ...cmd, indent: destinationIndent + cmd.indent - baseIndent, parameters: structuredClone(cmd.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
