@@ -95,19 +95,6 @@ export function getEditableCommandRange(
   return getCommandBlockRange(list, index);
 }
 
-export function getCommandBlockRange(
-  list: EventCommand[],
-  index: number,
-): { start: number; end: number } | null {
-  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
-  for (const block of toVisualBlocks(list)) {
-    const end = block.kind === "multi" ? block.contIndices.at(-1) ?? block.rawIndex : block.rawIndex;
-    if (index >= block.rawIndex && index <= end) {
-      return { start: block.rawIndex, end };
-    }
-  }
-  return null;
-}
 export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: number): number {
   // RMXP uses code 0 inside nested branches as well as at the end of a page.
   // Only the final top-level terminator bounds insertion; the first code 0
