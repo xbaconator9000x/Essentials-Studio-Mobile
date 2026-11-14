@@ -98,6 +98,35 @@ export function getStructuralCommandRange(
   return null;
 }
 
+/** Add an Else arm to an existing complete RMXP conditional, without touching
+ * the Then arm or reusing Marshal source indices. Reject nested/malformed
+ * selections and existing Else arms rather than producing duplicate markers.
+ */
+export function addConditionalElseArm(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  if (list[index]?.code !== 111) return null;
+  const range = getStructuralCommandRange(list, index);
+  if (!range) return null;
+  const depth = list[index].indent;
+  let nestedDepth = 0;
+  for (let i = index + 1; i < range.end; i++) {
+    const code = list[i].code;
+    if (code === 111 || code === 112) nestedDepth++;
+    else if (code === 412 || code === 413) nestedDepth--;
+    else if (code === 411 && nestedDepth === 0) return null;
+  }
+  const close = range.end;
+  const insertion: EventCommand[] = [
+    { code: 411, indent: depth, parameters: [] },
+    { code: 0, indent: depth + 1, parameters: [] },
+  ];
+  return {
+    list: [...list.slice(0, close), ...insertion, ...list.slice(close)],
+    selectedIndex: close,
+  };
+}
+
 export function getEditableCommandRange(
   list: EventCommand[], index: number,
 ): { start: number; end: number } | null {
