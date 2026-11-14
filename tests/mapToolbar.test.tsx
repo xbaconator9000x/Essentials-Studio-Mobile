@@ -232,7 +232,7 @@ describe("mobile map toolbar", () => {
       />,
     );
 
-    expect(matchMedia).toHaveBeenCalledWith("(max-width: 700px)");
+    expect(matchMedia).toHaveBeenCalledWith("(max-width: 900px)");
     fireEvent.click(screen.getByRole("button", { name: /Layer: L1|Layer: L2|Layer: L3|Layer: Ev|Layer: All/ }));
     expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
