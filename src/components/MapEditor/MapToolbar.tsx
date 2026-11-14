@@ -56,7 +56,7 @@ interface MapToolbarProps {
 }
 
 const TOOLS_COLLAPSED_PREFERENCE = "essentials-studio:map-editor:tools-collapsed";
-const COMPACT_LAYOUT_QUERY = "(max-width: 700px)";
+const COMPACT_LAYOUT_QUERY = "(max-width: 900px)";
 const PAINT_TOOLS: { tool: PaintTool; label: string }[] = [
   { tool: "pencil", label: "Pen" },
   { tool: "rectangle", label: "Rect" },
