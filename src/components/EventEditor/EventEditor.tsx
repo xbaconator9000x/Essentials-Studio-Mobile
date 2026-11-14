@@ -25,6 +25,7 @@ import {
   cutCommandBlock,
   deleteEditableCommandBlock,
   getCommandBlockRange,
+  getEditableCommandRange,
   getCommandInsertionIndex,
   getCommandInsertionIndent,
   createEventCommandInsertion,
@@ -276,7 +277,7 @@ export function EventEditor({
     if (!page || selectedCommand < 0) return;
     const block = cloneCommandBlock(page.list, selectedCommand);
     if (block.length === 0) return;
-    const range = getCommandBlockRange(page.list, selectedCommand);
+    const range = getEditableCommandRange(page.list, selectedCommand);
     if (!range) return;
     const insertAt = getCommandInsertionIndex(page.list, range.end);
     updatePage((p) => {
