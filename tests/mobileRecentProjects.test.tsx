@@ -113,6 +113,32 @@ describe("mobile recent project switcher", () => {
     expect(screen.getAllByRole("button").length).toBe(5);
   });
 
+
+  it("deduplicates equivalent picker paths but retains the original native switch target", () => {
+    const onSelect = vi.fn();
+    render(<MobileRecentProjects
+      paths={["C:\\\\Projects\\\\Shattered\\\\", "C:/Projects/Shattered", "/storage/Projects/Other"]}
+      currentPath="/storage/Projects/Other/"
+      disabled={false} onSelect={onSelect}
+    />);
+    expect(screen.getByRole("button", { name: "Shattered" })).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Other · Current" }).hasAttribute("aria-current")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Shattered" }));
+    expect(onSelect).toHaveBeenCalledWith("C:\\\\Projects\\\\Shattered\\\\");
+  });
+
+  it("keeps case-distinct project paths separate on case-sensitive storage", () => {
+    render(<MobileRecentProjects
+      paths={["/projects/Game", "/projects/game"]}
+      currentPath="/projects/Game/"
+      disabled={false} onSelect={vi.fn()}
+    />);
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Game · Current" }).hasAttribute("aria-current")).toBe(true);
+    expect(screen.getByRole("button", { name: "game" })).toBeTruthy();
+  });
+
   it("does not render a switcher until there is another project to switch to", () => {
     const { container } = render(
       <MobileRecentProjects
