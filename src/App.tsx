@@ -74,7 +74,9 @@ import "./App.css";
 const PROJECT_ARCHIVE_ACCEPT =
   ".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed,application/octet-stream";
 const TILESET_PALETTE_PREFERENCE = "essentials-studio:map-editor:tileset-palette-visible";
-const MOBILE_LAYOUT_QUERY = "(max-width: 700px)";
+// A phone in landscape is often 750–900 CSS px. Keep the same mobile
+// navigation rather than silently swapping to the three-column desktop UI.
+const MOBILE_LAYOUT_QUERY = "(max-width: 900px)";
 
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
