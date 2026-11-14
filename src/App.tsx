@@ -1353,9 +1353,24 @@ function AppContent() {
         <section className="app-mobile-settings">
           <h1>Project &amp; export</h1>
           <p>Current project: <strong>{project.name}</strong></p>
-          <div className="app-mobile-safety-note" role="alert">
-            This is an experimental Android build. Keep the original ZIP and work only on a disposable copy until you have verified this build on your device.
+          <div className="app-mobile-tools-section" role="group" aria-label="Project data editors">
+            <h2>Project editors</h2>
+            <p>Edit Pokémon data, Ruby scripts and PBS records from the same project workspace.</p>
+            <div className="app-mobile-tools-grid">
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowDatabase(true)}>Database</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowScripts(true)}>Ruby Scripts</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowPbs(true)}>PBS Data</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => { setMobileSection("sprites"); setShowSprites(true); }}>Sprite Editor</button>
+            </div>
           </div>
+          <details className="app-mobile-safety-note">
+            <summary>Safety: keep your original project ZIP</summary>
+            <p>This is an experimental Android build. Work on a disposable copy until you have verified Save All and ZIP export on your device.</p>
+          </details>
           {canOpenProjectFolder && (
             <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
           )}
@@ -1375,20 +1390,6 @@ function AppContent() {
           <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
             Export ZIP
           </button>
-          <div className="app-mobile-tools-section" role="group" aria-label="Project data editors">
-            <h2>Project editors</h2>
-            <p>Edit Pokémon data, Ruby scripts and PBS records from the same project workspace.</p>
-            <div className="app-mobile-tools-grid">
-              <button type="button" disabled={loading || saving}
-                onClick={() => setShowDatabase(true)}>Database</button>
-              <button type="button" disabled={loading || saving}
-                onClick={() => setShowScripts(true)}>Ruby Scripts</button>
-              <button type="button" disabled={loading || saving}
-                onClick={() => setShowPbs(true)}>PBS Data</button>
-              <button type="button" disabled={loading || saving}
-                onClick={() => { setMobileSection("sprites"); setShowSprites(true); }}>Sprite Editor</button>
-            </div>
-          </div>
         </section>
         {mobileLayout && mobileSection === "sprites" && (
           <section className="app-mobile-sprite-preview">
