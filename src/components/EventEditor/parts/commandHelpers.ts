@@ -89,8 +89,9 @@ export function getStructuralCommandRange(
       if (current.close !== cmd.code || current.indent !== cmd.indent) return null;
       stack.pop();
       if (!stack.length) return { start: index, end: i };
-    } else if (cmd.indent <= current.indent && cmd.code !== 0) {
-      // Child statements must remain below their enclosing opener.
+    } else if (cmd.indent <= current.indent || (cmd.code === 0 && cmd.indent !== current.indent + 1)) {
+      // Even an empty child-list terminator must belong to the current depth.
+      // A code-zero marker at the opener depth is not a valid nested child.
       return null;
     }
   }
@@ -118,7 +119,9 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
     return endIndex === -1 ? list.length : endIndex;
   }
   if (list[selectedIndex].code === 0) return selectedIndex;
-  const range = getCommandBlockRange(list, selectedIndex);
+  // Insert after the entire balanced subtree, never between its opener and
+  // child list. A malformed opener remains non-editable until repaired.
+  const range = getStructuralCommandRange(list, selectedIndex) ?? getCommandBlockRange(list, selectedIndex);
   const insertionIndex = range ? range.end + 1 : selectedIndex + 1;
   return endIndex !== -1 ? Math.min(insertionIndex, endIndex) : insertionIndex;
 }
