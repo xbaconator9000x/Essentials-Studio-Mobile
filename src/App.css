@@ -612,7 +612,10 @@ body,
 @media (max-width: 900px) and (orientation: landscape) {
   .app-titlebar {
     min-height: 34px;
-    padding: max(2px, env(safe-area-inset-top)) 8px 2px;
+    /* Android's landscape WebView reports a zero CSS safe-area inset even
+       when the system status bar remains overlaid. Reserve a modest top strip
+       to keep the project title out from under the clock and status icons. */
+    padding: max(24px, env(safe-area-inset-top)) 8px 2px;
   }
   .app-preview-badge {
     padding: 2px 5px;
