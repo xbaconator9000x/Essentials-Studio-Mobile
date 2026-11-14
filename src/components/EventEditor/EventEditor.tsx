@@ -628,7 +628,7 @@ export function EventEditor({
         </div>
 
         {saveError && <div role="alert" style={{ color: "#d20f39", padding: "6px 12px" }}>{saveError}</div>}
-        {saveNotice && <div role="status" style={{ color: "#27864a", padding: "6px 12px" }}>{saveNotice}</div>}
+        {saveNotice && <div role="status" aria-label="Event save result" style={{ color: "#27864a", padding: "6px 12px" }}>{saveNotice}</div>}
 
         {/* Page tabs */}
         {event && (
