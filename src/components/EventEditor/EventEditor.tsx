@@ -27,6 +27,7 @@ import {
   getCommandInsertionIndex,
   getDefaultParams,
   moveCommandBlock,
+  prepareCommandBlockPaste,
   toVisualBlocks,
 } from "./parts/commandHelpers";
 import { duplicateEventPage, moveEventPage } from "./eventPageOperations";
@@ -176,7 +177,6 @@ export function EventEditor({
           setEditingCommand(null);
           setCommandSearch("");
           setShowPicker(false);
-          setClipboard(null);
           revisionRef.current = 0;
           setDirty(false);
           setSaveNotice(null);
@@ -238,9 +238,13 @@ export function EventEditor({
   const pasteCommand = useCallback(() => {
     if (!page || !clipboard?.length) return;
     const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
+    const destinationIndent = selectedCommand >= 0
+      ? page.list[selectedCommand]?.indent ?? 0 : 0;
+    const pasted = prepareCommandBlockPaste(clipboard, destinationIndent);
+    if (!pasted.length) return;
     updatePage((p) => {
       const list = [...p.list];
-      list.splice(insertAt, 0, ...structuredClone(clipboard));
+      list.splice(insertAt, 0, ...pasted);
       return { ...p, list };
     });
     setSelectedCommand(insertAt);
