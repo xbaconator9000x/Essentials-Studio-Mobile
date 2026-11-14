@@ -89,9 +89,9 @@ export function getStructuralCommandRange(
       if (current.close !== cmd.code || current.indent !== cmd.indent) return null;
       stack.pop();
       if (!stack.length) return { start: index, end: i };
-    } else if (cmd.indent <= current.indent || (cmd.code === 0 && cmd.indent !== current.indent + 1)) {
-      // Even an empty child-list terminator must belong to the current depth.
-      // A code-zero marker at the opener depth is not a valid nested child.
+    } else if (cmd.indent !== current.indent + 1) {
+      // Every ordinary command and child-list terminator belongs exactly one
+      // level below its current opener. Deeper jumps are malformed RMXP trees.
       return null;
     }
   }
