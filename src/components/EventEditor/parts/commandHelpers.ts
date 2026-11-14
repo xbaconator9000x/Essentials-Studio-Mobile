@@ -261,3 +261,21 @@ export function deleteEditableCommandBlock(
     selectedIndex: Math.max(0, range.start - 1),
   };
 }
+
+/** Construct a balanced RMXP conditional or loop at insertion time.
+ * The nested code-zero command closes the child list, while 412/413 closes
+ * the outer control-flow construct. Orphan markers are never offered alone.
+ */
+export function createEventCommandInsertion(
+  code: number, indent: number, defaultParams?: unknown[],
+): EventCommand[] {
+  if ([0, 411, 412, 413].includes(code)) return [];
+  const parent = createEventCommand(code, indent, defaultParams);
+  if (!parent) return [];
+  if (code !== 111 && code !== 112) return [parent];
+  return [
+    parent,
+    { code: 0, indent: indent + 1, parameters: [] },
+    { code: code === 111 ? 412 : 413, indent, parameters: [] },
+  ];
+}
