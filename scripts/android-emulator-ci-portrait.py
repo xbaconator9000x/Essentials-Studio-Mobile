@@ -144,27 +144,72 @@ def current_focus() -> str:
     return adb("shell", "dumpsys", "window", timeout=45).stdout.decode(errors="replace")
 
 
+def focused_anr_owner(window_dump: str) -> str | None:
+    """Read the foreground ANR dialog's process, never search the whole dump.
+
+    The same dumpsys includes the editor's ResumedActivity even when a
+    completely unrelated system launcher ANR is covering its window.
+    """
+    match = re.search(r"mFocusedWindow=[^\\n]*Application Not Responding:\\s*([\\w.]+)",
+                      window_dump)
+    return match.group(1) if match else None
+
+
+def recover_pixel_launcher_anr() -> bool:
+    """Tap Wait ONLY for the Android system Pixel Launcher, never our app."""
+    try:
+        nodes = ui_nodes("system-launcher-anr")
+        title = " ".join(label(n) for n in nodes).casefold()
+        if not any(phrase in title for phrase in (
+            "pixel launcher isn't responding",
+            "pixel launcher isn’t responding",
+            "com.google.android.apps.nexuslauncher isn't responding",
+            "com.google.android.apps.nexuslauncher isn’t responding",
+        )):
+            return False
+        wait_control = next((n for n in nodes if label(n).strip().casefold() == "wait"
+                             and locate([n], "Wait")), None)
+        if wait_control is None:
+            return False
+        tap(locate([wait_control], "Wait"))
+        print("Recovered unrelated Pixel Launcher ANR via its explicit Wait action.", flush=True)
+        time.sleep(6)
+        return True
+    except (RuntimeError, ET.ParseError, subprocess.TimeoutExpired) as error:
+        print(f"Could not recover Pixel Launcher ANR: {error}", flush=True)
+        return False
+
+
 def launch(package: str) -> None:
     output = adb("shell", "monkey", "-p", package, "-c",
                  "android.intent.category.LAUNCHER", "1", timeout=60).stdout
     (EVIDENCE / "launch-command.txt").write_bytes(output)
     print("Android monkey launcher:", output.decode(errors="replace")[-500:], flush=True)
-    # Android 15's dumpsys window output is not a stable public API: its
-    # focus strings differ from prior emulator releases. Require a real
-    # app process here, then prove actual foreground *UI* via fresh
-    # UIAutomator nodes below, rather than failing on a missing focus token.
-    deadline = time.monotonic() + 90
+    deadline = time.monotonic() + 110
+    recovered = False
     while time.monotonic() < deadline:
         pid = adb("shell", "pidof", package, check=False).stdout.decode().strip()
         if pid:
             focus = current_focus()
             (EVIDENCE / "window-after-launch.txt").write_text(focus, encoding="utf-8")
-            if "Application Not Responding" in focus and package in focus:
-                raise AssertionError("Emulator reported an editor application ANR on launch")
-            print(f"Editor process started: PID={pid}", flush=True)
+            owner = focused_anr_owner(focus)
+            if owner == package:
+                raise AssertionError("Emulator reported a genuine Essentials Studio application ANR")
+            if owner == "com.google.android.apps.nexuslauncher" and not recovered:
+                recovered = recover_pixel_launcher_anr()
+                if recovered:
+                    continue
+            if owner and owner != package:
+                # An unrelated Android process can ANR under first-boot load,
+                # but is not proof of editor failure or successful editor UI.
+                print(f"Unrelated Android ANR: {owner}; awaiting app accessibility.", flush=True)
+                time.sleep(3)
+                continue
+            print(f"Editor process started: PID={pid}; checking actual WebView UI.", flush=True)
             return
         time.sleep(2)
-    raise AssertionError("Editor process never started after launcher intent")
+    raise AssertionError("Editor did not reach a usable Android foreground after launch")
+
 
 
 def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
