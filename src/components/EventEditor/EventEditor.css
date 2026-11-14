@@ -597,7 +597,7 @@
   background: var(--color-accent-hover);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .event-editor-overlay {
     align-items: stretch;
     justify-content: stretch;
@@ -1026,7 +1026,7 @@
   outline-offset: -2px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .command-picker {
     width: 100vw;
     max-width: 100vw;
@@ -1239,7 +1239,7 @@
 
 /* Dialogue editing is the primary phone task: keep the command list tall.
    The command action rail scrolls instead of wrapping across three rows. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .event-command-panel-header {
     flex-wrap: nowrap;
     align-items: center;
@@ -1311,7 +1311,7 @@
 /* The event editor keeps page properties and command history mounted while
    presenting one editing surface at a time on narrow touch screens. */
 .event-editor-mobile-tabs { display: none; }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .event-editor-mobile-tabs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
