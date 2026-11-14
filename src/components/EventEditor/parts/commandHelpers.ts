@@ -84,12 +84,12 @@ function getAdjacentCommandRanges(
   direction: CommandMoveDirection,
 ): { selected: { start: number; end: number }; adjacent: { start: number; end: number } } | null {
   const selected = getCommandBlockRange(list, index);
-  if (!selected || list[selected.start].code === 0) return null;
+  if (!selected || STRUCTURAL_EVENT_CODES.has(list[selected.start].code)) return null;
   const blocks = toVisualBlocks(list);
   const blockIndex = blocks.findIndex((block) => block.rawIndex === selected.start);
   if (blockIndex < 0) return null;
   const adjacentBlock = blocks[blockIndex + (direction === "up" ? -1 : 1)];
-  if (!adjacentBlock || adjacentBlock.cmd.code === 0 || adjacentBlock.cmd.indent !== list[selected.start].indent) {
+  if (!adjacentBlock || STRUCTURAL_EVENT_CODES.has(adjacentBlock.cmd.code) || adjacentBlock.cmd.indent !== list[selected.start].indent) {
     return null;
   }
   const adjacent = getCommandBlockRange(list, adjacentBlock.rawIndex);
@@ -140,7 +140,7 @@ export function moveCommandBlock(
 
 export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
   const range = getCommandBlockRange(list, index);
-  if (!range || list[range.start].code === 0) return [];
+  if (!range || STRUCTURAL_EVENT_CODES.has(list[range.start].code)) return [];
   return list.slice(range.start, range.end + 1).map((command) => {
     const copy = { ...command, parameters: structuredClone(command.parameters) };
     delete copy.source_index;
@@ -208,7 +208,7 @@ export function cutCommandBlock(
   list: EventCommand[], index: number,
 ): { list: EventCommand[]; clipboard: EventCommand[]; selectedIndex: number } | null {
   const range = getCommandBlockRange(list, index);
-  if (!range || list[range.start]?.code === 0) return null;
+  if (!range || STRUCTURAL_EVENT_CODES.has(list[range.start].code)) return null;
   const clipboard = cloneCommandBlock(list, range.start);
   if (!clipboard.length) return null;
   return {
