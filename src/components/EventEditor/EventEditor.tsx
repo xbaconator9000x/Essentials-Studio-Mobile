@@ -59,6 +59,12 @@ export function EventEditor({
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [commandSearch, setCommandSearch] = useState("");
+  // Reveal a search match without hiding unrelated RMXP commands or changing their indices.
+  useEffect(() => {
+    if (!commandSearch.trim() || selectedCommand < 0) return;
+    document.querySelector(".event-command-list .event-command-row.selected")
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [commandSearch, selectedCommand]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
