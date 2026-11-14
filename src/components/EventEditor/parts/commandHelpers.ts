@@ -195,3 +195,20 @@ export function prepareCommandBlockPaste(block: EventCommand[], destinationInden
     return copy;
   });
 }
+
+/** Cut an entire RMXP visual block, never an isolated continuation or terminator.
+ * Returns null without mutating the list for invalid indices.
+ */
+export function cutCommandBlock(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; clipboard: EventCommand[]; selectedIndex: number } | null {
+  const range = getCommandBlockRange(list, index);
+  if (!range || list[range.start]?.code === 0) return null;
+  const clipboard = cloneCommandBlock(list, range.start);
+  if (!clipboard.length) return null;
+  return {
+    list: [...list.slice(0, range.start), ...list.slice(range.end + 1)],
+    clipboard,
+    selectedIndex: Math.max(0, range.start - 1),
+  };
+}
