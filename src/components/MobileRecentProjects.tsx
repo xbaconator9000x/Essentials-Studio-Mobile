@@ -12,6 +12,15 @@ function projectSegments(path: string): string[] {
   return path.split(/[\\/]/).filter(Boolean);
 }
 
+/** Storage paths returned by Android and desktop pickers may use different
+ * separators or a trailing directory separator. Normalize for identity only:
+ * keep the original path for the native open callback. Never fold case because
+ * case-sensitive storage can contain distinct projects. */
+function projectIdentity(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized || path;
+}
+
 /** A project basename and even its parent folder can be duplicated across
  * storage providers. Use the shortest suffix that distinguishes each path. */
 function projectLabels(paths: readonly string[]): string[] {
@@ -33,9 +42,16 @@ function projectLabels(paths: readonly string[]): string[] {
 
 export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }: Props) {
   const [query, setQuery] = useState("");
-  const uniquePaths = [...new Set(paths)];
+  const seen = new Set<string>();
+  const uniquePaths = paths.filter((path) => {
+    const identity = projectIdentity(path);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
   if (uniquePaths.length < 2) return null;
   const labels = projectLabels(uniquePaths);
+  const currentIdentity = projectIdentity(currentPath);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const searchEnabled = uniquePaths.length > 4;
   const visiblePaths = uniquePaths.filter((path, index) =>
@@ -62,7 +78,7 @@ export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }:
       {visiblePaths.length === 0 && <p role="status">No matching projects</p>}
       {visiblePaths.map((path) => {
         const index = uniquePaths.indexOf(path);
-        const active = path === currentPath;
+        const active = projectIdentity(path) === currentIdentity;
         return (
           <button
             key={path}
