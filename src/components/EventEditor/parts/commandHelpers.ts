@@ -80,7 +80,7 @@ export function getStructuralCommandRange(
     const current = stack[stack.length - 1];
     if (cmd.indent < parent.indent) return null;
     if (cmd.code === 111 || cmd.code === 112) {
-      if (cmd.indent <= current.indent) return null;
+      if (cmd.indent !== current.indent + 1) return null;
       stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false });
     } else if (cmd.code === 411) {
       if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent) return null;
