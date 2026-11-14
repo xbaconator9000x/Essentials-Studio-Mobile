@@ -32,6 +32,7 @@ import {
 } from "./parts/commandHelpers";
 import { duplicateEventPage, moveEventPage } from "./eventPageOperations";
 import { findEventCommandMatches, nextEventCommandMatch } from "./eventCommandSearch";
+import { getEventCommandClipboard, setEventCommandClipboard } from "./eventCommandClipboard";
 import "./EventEditor.css";
 
 interface Props {
@@ -145,7 +146,7 @@ export function EventEditor({
   const renderRevision = revisionRef.current;
   const eventRef = useRef(event);
   eventRef.current = event;
-  const [clipboard, setClipboard] = useState<EventCommand[] | null>(null);
+  const [clipboard, setClipboard] = useState<EventCommand[]>(() => getEventCommandClipboard(projectPath));
   const [switchNames, setSwitchNames] = useState<string[]>([]);
   const [variableNames, setVariableNames] = useState<string[]>([]);
 
@@ -177,6 +178,7 @@ export function EventEditor({
           setEditingCommand(null);
           setCommandSearch("");
           setShowPicker(false);
+          setClipboard(getEventCommandClipboard(projectPath));
           revisionRef.current = 0;
           setDirty(false);
           setSaveNotice(null);
@@ -232,15 +234,20 @@ export function EventEditor({
   const copySelectedCommand = useCallback(() => {
     if (!page || selectedCommand < 0) return;
     const block = cloneCommandBlock(page.list, selectedCommand);
-    if (block.length > 0) setClipboard(block);
-  }, [page, selectedCommand]);
+    if (block.length > 0) {
+      setEventCommandClipboard(projectPath, block);
+      setClipboard(getEventCommandClipboard(projectPath));
+    }
+  }, [page, selectedCommand, projectPath]);
 
   const pasteCommand = useCallback(() => {
-    if (!page || !clipboard?.length) return;
+    if (!page) return;
+    const projectClipboard = getEventCommandClipboard(projectPath);
+    if (!projectClipboard.length) return;
     const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
     const destinationIndent = selectedCommand >= 0
       ? page.list[selectedCommand]?.indent ?? 0 : 0;
-    const pasted = prepareCommandBlockPaste(clipboard, destinationIndent);
+    const pasted = prepareCommandBlockPaste(projectClipboard, destinationIndent);
     if (!pasted.length) return;
     updatePage((p) => {
       const list = [...p.list];
@@ -248,7 +255,7 @@ export function EventEditor({
       return { ...p, list };
     });
     setSelectedCommand(insertAt);
-  }, [page, selectedCommand, clipboard, updatePage]);
+  }, [page, selectedCommand, projectPath, updatePage]);
 
   const duplicateSelectedCommand = useCallback(() => {
     if (!page || selectedCommand < 0) return;
