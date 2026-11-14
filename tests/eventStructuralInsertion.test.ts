@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
+import { addConditionalElseArm, getStructuralCommandRange, createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("RMXP structural command insertion", () => {
   it("creates balanced conditional and loop scaffolds with correctly nested terminators", () => {
@@ -28,6 +28,44 @@ describe("RMXP structural command insertion", () => {
     for (const code of [0, 411, 412, 413, 401, 408, 655]) {
       expect(createEventCommand(code, 1)).toBeNull();
     }
+  });
+  it("adds an Else arm after the Then body and retains a balanced subtree", () => {
+    const before = [
+      { code: 111, indent: 0, parameters: [0, 1, 0], source_index: 4 },
+      { code: 101, indent: 1, parameters: ["then"], source_index: 5 },
+      { code: 0, indent: 1, parameters: [], source_index: 6 },
+      { code: 412, indent: 0, parameters: [], source_index: 7 },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    const result = addConditionalElseArm(before, 0);
+    expect(result).not.toBeNull();
+    expect(result!.list.map(({ code, indent }) => [code, indent])).toEqual([
+      [111, 0], [101, 1], [0, 1], [411, 0], [0, 1], [412, 0], [0, 0],
+    ]);
+    expect(result!.selectedIndex).toBe(3);
+    expect(getStructuralCommandRange(result!.list, 0)).toEqual({ start: 0, end: 5 });
+    expect(result!.list[1].source_index).toBe(5);
+    expect(result!.list[3].source_index).toBeUndefined();
+    expect(before).toHaveLength(5);
+  });
+  it("rejects duplicate Else, nested selection and malformed branches atomically", () => {
+    const nested = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 111, indent: 1, parameters: [] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 411, indent: 1, parameters: [] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 412, indent: 1, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+    ];
+    const result = addConditionalElseArm(nested, 0);
+    expect(result).not.toBeNull();
+    expect(getStructuralCommandRange(result!.list, 0)).toEqual({ start: 0, end: 9 });
+    expect(addConditionalElseArm(result!.list, 0)).toBeNull();
+    expect(addConditionalElseArm(nested, 2)).toBeNull();
+    expect(addConditionalElseArm(nested.slice(0, -1), 0)).toBeNull();
+    expect(nested).toHaveLength(8);
   });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
