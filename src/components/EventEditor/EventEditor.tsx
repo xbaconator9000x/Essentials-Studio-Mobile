@@ -28,7 +28,6 @@ import {
   getCommandInsertionIndex,
   getCommandInsertionIndent,
   createEventCommand,
-  getDefaultParams,
   moveCommandBlock,
   prepareCommandBlockPaste,
   toVisualBlocks,
