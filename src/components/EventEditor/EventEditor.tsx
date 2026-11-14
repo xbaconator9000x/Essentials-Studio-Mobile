@@ -7,8 +7,6 @@ import type {
 } from "../../types";
 import {
   type CommandDef,
-  getCommandDef,
-  summarizeCommand,
 } from "../../services/eventCommands";
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
@@ -32,6 +30,7 @@ import {
   toVisualBlocks,
 } from "./parts/commandHelpers";
 import { duplicateEventPage, moveEventPage } from "./eventPageOperations";
+import { findEventCommandMatches, nextEventCommandMatch } from "./eventCommandSearch";
 import "./EventEditor.css";
 
 interface Props {
@@ -193,26 +192,13 @@ export function EventEditor({
   const page: EventPage | null =
     event && event.pages[activePage] ? event.pages[activePage] : null;
 
-  // Search visual command blocks, not raw continuation lines: RMXP indices stay intact.
+  // Match visual blocks, retaining the original RMXP command indices.
   const commandMatches = page && commandSearch.trim()
-    ? toVisualBlocks(page.list).filter((block) => {
-      const cmd = block.cmd;
-      const summary = summarizeCommand(cmd.code, cmd.parameters, mapInfos, switchNames, variableNames);
-      const lines = block.kind === "multi"
-        ? page.list.slice(block.rawIndex, getBlockEnd(page.list, block.rawIndex) + 1)
-          .flatMap((item) => item.parameters.map(String)).join(" ")
-        : cmd.parameters.map(String).join(" ");
-      const query = commandSearch.trim().toLocaleLowerCase();
-      return [getCommandDef(cmd.code).name, summary, lines, String(cmd.code)]
-        .some((part) => part.toLocaleLowerCase().includes(query));
-    }).map((block) => block.rawIndex)
+    ? findEventCommandMatches(page.list, commandSearch, mapInfos, switchNames, variableNames)
     : [];
   const navigateCommandMatch = (direction: -1 | 1) => {
     if (!commandMatches.length) return;
-    const next = direction === 1
-      ? commandMatches.find((index) => index > selectedCommand) ?? commandMatches[0]
-      : [...commandMatches].reverse().find((index) => index < selectedCommand)
-        ?? commandMatches[commandMatches.length - 1];
+    const next = nextEventCommandMatch(commandMatches, selectedCommand, direction);
     commitDraftBeforeAction(() => {
       setEditingCommand(null);
       setSelectedCommand(next);
