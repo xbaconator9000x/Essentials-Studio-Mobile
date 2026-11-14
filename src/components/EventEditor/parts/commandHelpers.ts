@@ -69,17 +69,29 @@ export function getStructuralCommandRange(
 ): { start: number; end: number } | null {
   const parent = list[index];
   if (!parent || (parent.code !== 111 && parent.code !== 112)) return null;
-  const close = parent.code === 111 ? 412 : 413;
-  const stack: number[] = [close];
+  // Track the exact opener depth and type. RMXP branch markers have their
+  // own indentation; accepting merely matching code numbers can silently
+  // transplant an incorrectly nested Else/End/Repeat into another event.
+  const stack: { close: number; indent: number; elseSeen: boolean }[] = [
+    { close: parent.code === 111 ? 412 : 413, indent: parent.indent, elseSeen: false },
+  ];
   for (let i = index + 1; i < list.length; i++) {
     const cmd = list[i];
+    const current = stack[stack.length - 1];
     if (cmd.indent < parent.indent) return null;
-    if (cmd.code === 111) stack.push(412);
-    else if (cmd.code === 112) stack.push(413);
-    else if (cmd.code === 412 || cmd.code === 413) {
-      if (stack.at(-1) !== cmd.code) return null;
+    if (cmd.code === 111 || cmd.code === 112) {
+      if (cmd.indent <= current.indent) return null;
+      stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false });
+    } else if (cmd.code === 411) {
+      if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent) return null;
+      current.elseSeen = true;
+    } else if (cmd.code === 412 || cmd.code === 413) {
+      if (current.close !== cmd.code || current.indent !== cmd.indent) return null;
       stack.pop();
-      if (!stack.length) return cmd.indent === parent.indent ? { start: index, end: i } : null;
+      if (!stack.length) return { start: index, end: i };
+    } else if (cmd.indent <= current.indent && cmd.code !== 0) {
+      // Child statements must remain below their enclosing opener.
+      return null;
     }
   }
   return null;
