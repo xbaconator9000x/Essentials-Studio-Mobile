@@ -16,6 +16,19 @@ describe("RMXP structural command insertion", () => {
     }
     expect(createEventCommand(111, 0)?.code).toBe(111);
   });
+  it("keeps structural openers constructible while refusing orphan control markers", () => {
+    for (const code of [111, 112]) {
+      expect(createEventCommand(code, 1)?.code).toBe(code);
+      const scaffold = createEventCommandInsertion(code, 1);
+      expect(scaffold).toHaveLength(3);
+      expect(scaffold[0].code).toBe(code);
+      expect(scaffold[1]).toMatchObject({ code: 0, indent: 2 });
+      expect(scaffold[2]).toMatchObject({ code: code === 111 ? 412 : 413, indent: 1 });
+    }
+    for (const code of [0, 411, 412, 413, 401, 408, 655]) {
+      expect(createEventCommand(code, 1)).toBeNull();
+    }
+  });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
     const first = createEventCommandInsertion(111, 0, defaults);
