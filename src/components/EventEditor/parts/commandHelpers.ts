@@ -113,22 +113,40 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
 
 export type CommandMoveDirection = "up" | "down";
 
+/** Move only complete sibling statements. Structural openers own their balanced
+ * subtree; nested child commands cannot be moved across Else/End boundaries.
+ * This preserves RMXP branch and loop control flow without rewriting markers.
+ */
 function getAdjacentCommandRanges(
   list: EventCommand[],
   index: number,
   direction: CommandMoveDirection,
 ): { selected: { start: number; end: number }; adjacent: { start: number; end: number } } | null {
-  const selected = getCommandBlockRange(list, index);
-  if (!selected || STRUCTURAL_EVENT_CODES.has(list[selected.start].code)) return null;
-  const blocks = toVisualBlocks(list);
-  const blockIndex = blocks.findIndex((block) => block.rawIndex === selected.start);
-  if (blockIndex < 0) return null;
-  const adjacentBlock = blocks[blockIndex + (direction === "up" ? -1 : 1)];
-  if (!adjacentBlock || STRUCTURAL_EVENT_CODES.has(adjacentBlock.cmd.code) || adjacentBlock.cmd.indent !== list[selected.start].indent) {
-    return null;
+  const selected = getEditableCommandRange(list, index);
+  if (!selected) return null;
+  const depth = list[selected.start].indent;
+  const structural = list[selected.start].code === 111 || list[selected.start].code === 112;
+  if (structural && !getStructuralCommandRange(list, selected.start)) return null;
+
+  if (direction === "down") {
+    const start = selected.end + 1;
+    if (start >= list.length || list[start].indent !== depth) return null;
+    const adjacent = getEditableCommandRange(list, start);
+    if (!adjacent || adjacent.start !== start || list[adjacent.start].indent !== depth) return null;
+    return { selected, adjacent };
   }
-  const adjacent = getCommandBlockRange(list, adjacentBlock.rawIndex);
-  return adjacent ? { selected, adjacent } : null;
+
+  // Find the preceding statement ending exactly where the selected one starts.
+  // A nested child or structural closing marker cannot be treated as a sibling.
+  for (let start = selected.start - 1; start >= 0; start--) {
+    if (list[start].indent < depth) break;
+    if (list[start].indent !== depth) continue;
+    const adjacent = getEditableCommandRange(list, start);
+    if (adjacent?.start === start && adjacent.end === selected.start - 1) {
+      return { selected, adjacent };
+    }
+  }
+  return null;
 }
 
 export function canMoveCommandBlock(
