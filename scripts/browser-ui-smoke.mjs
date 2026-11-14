@@ -514,6 +514,11 @@ try {
   await navigation.waitFor({ state: "visible", timeout: 15_000 });
   await workspaceActions.waitFor({ state: "visible", timeout: 15_000 });
   await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  // Earlier map-list testing deliberately locked editing. Rotating and
+  // navigating must preserve that safe view-only state until explicitly armed.
+  await workspaceActions.getByRole("button", { name: "Enable map editing" })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
   await workspaceActions.getByRole("button", { name: "Switch map to view mode" })
     .waitFor({ state: "visible", timeout: 15_000 });
   const landscapeMetrics = await page.evaluate(() => {
