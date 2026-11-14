@@ -117,7 +117,7 @@ describe("mobile recent project switcher", () => {
   it("deduplicates equivalent picker paths but retains the original native switch target", () => {
     const onSelect = vi.fn();
     render(<MobileRecentProjects
-      paths={["C:\\\\Projects\\\\Shattered\\\\", "C:/Projects/Shattered", "/storage/Projects/Other"]}
+      paths={["C:\\Projects\\Shattered\\", "C:/Projects/Shattered", "/storage/Projects/Other"]}
       currentPath="/storage/Projects/Other/"
       disabled={false} onSelect={onSelect}
     />);
@@ -125,7 +125,7 @@ describe("mobile recent project switcher", () => {
     expect(screen.getAllByRole("button")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Other · Current" }).hasAttribute("aria-current")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Shattered" }));
-    expect(onSelect).toHaveBeenCalledWith("C:\\\\Projects\\\\Shattered\\\\");
+    expect(onSelect).toHaveBeenCalledWith("C:\\Projects\\Shattered\\");
   });
 
   it("keeps case-distinct project paths separate on case-sensitive storage", () => {
