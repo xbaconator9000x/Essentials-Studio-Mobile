@@ -7,6 +7,8 @@ import type {
 } from "../../types";
 import {
   type CommandDef,
+  getCommandDef,
+  summarizeCommand,
 } from "../../services/eventCommands";
 import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
@@ -56,6 +58,7 @@ export function EventEditor({
   const { saveAll: saveProjectAll, unregister: unregisterSavedEvent } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
+  const [commandSearch, setCommandSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -753,6 +756,30 @@ export function EventEditor({
                       Delete
                     </button>
                   </div>
+                </div>
+                <div className="event-command-search" role="search" aria-label="Find event commands">
+                  <input type="search" aria-label="Find command text" placeholder="Find command or dialogue…"
+                    value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)} />
+                  <button type="button" className="event-editor-btn" disabled={!commandSearch.trim()}
+                    onClick={() => {
+                      const query = commandSearch.trim().toLocaleLowerCase();
+                      const matches = toVisualBlocks(page.list).filter((block) => {
+                        const cmd = block.cmd;
+                        const summary = summarizeCommand(cmd.code, cmd.parameters, mapInfos, switchNames, variableNames);
+                        const lines = block.kind === "multi"
+                          ? page.list.slice(block.rawIndex, getBlockEnd(page.list, block.rawIndex) + 1)
+                            .flatMap((item) => item.parameters.map(String)).join(" ")
+                          : cmd.parameters.map(String).join(" ");
+                        return [getCommandDef(cmd.code).name, summary, lines, String(cmd.code)]
+                          .some((part) => part.toLocaleLowerCase().includes(query));
+                      }).map((block) => block.rawIndex);
+                      if (!matches.length) return;
+                      const next = matches.find((index) => index > selectedCommand) ?? matches[0];
+                      commitDraftBeforeAction(() => {
+                        setEditingCommand(null);
+                        setSelectedCommand(next);
+                      });
+                    }}>Find next</button>
                 </div>
                 <div className="event-command-list">
                   {toVisualBlocks(page.list).map((block) => {
