@@ -25,7 +25,7 @@ export function toVisualBlocks(list: EventCommand[]): VisualBlock[] {
         contCmds.push(list[j]);
         j++;
       }
-      if (contIndices.length > 0) {
+      if (contIndices.length > 0 || cmd.code === 101) {
         blocks.push({ kind: "multi", rawIndex: i, cmd, contIndices, contCmds });
         i = j;
         continue;
@@ -46,10 +46,112 @@ export function getBlockEnd(list: EventCommand[], index: number): number {
   return j - 1;
 }
 
+export function getCommandBlockRange(
+  list: EventCommand[],
+  index: number,
+): { start: number; end: number } | null {
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+  for (const block of toVisualBlocks(list)) {
+    const end = block.kind === "multi" ? block.contIndices.at(-1) ?? block.rawIndex : block.rawIndex;
+    if (index >= block.rawIndex && index <= end) {
+      return { start: block.rawIndex, end };
+    }
+  }
+  return null;
+}
+
+export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: number): number {
+  // RMXP uses code 0 inside nested branches as well as at the end of a page.
+  // Only the final top-level terminator bounds insertion; the first code 0
+  // can occur halfway through a valid conditional/loop script.
+  const last = list.length - 1;
+  const endIndex = last >= 0 && list[last].code === 0 && list[last].indent === 0
+    ? last : -1;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) {
+    return endIndex === -1 ? list.length : endIndex;
+  }
+  if (list[selectedIndex].code === 0) return selectedIndex;
+  const range = getCommandBlockRange(list, selectedIndex);
+  const insertionIndex = range ? range.end + 1 : selectedIndex + 1;
+  return endIndex !== -1 ? Math.min(insertionIndex, endIndex) : insertionIndex;
+}
+
+export type CommandMoveDirection = "up" | "down";
+
+function getAdjacentCommandRanges(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { selected: { start: number; end: number }; adjacent: { start: number; end: number } } | null {
+  const selected = getCommandBlockRange(list, index);
+  if (!selected || list[selected.start].code === 0) return null;
+  const blocks = toVisualBlocks(list);
+  const blockIndex = blocks.findIndex((block) => block.rawIndex === selected.start);
+  if (blockIndex < 0) return null;
+  const adjacentBlock = blocks[blockIndex + (direction === "up" ? -1 : 1)];
+  if (!adjacentBlock || adjacentBlock.cmd.code === 0 || adjacentBlock.cmd.indent !== list[selected.start].indent) {
+    return null;
+  }
+  const adjacent = getCommandBlockRange(list, adjacentBlock.rawIndex);
+  return adjacent ? { selected, adjacent } : null;
+}
+
+export function canMoveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): boolean {
+  return getAdjacentCommandRanges(list, index, direction) !== null;
+}
+
+export function moveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  const ranges = getAdjacentCommandRanges(list, index, direction);
+  if (!ranges) return null;
+  const { selected, adjacent } = ranges;
+  const selectedCommands = list.slice(selected.start, selected.end + 1);
+  const adjacentCommands = list.slice(adjacent.start, adjacent.end + 1);
+
+  if (direction === "up") {
+    return {
+      list: [
+        ...list.slice(0, adjacent.start),
+        ...selectedCommands,
+        ...adjacentCommands,
+        ...list.slice(selected.end + 1),
+      ],
+      selectedIndex: adjacent.start,
+    };
+  }
+
+  return {
+    list: [
+      ...list.slice(0, selected.start),
+      ...adjacentCommands,
+      ...selectedCommands,
+      ...list.slice(adjacent.end + 1),
+    ],
+    selectedIndex: adjacent.start,
+  };
+}
+
+export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
+  const range = getCommandBlockRange(list, index);
+  if (!range || list[range.start].code === 0) return [];
+  return list.slice(range.start, range.end + 1).map((command) => {
+    const copy = { ...command, parameters: structuredClone(command.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
+
 /** Get default parameters for a new command */
 export function getDefaultParams(code: number): unknown[] {
   switch (code) {
-    case 101: return [""];
+    case 101: return ["", 0, 0, 2];
     case 108: return [""];
     case 111: return [0, 1, 0]; // Conditional: Switch [1] == ON
     case 117: return [1]; // Call Common Event 1
@@ -81,4 +183,64 @@ export function getCommandIcon(code: number): string {
   if (code === 355 || code === 655) return "{}";
   if (code >= 301 && code <= 340) return "⚔";
   return "•";
+}
+
+/** Paste a copied visual block at the destination indentation without sharing
+ * mutable parameter objects or stale source Marshal indices with its origin.
+ * Preserve relative indentation inside the copied block.
+ */
+export function prepareCommandBlockPaste(block: EventCommand[], destinationIndent: number): EventCommand[] {
+  if (!block.length || !Number.isInteger(destinationIndent) || destinationIndent < 0) return [];
+  const baseIndent = block[0].indent;
+  if (!Number.isInteger(baseIndent) || baseIndent < 0) return [];
+  if (block.some((cmd) => !Number.isInteger(cmd.indent) || cmd.indent < baseIndent)) return [];
+  return block.map((cmd) => {
+    const copy = { ...cmd, indent: destinationIndent + cmd.indent - baseIndent, parameters: structuredClone(cmd.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
+
+/** Cut an entire RMXP visual block, never an isolated continuation or terminator.
+ * Returns null without mutating the list for invalid indices.
+ */
+export function cutCommandBlock(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; clipboard: EventCommand[]; selectedIndex: number } | null {
+  const range = getCommandBlockRange(list, index);
+  if (!range || list[range.start]?.code === 0) return null;
+  const clipboard = cloneCommandBlock(list, range.start);
+  if (!clipboard.length) return null;
+  return {
+    list: [...list.slice(0, range.start), ...list.slice(range.end + 1)],
+    clipboard,
+    selectedIndex: Math.max(0, range.start - 1),
+  };
+}
+
+/** Construct a fresh command for an event page. Command picker definitions are
+ * shared across editor instances; never hand their parameter objects directly
+ * to a mutable event list. RMXP continuation commands are owned by parents.
+ */
+export function createEventCommand(
+  code: number, indent: number, defaultParams?: unknown[],
+): EventCommand | null {
+  if (!Number.isInteger(code) || code <= 0 || !Number.isInteger(indent) || indent < 0) return null;
+  if (code === 401 || code === 408 || code === 655) return null;
+  return {
+    code,
+    indent,
+    parameters: structuredClone(defaultParams ?? getDefaultParams(code)),
+  };
+}
+
+/** Insertion at the final page terminator always uses top-level indentation.
+ * Selecting a nested code-zero marker inserts before that marker at its depth.
+ */
+export function getCommandInsertionIndent(list: EventCommand[], selectedIndex: number): number {
+  const index = getCommandInsertionIndex(list, selectedIndex);
+  const last = list.length - 1;
+  if (index === last && list[last]?.code === 0 && list[last].indent === 0) return 0;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) return 0;
+  return list[selectedIndex].indent;
 }

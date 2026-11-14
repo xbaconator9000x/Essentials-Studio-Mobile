@@ -47,7 +47,10 @@ def locate(nodes: list[dict[str, str]], needle: str) -> tuple[int, int] | None:
     for node in nodes:
         text = node.get("text", "") + " " + node.get("content-desc", "")
         if needle.casefold() in text.casefold() and node.get("bounds"):
-            return center(node["bounds"])
+            try:
+                return center(node["bounds"])
+            except ValueError:
+                continue
     return None
 
 
@@ -160,6 +163,8 @@ def picker_file_card(xml_text: str, filename: str) -> tuple[int, int] | None:
     for node in root.iter("node"):
         if not documents_ui_id(node.get("resource-id", ""), "item_root"):
             continue
+        if node.get("enabled") == "false":
+            continue
         # On AOSP API30, tapping the *middle of the grid thumbnail* can leave
         # GET_CONTENT open without selecting anything. The recorded failing
         # hierarchy places the actual file name in android:id/title at the
@@ -225,6 +230,14 @@ def picker_breadcrumb(xml_text: str) -> str:
     for node in root.iter("node"):
         if documents_ui_id(node.get("resource-id", ""), "breadcrumb_text"):
             return node.get("text", "").strip()
+    for node in root.iter("node"):
+        if not documents_ui_id(node.get("resource-id", ""), "toolbar"):
+            continue
+        for child in node.iter("node"):
+            if child.get("class") == "android.widget.TextView":
+                location = child.get("text", "").strip()
+                if location:
+                    return location
     return ""
 
 
@@ -321,11 +334,17 @@ def picker_list_view_control(nodes: list[dict[str, str]]) -> tuple[int, int] | N
 
 def editor_visible(nodes: list[dict[str, str]]) -> bool:
     """Require a loaded project, not merely the welcome screen or picker."""
-    return (
-        locate(nodes, "Essentials Studio —") is not None
-        and locate(nodes, "Export ZIP") is not None
-        and not any("Project ZIP import failed" in n.get("text", "") for n in nodes)
+    opened = locate(nodes, "Essentials Studio —") is not None
+    desktop_actions_visible = locate(nodes, "Export ZIP") is not None
+    phone_project_view_visible = locate(nodes, "Projects") is not None
+    project_preview_visible = (
+        locate(nodes, "read-only preview") is not None
+        and locate(nodes, "Choose a map below to inspect its layers and events.") is not None
     )
+    import_failed = any("Project ZIP import failed" in n.get("text", "") for n in nodes)
+    return opened and (
+        desktop_actions_visible or phone_project_view_visible or project_preview_visible
+    ) and not import_failed
 
 
 def wait_for_editor(evidence: Path, seconds: int) -> bool:
@@ -755,6 +774,12 @@ def selftest() -> None:
     assert picker_breadcrumb('<?xml version="1.0"?><hierarchy>'
                              '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
                              'text="sdk_gphone_x86_64"/></hierarchy>') == "sdk_gphone_x86_64"
+    toolbar_location = ('<?xml version="1.0"?><hierarchy>'
+                        '<node resource-id="com.android.documentsui:id/toolbar">'
+                        '<node class="android.widget.TextView" text="Downloads"/></node>'
+                        '<node resource-id="com.android.documentsui:id/item_root">'
+                        '<node class="android.widget.TextView" text="Download"/></node></hierarchy>')
+    assert picker_breadcrumb(toolbar_location) == "Downloads"
     focused_xml = ('<?xml version="1.0"?><hierarchy>'
                    '<node resource-id="com.google.android.documentsui:id/item_root" '
                    'focused="true"><node text="Download"/></node></hierarchy>')
@@ -804,6 +829,23 @@ def selftest() -> None:
     assert documents_ui_visible(entries(picker_visible_xml))
     editor_xml = '<?xml version="1.0"?><hierarchy><node text="Essentials Studio — Project" bounds="[0,0][400,60]"/><node text="Export ZIP..." bounds="[0,70][400,140]"/></hierarchy>'
     assert editor_visible(entries(editor_xml))
+    project_preview_xml = (
+        '<?xml version="1.0"?><hierarchy>'
+        '<node text="Essentials Studio — " bounds="[0,5][357,55]"/>'
+        '<node text="Projects" bounds="[0,0][0,0]"/>'
+        '<node text="1 maps · read-only preview" bounds="[34,301][1047,357]"/>'
+        '<node text="Choose a map below to inspect its layers and events. '
+        'The imported archive remains untouched." bounds="[34,354][1047,464]"/>'
+        '</hierarchy>'
+    )
+    assert locate(entries(project_preview_xml), "Projects") is None
+    assert editor_visible(entries(project_preview_xml))
+    failed_import_xml = project_preview_xml.replace(
+        "</hierarchy>",
+        '<node text="Project ZIP import failed: invalid ZIP" '
+        'bounds="[34,500][1047,580]"/></hierarchy>',
+    )
+    assert not editor_visible(entries(failed_import_xml))
     app_anr = ('<?xml version="1.0"?><hierarchy>'
                '<node text="Essentials Studio Mobile isn\'t responding" bounds="[0,0][80,60]"/>'
                '</hierarchy>')

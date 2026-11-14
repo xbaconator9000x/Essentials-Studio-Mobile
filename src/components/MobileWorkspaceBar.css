@@ -1,0 +1,109 @@
+/* A single predictable command strip replaces the desktop's hidden,
+   horizontally scrolling titlebar on portrait phones. */
+.app-mobile-workspace-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px 8px 7px;
+  background: var(--color-base);
+  border-bottom: 1px solid var(--color-surface0);
+}
+.app-mobile-workspace-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.app-mobile-workspace-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-mobile-workspace-dirty,
+.app-mobile-workspace-clean {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.app-mobile-workspace-dirty { color: var(--color-accent); }
+.app-mobile-workspace-clean { color: var(--color-subtext1); }
+.app-mobile-workspace-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+  /* All commands remain visible without horizontal scrolling on portrait phones. */
+}
+.app-mobile-workspace-actions > button[aria-label="Save all changes"] { order: -2; }
+.app-mobile-workspace-actions > button[aria-label="Export project ZIP"] { order: -1; }
+.app-mobile-workspace-actions > button {
+  min-height: 44px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 8px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.app-mobile-workspace-actions > button.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-surface1);
+}
+.app-mobile-workspace-actions > button.app-mobile-workspace-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-crust);
+}
+.app-mobile-workspace-actions > button:disabled { opacity: .48; }
+.app-mobile-workspace-actions > button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+@media (max-width: 360px) {
+  .app-mobile-workspace-bar { padding-inline: 5px; }
+  .app-mobile-workspace-actions > button { padding-inline: 7px; }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app-mobile-workspace-bar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 2px 8px;
+  }
+  .app-mobile-workspace-context {
+    flex: 0 1 180px;
+    min-width: 85px;
+    max-width: 180px;
+    overflow: hidden;
+  }
+  .app-mobile-workspace-name { min-width: 0; }
+  .app-mobile-workspace-actions {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    gap: 5px;
+  }
+  .app-mobile-workspace-actions > button {
+    flex: 1 0 72px;
+    min-width: 66px;
+    min-height: 44px;
+    padding: 5px 8px;
+  }
+}

@@ -1,0 +1,150 @@
+name: Android native emulator UI smoke
+
+# Dedicated, opt-in-by-file-change gate. The normal ARM64 APK job is not
+# replaced: this one builds an x86_64 package from the same source, because
+# the GitHub-hosted AVD cannot be assumed to execute an ARM64-only APK.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-emulator-ci.yml'
+      - 'scripts/android-emulator-ci-portrait.py'
+      - 'tests/fixtures/android-synthetic-project.zip.b64'
+      - 'tests/test_android_emulator_ci.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: essentials-android-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      CI: 'true'
+      ANDROID_EMULATOR_EVIDENCE: android-emulator-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Initialise Tauri Android Gradle wrapper
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          npm ci
+          npm run tauri android init -- --ci
+      - uses: gradle/actions/setup-gradle@v6.1.0
+        with:
+          cache-provider: basic
+      - name: Verify KVM hardware acceleration on the free runner
+        run: |
+          set -euo pipefail
+          mkdir -p android-emulator-evidence
+          {
+            echo "Runner: ${RUNNER_OS:-unknown}"
+            uname -a
+            id
+            ls -l /dev/kvm || true
+            stat /dev/kvm || true
+          } | tee android-emulator-evidence/kvm-preflight.txt
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::Standard hosted runner lacks a usable /dev/kvm device. Emulator runtime gate blocked, NOT passed."
+            exit 1
+          fi
+          # A Linux hosted runner may have /dev/kvm but no active udev
+          # daemon. Set explicit permissions instead of failing on udevadm.
+          sudo chmod a+rw /dev/kvm
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            echo "::error::KVM remains inaccessible after chmod. Emulator runtime gate blocked."
+            exit 1
+          fi
+          echo "KVM device is available to the Actions runner." | tee -a android-emulator-evidence/kvm-preflight.txt
+      - name: Validate Android harness, selectors, geometry and fixture
+        run: |
+          python3 -m py_compile scripts/android-emulator-ci-portrait.py scripts/android-emulator-import-smoke.py
+          python3 -m unittest discover -s tests -p test_android_emulator_ci.py -v
+      - name: Decode and verify rights-cleared synthetic RMXP fixture
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, io, pathlib, zipfile
+          source = pathlib.Path("tests/fixtures/android-synthetic-project.zip.b64")
+          data = base64.b64decode("".join(
+              line.strip() for line in source.read_text().splitlines()
+              if line.strip() and not line.startswith("#")
+          ), validate=True)
+          digest = hashlib.sha256(data).hexdigest()
+          expected = "60c78b3171a0b4fc1dc96260cd8d8240374dc214dd282779f8ff49ade2c000bb"
+          if digest != expected:
+              raise SystemExit(f"Emulator fixture SHA256 mismatch: {digest}")
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+              names = set(archive.namelist())
+              assert any(name.endswith("Game.rxproj") for name in names)
+              assert any(name.endswith("Data/Map001.rxdata") for name in names)
+              assert all(not name.startswith("/") and ".." not in name.split("/") for name in names)
+          target = pathlib.Path("android-synthetic-fixture/original.zip")
+          target.parent.mkdir(exist_ok=True)
+          target.write_bytes(data)
+          print(f"Verified original synthetic RMXP ZIP: {digest} ({len(data)} bytes)")
+          PY
+      - name: Build exact-HEAD x86_64 Android debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          npm run tauri android build -- --ci --apk --debug --target x86_64
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
+          test -s "$apk"
+          printf '%s\n' "$apk" > android-emulator-apk-path.txt
+          sha256sum "$apk" | tee android-emulator-built-apk.sha256
+      - name: Boot API35 Android x86_64 and drive the actual Tauri app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            # Android API35 may report boot_completed while Pixel Launcher is
+            # still indexing and can ANR before the app's first WebView draw.
+            sleep 25
+            python3 scripts/android-emulator-ci-portrait.py "$(cat android-emulator-apk-path.txt)" android-synthetic-fixture/original.zip
+      - name: Upload native emulator evidence even if a check fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: essentials-native-emulator-ui-evidence
+          path: |
+            android-emulator-evidence/
+            android-emulator-built-apk.sha256
+            android-emulator-apk-path.txt
+            android-synthetic-fixture/original.zip
+          if-no-files-found: warn
+          retention-days: 7

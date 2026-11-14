@@ -396,3 +396,33 @@
   color: var(--color-accent);
   font-size: 13px;
 }
+
+/* Browser and desktop keep the side-by-side table. Portrait phones navigate
+   database lists above the selected entity form instead of clipping both. */
+@media (max-width: 900px) {
+  .db-editor { min-width: 0; min-height: 0; }
+  .db-tabs { min-height: 46px; }
+  .db-tab { min-height: 44px; padding: 8px 12px; font-size: 13px; }
+  .db-content { flex-direction: column; min-height: 0; }
+  .db-list-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: min(28dvh, 220px);
+    min-height: 105px;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-surface0);
+  }
+  .db-list-toolbar { flex-wrap: wrap; }
+  .db-list-toolbar button { min-height: 44px; font-size: 13px; }
+  .db-list-item { min-height: 44px; font-size: 14px; }
+  .db-detail-panel { flex: 1 1 0; min-height: 0; min-width: 0; }
+  .db-columns { flex-direction: column; gap: 10px; }
+  .db-field { flex-wrap: wrap; }
+  .db-field input[type="text"], .db-field input[type="number"],
+  .db-field textarea, .db-field select { min-height: 44px; font-size: 16px; }
+  .db-bottom-bar, .db-save-bar {
+    gap: 6px;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+  }
+  .db-save-btn, .db-cancel-btn { min-height: 44px; min-width: 76px; font-size: 13px; }
+}

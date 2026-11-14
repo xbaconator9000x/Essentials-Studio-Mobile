@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -73,6 +73,37 @@ function waitForReady(child) {
   });
 }
 
+async function startBridge(root) {
+  bridge = spawn(resolve("src-tauri/target/debug/browser_bridge"), [], {
+    env: {
+      ...process.env,
+      ESSENTIALS_BROWSER_TOKEN: token,
+      ESSENTIALS_BROWSER_PROJECT_ROOT: root,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await waitForReady(bridge);
+}
+
+async function stopBridge() {
+  const child = bridge;
+  if (!child) return;
+  if (child.exitCode === null) {
+    await new Promise(resolveExit => {
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+        resolveExit();
+      }, 5000);
+      child.once("exit", () => {
+        clearTimeout(timeout);
+        resolveExit();
+      });
+      child.kill("SIGTERM");
+    });
+  }
+  bridge = null;
+}
+
 try {
   // Real native ZIP preflight and extraction, not Python's permissive extractall.
   const project = execFileSync(archiveCli, [
@@ -83,20 +114,13 @@ try {
   const protectedPaths = [
     "Data/Scripts.rxdata", "Data/System.rxdata",
     "Graphics/Tilesets/Synthetic.png", "Game.rxproj", "Game.ini",
+    "PluginData/opaque metadata.bin",
   ];
   const protectedHashes = Object.fromEntries(protectedPaths.map(p => [p, hash(join(root, p))]));
   const mapBefore = hash(join(root, "Data/Map001.rxdata"));
   const pbsBefore = hash(join(root, "PBS/pokemon.txt"));
 
-  bridge = spawn(resolve("src-tauri/target/debug/browser_bridge"), [], {
-    env: {
-      ...process.env,
-      ESSENTIALS_BROWSER_TOKEN: token,
-      ESSENTIALS_BROWSER_PROJECT_ROOT: root,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  await waitForReady(bridge);
+  await startBridge(root);
 
   assert.equal(await call("project_root"), root);
   const opened = await call("open_project", { path: root });
@@ -112,11 +136,15 @@ try {
   assert.deepEqual(savedMap.tiles, tiles);
 
   const event = await call("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(event.pages[0].list[0].parameters[0], "Synthetic dialogue");
-  event.pages[0].list[0].parameters[0] = "Browser bridge dialogue";
+  assert.equal(event.pages[0].list[0].code, 101);
+  assert.deepEqual(event.pages[0].list[0].parameters, ["", 0, 0, 2]);
+  assert.equal(event.pages[0].list[1].code, 401);
+  assert.equal(event.pages[0].list[1].parameters[0], "Synthetic dialogue");
+  event.pages[0].list[1].parameters[0] = "Browser bridge dialogue";
   await call("save_event", { projectPath: root, mapId: 1, event });
   const savedEvent = await call("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(savedEvent.pages[0].list[0].parameters[0], "Browser bridge dialogue");
+  assert.equal(savedEvent.pages[0].list[0].parameters[0], "");
+  assert.equal(savedEvent.pages[0].list[1].parameters[0], "Browser bridge dialogue");
 
   const pbs = await call("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
   const name = pbs[0].fields.find(field => field.key === "Name");
@@ -146,6 +174,30 @@ try {
   assert.notEqual(hash(join(root, "Data/Map001.rxdata")), mapBefore);
   assert.notEqual(hash(join(root, "PBS/pokemon.txt")), pbsBefore);
   assert.equal(hash(originalZip), originalHash, "Original ZIP was modified");
+
+  // Restart the actual Rust command process, then reopen from the same
+  // app-private working directory and verify edits were committed to disk.
+  await stopBridge();
+  await startBridge(root);
+  const reopenedProject = await call("open_project", { path: root });
+  assert.equal(reopenedProject.edit_map_id, 1);
+  const reopenedMap = await call("load_map", { projectPath: root, mapId: 1 });
+  assert.deepEqual(reopenedMap.tiles, tiles, "Map edits must survive backend process restart");
+  const reopenedEvent = await call("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(
+    reopenedEvent.pages[0].list[1].parameters[0],
+    "Browser bridge dialogue",
+    "Dialogue edits must survive backend process restart",
+  );
+  const reopenedPbs = await call("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
+  assert.equal(
+    reopenedPbs[0].fields.find(field => field.key === "Name").value,
+    "BrowserBridge",
+    "PBS edits must survive backend process restart",
+  );
+  for (const [path, before] of Object.entries(protectedHashes)) {
+    assert.equal(hash(join(root, path)), before, "Restart changed untouched project data: " + path);
+  }
 
   // The actual browser UI export command must produce a completed, local ZIP
   // receipt (not merely a requested download or a mocked native invocation).
@@ -181,6 +233,37 @@ try {
   assert.equal(verification.status, "verified");
   assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
 
+  // A file-backed document provider surrogate verifies export bytes after the
+  // provider handoff; it does not claim to execute Android ContentResolver JNI.
+  const providerDocument = join(temp, "selected-document-provider-output.zip");
+  copyFileSync(exportedZip, providerDocument);
+  assert.deepEqual(
+    readFileSync(providerDocument),
+    readFileSync(exportedZip),
+    "Provider readback must match every exported ZIP byte",
+  );
+  const partialProviderDocument = join(temp, "partial-document-provider-output.zip");
+  writeFileSync(
+    partialProviderDocument,
+    readFileSync(exportedZip).subarray(0, statSync(exportedZip).size - 1),
+  );
+  assert.notDeepEqual(
+    readFileSync(partialProviderDocument),
+    readFileSync(exportedZip),
+    "Partial provider output must not pass byte readback",
+  );
+  assert.throws(() => execFileSync("python3", [
+    "scripts/verify_project_roundtrip.py", originalZip, partialProviderDocument,
+    "--allow-changed", "Data/Map001.rxdata",
+    "--allow-changed", "PBS/pokemon.txt",
+  ], { stdio: "pipe" }), "Incomplete provider document must fail integrity verification");
+  const providerVerification = JSON.parse(execFileSync("python3", [
+    "scripts/verify_project_roundtrip.py", originalZip, providerDocument,
+    "--allow-changed", "Data/Map001.rxdata",
+    "--allow-changed", "PBS/pokemon.txt",
+  ], { encoding: "utf8" }));
+  assert.equal(providerVerification.status, "verified");
+
   // Refuse overwriting an existing ZIP, including failure cleanup paths.
   const existingZip = join(temp, "existing.zip");
   writeFileSync(existingZip, "preserve this original");
@@ -199,6 +282,14 @@ try {
   assert.throws(() => execFileSync(archiveCli, ["import", traversalZip, rejectedDir], { stdio: "pipe" }));
   assert.ok(!existsSync(rejectedDir), "Failed import must clean its newly-created working copy");
   assert.ok(!existsSync(join(temp, "escaped.txt")), "ZIP traversal must not escape the working copy");
+
+  const corruptZip = join(temp, "truncated.zip");
+  writeFileSync(corruptZip, readFileSync(originalZip).subarray(0, 20));
+  const corruptDestination = join(temp, "corrupt-rejected");
+  assert.throws(() => execFileSync(archiveCli, [
+    "import", corruptZip, corruptDestination,
+  ], { stdio: "pipe" }));
+  assert.ok(!existsSync(corruptDestination), "Corrupt ZIP must fail before publishing a project");
   assert.equal(hash(originalZip), originalHash, "Original ZIP must remain unchanged after export");
 
   console.log(JSON.stringify({
@@ -213,9 +304,17 @@ try {
     browserExportBytes: browserReceipt.size,
     browserExportVerification: browserVerification,
     independentZipVerification: verification,
+    nativeProcessRestartPassed: true,
+    providerDocumentReadback: {
+      sha256: hash(providerDocument),
+      size: statSync(providerDocument).size,
+      verification: providerVerification,
+      transport: "file-backed equivalent; Android ContentResolver not exercised",
+    },
+    corruptArchiveRejected: true,
     runtimeNotVerified: ["React browser UI", "Android SAF provider", "desktop RMXP", "JoiPlay/NaviaXP"],
   }, null, 2));
 } finally {
-  if (bridge && !bridge.killed) bridge.kill("SIGTERM");
+  await stopBridge();
   rmSync(temp, { recursive: true, force: true });
 }

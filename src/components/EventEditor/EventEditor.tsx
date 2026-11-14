@@ -12,13 +12,29 @@ import { loadEvent, saveEvent, loadSystemData } from "../../services/tauriApi";
 import { useUndoable } from "../../hooks/useUndoable";
 import { saveEventSnapshot } from "../../services/eventSaveGuards";
 import { updateEventCommandParam } from "../../services/eventEditorMutation";
-import { useEditorRegistration } from "../../context/ProjectSaveContext";
+import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import { replaceMultiLineBlock } from "../../services/eventMultiLineEdit";
 import { EventCommandPicker } from "./EventCommandPicker";
 import type { PbsIndex } from "../../services/pbsIndex";
 import { PageProperties } from "./parts/PageProperties";
 import { CommandRow, MultiLineBlock } from "./parts/CommandRow";
-import { PARENT_CONT, getBlockEnd, getDefaultParams, toVisualBlocks } from "./parts/commandHelpers";
+import {
+  PARENT_CONT,
+  canMoveCommandBlock,
+  cloneCommandBlock,
+  cutCommandBlock,
+  getBlockEnd,
+  getCommandBlockRange,
+  getCommandInsertionIndex,
+  getCommandInsertionIndent,
+  createEventCommand,
+  moveCommandBlock,
+  prepareCommandBlockPaste,
+  toVisualBlocks,
+} from "./parts/commandHelpers";
+import { duplicateEventPage, moveEventPage } from "./eventPageOperations";
+import { findEventCommandMatches, nextEventCommandMatch } from "./eventCommandSearch";
+import { getEventCommandClipboard, setEventCommandClipboard } from "./eventCommandClipboard";
 import "./EventEditor.css";
 
 interface Props {
@@ -42,21 +58,97 @@ export function EventEditor({
   pbsIndex,
 }: Props) {
   const { value: event, set: setEvent, setWithoutHistory, resetHistory, undo, redo, canUndo, canRedo } = useUndoable<RpgEvent>(null);
+  const { saveAll: saveProjectAll, unregister: unregisterSavedEvent } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
+  const [commandSearch, setCommandSearch] = useState("");
+  const commandListRef = useRef<HTMLDivElement>(null);
+  // Reveal a search match without hiding unrelated RMXP commands or changing their indices.
+  useEffect(() => {
+    if (!commandSearch.trim() || selectedCommand < 0) return;
+    commandListRef.current?.querySelector(".event-command-row.selected")
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [commandSearch, selectedCommand]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [editingCommand, setEditingCommand] = useState<number | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"commands" | "properties">("commands");
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 700
+  );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const savingAllRef = useRef(false);
   const revisionRef = useRef(0);
+  const activeInlineDraftCommitRef = useRef<(() => void) | null>(null);
+  const inlineDraftActiveRef = useRef(false);
+  const dirtyBeforeInlineDraftRef = useRef(false);
+  const pageActionPendingRef = useRef(false);
+  const persistRef = useRef<(closeOnSuccess: boolean, propagateErrors?: boolean) => Promise<void>>(
+    async () => {},
+  );
+  const registerActiveInlineDraftCommit = useCallback((commit: (() => void) | null) => {
+    activeInlineDraftCommitRef.current = commit;
+  }, []);
+  const commitActiveInlineDraft = useCallback(async () => {
+    const commit = activeInlineDraftCommitRef.current;
+    if (!commit) return;
+    commit();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }, []);
+  const commitDraftBeforeAction = useCallback((action: () => void) => {
+    if (pageActionPendingRef.current) return;
+    if (!activeInlineDraftCommitRef.current) {
+      action();
+      return;
+    }
+    pageActionPendingRef.current = true;
+    void commitActiveInlineDraft()
+      .then(action)
+      .catch((cause) => setSaveError(`Could not commit the active edit: ${String(cause)}`))
+      .finally(() => { pageActionPendingRef.current = false; });
+  }, [commitActiveInlineDraft]);
+  const switchEventPage = useCallback((pageIndex: number) => {
+    commitDraftBeforeAction(() => {
+      setActivePage(pageIndex);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+    });
+  }, [commitDraftBeforeAction]);
+  const startCommandEdit = useCallback((index: number) => {
+    commitDraftBeforeAction(() => setEditingCommand(index));
+  }, [commitDraftBeforeAction]);
+  const openCommandPicker = useCallback(() => {
+    commitDraftBeforeAction(() => setShowPicker(true));
+  }, [commitDraftBeforeAction]);
+  const handleInlineDraftChange = useCallback(() => {
+    if (!inlineDraftActiveRef.current) {
+      dirtyBeforeInlineDraftRef.current = dirty;
+      inlineDraftActiveRef.current = true;
+    }
+    setDirty(true);
+    setSaveNotice(null);
+    setSaveError(null);
+  }, [dirty]);
+  const handleInlineDraftCommit = useCallback(() => {
+    inlineDraftActiveRef.current = false;
+  }, []);
+  const handleInlineDraftCancel = useCallback(() => {
+    if (!inlineDraftActiveRef.current) return;
+    inlineDraftActiveRef.current = false;
+    setDirty(dirtyBeforeInlineDraftRef.current);
+  }, []);
   // A render can lag behind a just-queued React edit. Never save an older
   // event object under the revision of that not-yet-rendered edit.
   const renderRevision = revisionRef.current;
-  const [clipboard, setClipboard] = useState<EventCommand[] | null>(null);
+  const eventRef = useRef(event);
+  eventRef.current = event;
+  const [clipboard, setClipboard] = useState<EventCommand[]>(() => getEventCommandClipboard(projectPath));
   const [switchNames, setSwitchNames] = useState<string[]>([]);
   const [variableNames, setVariableNames] = useState<string[]>([]);
 
@@ -85,8 +177,13 @@ export function EventEditor({
           resetHistory();
           setActivePage(0);
           setSelectedCommand(-1);
+          setEditingCommand(null);
+          setCommandSearch("");
+          setShowPicker(false);
+          setClipboard(getEventCommandClipboard(projectPath));
           revisionRef.current = 0;
           setDirty(false);
+          setSaveNotice(null);
           setSaveError(null);
         }
       } catch (err) {
@@ -104,12 +201,26 @@ export function EventEditor({
   const page: EventPage | null =
     event && event.pages[activePage] ? event.pages[activePage] : null;
 
+  // Match visual blocks, retaining the original RMXP command indices.
+  const commandMatches = page && commandSearch.trim()
+    ? findEventCommandMatches(page.list, commandSearch, mapInfos, switchNames, variableNames)
+    : [];
+  const navigateCommandMatch = (direction: -1 | 1) => {
+    if (!commandMatches.length) return;
+    const next = nextEventCommandMatch(commandMatches, selectedCommand, direction);
+    commitDraftBeforeAction(() => {
+      setEditingCommand(null);
+      setSelectedCommand(next);
+    });
+  };
+
   // --- Editing functions ---
 
   const updatePage = useCallback(
     (updater: (page: EventPage) => EventPage) => {
       if (!event) return;
       revisionRef.current += 1;
+      setSaveNotice(null);
       setSaveError(null);
       setEvent((prev) => {
         if (!prev) return prev;
@@ -119,22 +230,81 @@ export function EventEditor({
       });
       setDirty(true);
     },
-    [event, activePage]
+    [event, activePage, setEvent]
   );
+
+  const copySelectedCommand = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const block = cloneCommandBlock(page.list, selectedCommand);
+    if (block.length > 0) {
+      setEventCommandClipboard(projectPath, block);
+      setClipboard(getEventCommandClipboard(projectPath));
+    }
+  }, [page, selectedCommand, projectPath]);
+
+  const cutSelectedCommand = useCallback(() => {
+    if (!page) return;
+    const cut = cutCommandBlock(page.list, selectedCommand);
+    if (!cut) return;
+    // Verify clipboard storage before modifying the source event.
+    setEventCommandClipboard(projectPath, cut.clipboard);
+    const copied = getEventCommandClipboard(projectPath);
+    if (copied.length !== cut.clipboard.length) return;
+    setClipboard(copied);
+    updatePage((p) => ({ ...p, list: cut.list }));
+    setEditingCommand(null);
+    setSelectedCommand(cut.selectedIndex);
+  }, [page, selectedCommand, projectPath, updatePage]);
+
+  const pasteCommand = useCallback(() => {
+    if (!page) return;
+    const projectClipboard = getEventCommandClipboard(projectPath);
+    if (!projectClipboard.length) return;
+    const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
+    const destinationIndent = getCommandInsertionIndent(page.list, selectedCommand);
+    const pasted = prepareCommandBlockPaste(projectClipboard, destinationIndent);
+    if (!pasted.length) return;
+    updatePage((p) => {
+      const list = [...p.list];
+      list.splice(insertAt, 0, ...pasted);
+      return { ...p, list };
+    });
+    setSelectedCommand(insertAt);
+  }, [page, selectedCommand, projectPath, updatePage]);
+
+  const duplicateSelectedCommand = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const block = cloneCommandBlock(page.list, selectedCommand);
+    if (block.length === 0) return;
+    const range = getCommandBlockRange(page.list, selectedCommand);
+    if (!range) return;
+    const insertAt = getCommandInsertionIndex(page.list, range.end);
+    updatePage((p) => {
+      const list = [...p.list];
+      list.splice(insertAt, 0, ...block);
+      return { ...p, list };
+    });
+    setSelectedCommand(insertAt);
+  }, [page, selectedCommand, updatePage]);
+
+  const moveSelectedCommand = useCallback((direction: "up" | "down") => {
+    if (!page || selectedCommand < 0) return;
+    const moved = moveCommandBlock(page.list, selectedCommand, direction);
+    if (!moved) return;
+    updatePage((p) => ({ ...p, list: moved.list }));
+    setSelectedCommand(moved.selectedIndex);
+  }, [page, selectedCommand, updatePage]);
 
   const handleInsertCommand = useCallback(
     (def: CommandDef) => {
       if (!page) return;
-      const newCmd: EventCommand = {
-        code: def.code,
-        indent: selectedCommand >= 0 ? page.list[selectedCommand]?.indent ?? 0 : 0,
-        parameters: def.defaultParams ?? getDefaultParams(def.code),
-      };
+      const newCmd = createEventCommand(
+        def.code, getCommandInsertionIndent(page.list, selectedCommand), def.defaultParams,
+      );
+      if (!newCmd) return;
 
       // Insert after the entire block (past any continuations)
-      const insertAt = selectedCommand >= 0
-        ? getBlockEnd(page.list, selectedCommand) + 1
-        : page.list.length - 1;
+      const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
       updatePage((p) => {
         const list = [...p.list];
         list.splice(insertAt, 0, newCmd);
@@ -176,40 +346,62 @@ export function EventEditor({
   // not of later page/command edits made while the write is pending.
   const persist = useCallback(async (closeOnSuccess: boolean, propagateErrors = false) => {
     if (savingRef.current) {
+      console.info("[event-save] rejected: write already in progress", { eventId, mapId });
       if (propagateErrors) throw new Error("Event save already in progress");
       return;
     }
     if (!event) {
+      console.info("[event-save] rejected: event data not loaded", { eventId, mapId, dirty });
       if (propagateErrors && dirty) throw new Error("Event data is not loaded");
       return;
     }
     if (revisionRef.current !== renderRevision) {
+      console.info("[event-save] rejected: render revision pending", {
+        eventId, mapId, revision: revisionRef.current, renderRevision,
+      });
       setDirty(true);
       setSaveError("An event edit is still updating. Save again once it appears.");
       if (propagateErrors) throw new Error("Event edit is still updating; save cancelled");
       return;
     }
     if (!dirty) {
-      if (closeOnSuccess) onClose();
+      console.info("[event-save] no dirty edits", { eventId, mapId, closeOnSuccess });
+      if (closeOnSuccess) {
+        console.info("[event-save] requesting close without write", { eventId, mapId });
+        onClose();
+      }
       return;
     }
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    console.info("[event-save] native write started", {
+      eventId, mapId, revision: renderRevision, closeOnSuccess,
+    });
     try {
       const current = await saveEventSnapshot(
         event, renderRevision, () => revisionRef.current,
         (snapshot) => saveEvent(projectPath, mapId, snapshot),
       );
       if (current) {
+        console.info("[event-save] native write completed", { eventId, mapId, revision: renderRevision });
         setDirty(false);
-        if (closeOnSuccess) onClose();
+        if (closeOnSuccess) {
+          console.info("[event-save] requesting close after write", { eventId, mapId });
+          // Remove the completed editor synchronously before a rapid Save All/export.
+          unregisterSavedEvent(`event-${projectPath}-${mapId}-${eventId}`);
+          onClose();
+        }
       } else {
+        console.info("[event-save] write completed but newer edits remain", { eventId, mapId });
         setDirty(true);
         setSaveError("Newer event edits remain unsaved. Save again before closing.");
         if (propagateErrors) throw new Error("Newer event edits remain unsaved");
       }
     } catch (err) {
+      console.error("[event-save] native write failed", {
+        eventId, mapId, errorType: err instanceof Error ? err.name : typeof err,
+      });
       setDirty(true);
       setSaveError(`Save failed: ${String(err)}`);
       if (propagateErrors) throw err;
@@ -217,18 +409,120 @@ export function EventEditor({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [event, dirty, renderRevision, projectPath, mapId, onClose]);
+  }, [event, dirty, renderRevision, projectPath, mapId, eventId, onClose, unregisterSavedEvent]);
+  persistRef.current = persist;
 
   // Include open event dialogs in Save All, project switching and ZIP export.
   // Unlike a button save, a global save must propagate failures to its caller.
-  const saveForProject = useCallback(() => persist(false, true), [persist]);
+  const saveForProject = useCallback(async () => {
+    await commitActiveInlineDraft();
+    await persistRef.current(false, true);
+  }, [commitActiveInlineDraft]);
+  const handleSaveAll = useCallback(async () => {
+    if (savingAllRef.current) return;
+    savingAllRef.current = true;
+    setSavingAll(true);
+    setSaveNotice(null);
+    setSaveError(null);
+    try {
+      await commitActiveInlineDraft();
+      await saveProjectAll();
+      setSaveNotice("All registered editor changes were saved.");
+    } catch (cause) {
+      setSaveError(`Save All failed: ${String(cause)}`);
+    } finally {
+      savingAllRef.current = false;
+      setSavingAll(false);
+    }
+  }, [commitActiveInlineDraft, saveProjectAll]);
   const discardForProject = useCallback(() => {
     if (!savingRef.current) onClose();
   }, [onClose]);
   useEditorRegistration(`event-${projectPath}-${mapId}-${eventId}`, saveForProject, discardForProject, dirty);
 
-  const handleOk = useCallback(() => { void persist(true); }, [persist]);
-  const handleSave = useCallback(() => { void persist(false); }, [persist]);
+  const handleOk = useCallback(async () => {
+    console.info("[event-save] OK activated", { eventId, mapId });
+    await commitActiveInlineDraft();
+    await persistRef.current(true);
+  }, [commitActiveInlineDraft, eventId, mapId]);
+  const handleSave = useCallback(async () => {
+    await commitActiveInlineDraft();
+    await persistRef.current(false);
+  }, [commitActiveInlineDraft]);
+  const handleAddEventPage = useCallback(() => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      if (!current) return;
+      const newPage: EventPage = {
+        condition: { switch1_valid: false, switch2_valid: false, variable_valid: false, self_switch_valid: false, switch1_id: 1, switch2_id: 1, variable_id: 1, variable_value: 0, self_switch_ch: "A" },
+        graphic: { tile_id: 0, character_name: "", character_hue: 0, direction: 2, pattern: 0, opacity: 255, blend_type: 0 },
+        move_type: 0, move_speed: 3, move_frequency: 3,
+        move_route: { repeat: true, skippable: false, list: [{ code: 0, parameters: [] }] },
+        walk_anime: true, step_anime: false, direction_fix: false, through: false, always_on_top: false,
+        trigger: 0,
+        list: [{ code: 0, indent: 0, parameters: [] }],
+      };
+      setEvent((previous) => previous
+        ? { ...previous, pages: [...previous.pages, newPage] }
+        : previous);
+      setActivePage(current.pages.length);
+      setSelectedCommand(-1);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [commitDraftBeforeAction, setEvent]);
+  const handleRemoveEventPage = useCallback(() => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      if (!current || current.pages.length <= 1) return;
+      setEvent((previous) => {
+        if (!previous || previous.pages.length <= 1) return previous;
+        const pages = previous.pages.filter((_, index) => index !== activePage);
+        return { ...previous, pages };
+      });
+      setActivePage(Math.min(activePage, current.pages.length - 2));
+      setSelectedCommand(-1);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforeAction, setEvent]);
+
+  const handleDuplicateEventPage = useCallback(() => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      if (!current || !current.pages[activePage]) return;
+      setEvent((previous) => previous
+        ? { ...previous, pages: duplicateEventPage(previous.pages, activePage) } : previous);
+      setActivePage(activePage + 1);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforeAction, setEvent]);
+
+  const handleMoveEventPage = useCallback((direction: -1 | 1) => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      const destination = activePage + direction;
+      if (!current || destination < 0 || destination >= current.pages.length) return;
+      setEvent((previous) => previous
+        ? { ...previous, pages: moveEventPage(previous.pages, activePage, direction) } : previous);
+      setActivePage(destination);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforeAction, setEvent]);
 
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
@@ -239,7 +533,8 @@ export function EventEditor({
       return;
     }
     const cancelRevision = revisionRef.current;
-    if (dirty && !(await confirmEditor("Discard changes to this event?"))) return;
+    if ((dirty || inlineDraftActiveRef.current) &&
+        !(await confirmEditor("Discard changes to this event?"))) return;
     if (savingRef.current || revisionRef.current !== cancelRevision) return;
     onClose();
   }, [dirty, onClose, renderRevision]);
@@ -259,60 +554,47 @@ export function EventEditor({
         } else {
           handleCancel();
         }
+        return;
       }
+      const target = e.target;
+      if (showPicker) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void handleSave();
+        return;
+      }
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable='true']") !== null)
+      ) return;
       if (e.key === "Delete" && selectedCommand >= 0 && event && !showPicker && editingCommand === null) {
         handleDeleteCommand(selectedCommand);
       }
       if (e.key === "Insert" && !showPicker && editingCommand === null) {
-        setShowPicker(true);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
+        openCommandPicker();
       }
       // Copy command
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedCommand >= 0 && page && editingCommand === null) {
-        const cmd = page.list[selectedCommand];
-        if (cmd && cmd.code !== 0) {
-          setClipboard([{
-            code: cmd.code,
-            indent: cmd.indent,
-            parameters: [...cmd.parameters],
-          }]);
-        }
+        copySelectedCommand();
       }
       // Paste command
       if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard && clipboard.length > 0 && page && editingCommand === null) {
         e.preventDefault();
-        const insertAt = selectedCommand >= 0 ? selectedCommand + 1 : page.list.length - 1;
-        updatePage((p) => {
-          const list = [...p.list];
-          list.splice(insertAt, 0, ...clipboard.map((c) => ({ ...c, parameters: [...c.parameters] })));
-          return { ...p, list };
-        });
-        setSelectedCommand(insertAt);
+        pasteCommand();
       }
       // Duplicate command (Ctrl+D)
       if ((e.ctrlKey || e.metaKey) && e.key === "d" && selectedCommand >= 0 && page && editingCommand === null) {
         e.preventDefault();
-        const cmd = page.list[selectedCommand];
-        if (cmd && cmd.code !== 0) {
-          updatePage((p) => {
-            const list = [...p.list];
-            list.splice(selectedCommand + 1, 0, {
-              code: cmd.code,
-              indent: cmd.indent,
-              parameters: [...cmd.parameters],
-            });
-            return { ...p, list };
-          });
-          setSelectedCommand(selectedCommand + 1);
-        }
+        duplicateSelectedCommand();
       }
       // Undo (Ctrl+Z)
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && editingCommand === null) {
         e.preventDefault();
         revisionRef.current += 1;
+        setSaveNotice(null);
         setSaveError(null);
         undo();
         setDirty(true);
@@ -321,6 +603,7 @@ export function EventEditor({
       if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey)) && editingCommand === null) {
         e.preventDefault();
         revisionRef.current += 1;
+        setSaveNotice(null);
         setSaveError(null);
         redo();
         setDirty(true);
@@ -328,7 +611,7 @@ export function EventEditor({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, updatePage, undo, redo]);
+  }, [handleCancel, showPicker, editingCommand, selectedCommand, event, page, clipboard, handleDeleteCommand, handleSave, copySelectedCommand, pasteCommand, duplicateSelectedCommand, openCommandPicker, undo, redo]);
 
   // Click outside to close (respects dirty guard via handleCancel)
   const handleOverlayClick = useCallback(
@@ -361,6 +644,7 @@ export function EventEditor({
         </div>
 
         {saveError && <div role="alert" style={{ color: "#d20f39", padding: "6px 12px" }}>{saveError}</div>}
+        {saveNotice && <div role="status" aria-label="Event save result" style={{ color: "#27864a", padding: "6px 12px" }}>{saveNotice}</div>}
 
         {/* Page tabs */}
         {event && (
@@ -369,52 +653,39 @@ export function EventEditor({
               <button
                 key={i}
                 className={`event-page-tab ${activePage === i ? "active" : ""}`}
-                onClick={() => {
-                  setActivePage(i);
-                  setSelectedCommand(-1);
-                  setEditingCommand(null);
-                }}
+                type="button"
+                aria-label={`Event page ${i + 1}`}
+                aria-pressed={activePage === i}
+                onClick={() => void switchEventPage(i)}
               >
                 Page {i + 1}
               </button>
             ))}
             <button
               className="event-page-tab event-page-tab-add"
-              onClick={() => {
-                if (!event) return;
-                const newPage: EventPage = {
-                  condition: { switch1_valid: false, switch2_valid: false, variable_valid: false, self_switch_valid: false, switch1_id: 1, switch2_id: 1, variable_id: 1, variable_value: 0, self_switch_ch: "A" },
-                  graphic: { tile_id: 0, character_name: "", character_hue: 0, direction: 2, pattern: 0, opacity: 255, blend_type: 0 },
-                  move_type: 0, move_speed: 3, move_frequency: 3,
-                  move_route: { repeat: true, skippable: false, list: [{ code: 0, parameters: [] }] },
-                  walk_anime: true, step_anime: false, direction_fix: false, through: false, always_on_top: false,
-                  trigger: 0,
-                  list: [{ code: 0, indent: 0, parameters: [] }],
-                };
-                setEvent({ ...event, pages: [...event.pages, newPage] });
-                setActivePage(event.pages.length);
-                setSelectedCommand(-1);
-                revisionRef.current += 1;
-                setSaveError(null);
-                setDirty(true);
-              }}
+              type="button"
+              onClick={handleAddEventPage}
+              aria-label="Add event page"
               title="Add a new page"
             >
               +
             </button>
+            <button className="event-page-tab" type="button"
+              onClick={handleDuplicateEventPage}
+              aria-label="Duplicate current event page"
+              title="Duplicate all commands, conditions and movement settings">Duplicate</button>
+            <button className="event-page-tab" type="button"
+              onClick={() => handleMoveEventPage(-1)} disabled={activePage === 0}
+              aria-label="Move event page earlier" title="Lower page priority">←</button>
+            <button className="event-page-tab" type="button"
+              onClick={() => handleMoveEventPage(1)} disabled={activePage >= event.pages.length - 1}
+              aria-label="Move event page later" title="Raise page priority">→</button>
             {event.pages.length > 1 && (
               <button
                 className="event-page-tab event-page-tab-remove"
-                onClick={() => {
-                  if (!event || event.pages.length <= 1) return;
-                  const pages = event.pages.filter((_, i) => i !== activePage);
-                  setEvent({ ...event, pages });
-                  setActivePage(Math.min(activePage, pages.length - 1));
-                  setSelectedCommand(-1);
-                  revisionRef.current += 1;
-                  setSaveError(null);
-                  setDirty(true);
-                }}
+                type="button"
+                onClick={handleRemoveEventPage}
+                aria-label="Remove event page"
                 title="Remove current page"
               >
                 −
@@ -423,8 +694,17 @@ export function EventEditor({
           </div>
         )}
 
+        <div className="event-editor-mobile-tabs" role="group" aria-label="Event editing workspace">
+          <button type="button" className={mobilePanel === "commands" ? "active" : ""}
+            aria-pressed={mobilePanel === "commands"} onClick={() => setMobilePanel("commands")}>Commands</button>
+          <button type="button" className={mobilePanel === "properties" ? "active" : ""}
+            aria-pressed={mobilePanel === "properties"} onClick={() => {
+              setMobilePanel("properties");
+              setPropertiesCollapsed(false);
+            }}>Page properties</button>
+        </div>
         {/* Body */}
-        <div className="event-editor-body">
+        <div className={`event-editor-body event-editor-body--${mobilePanel}`}>
           {loading ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#8c8fa1" }}>
               Loading event data...
@@ -436,8 +716,19 @@ export function EventEditor({
           ) : page ? (
             <>
               {/* Left: Page properties */}
-              <div className="event-page-properties">
-                <PageProperties page={page} onUpdatePage={updatePage} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
+              <div className={`event-page-properties${propertiesCollapsed ? " is-collapsed" : ""}`}>
+                <button
+                  type="button"
+                  className="event-page-properties-toggle"
+                  aria-expanded={!propertiesCollapsed}
+                  aria-controls="event-page-properties-content"
+                  onClick={() => setPropertiesCollapsed((collapsed) => !collapsed)}
+                >
+                  {propertiesCollapsed ? "Show event properties" : "Hide event properties"}
+                </button>
+                <div id="event-page-properties-content" className="event-page-properties-content" hidden={propertiesCollapsed}>
+                  <PageProperties page={page} onUpdatePage={updatePage} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
+                </div>
               </div>
 
               {/* Right: Command list */}
@@ -446,27 +737,72 @@ export function EventEditor({
                   <span className="event-command-panel-title">
                     Event Commands ({page.list.length})
                   </span>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div className="event-command-actions">
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
-                      onClick={() => setShowPicker(true)}
+                      className="event-editor-btn event-command-action"
+                      onClick={openCommandPicker}
                       title="Insert a new command (Ins)"
                     >
                       + Insert
                     </button>
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
-                      onClick={() => setEditingCommand(selectedCommand)}
+                      className="event-editor-btn event-command-action"
+                      onClick={copySelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Copy selected command block"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={cutSelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Cut selected command block"
+                    >
+                      Cut
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={pasteCommand}
+                      disabled={!clipboard?.length}
+                      aria-label="Paste command block"
+                    >
+                      Paste
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={duplicateSelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Duplicate selected command block"
+                    >
+                      Duplicate
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={() => moveSelectedCommand("up")}
+                      disabled={!canMoveCommandBlock(page.list, selectedCommand, "up")}
+                      aria-label="Move selected command up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={() => moveSelectedCommand("down")}
+                      disabled={!canMoveCommandBlock(page.list, selectedCommand, "down")}
+                      aria-label="Move selected command down"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={() => startCommandEdit(selectedCommand)}
                       disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
                       title="Edit selected command"
                     >
                       Edit
                     </button>
                     <button
-                      className="event-editor-btn"
-                      style={{ padding: "3px 10px", fontSize: 11 }}
+                      className="event-editor-btn event-command-action"
                       onClick={() => {
                         if (selectedCommand >= 0) handleDeleteCommand(selectedCommand);
                       }}
@@ -477,7 +813,34 @@ export function EventEditor({
                     </button>
                   </div>
                 </div>
-                <div className="event-command-list">
+                <div className="event-command-search" role="search" aria-label="Find event commands">
+                  <input type="search" aria-label="Find command text" placeholder="Find command or dialogue…"
+                    value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        navigateCommandMatch(e.shiftKey ? -1 : 1);
+                      } else if (e.key === "Escape" && commandSearch) {
+                        e.preventDefault();
+                        setCommandSearch("");
+                      }
+                    }} />
+                  <span role="status" aria-live="polite" className="event-command-search-count">
+                    {commandSearch.trim()
+                      ? commandMatches.length
+                        ? `${commandMatches.indexOf(selectedCommand) + 1 || "–"} of ${commandMatches.length} matches`
+                        : "No matches"
+                      : "Search this page"}
+                  </span>
+                  <button type="button" className="event-editor-btn"
+                    disabled={!commandMatches.length} aria-label="Find previous command"
+                    onClick={() => navigateCommandMatch(-1)}>Previous</button>
+                  <button type="button" className="event-editor-btn"
+                    disabled={!commandMatches.length} aria-label="Find next command"
+                    onClick={() => navigateCommandMatch(1)}>Next</button>
+                </div>
+                <div className="event-command-list" ref={commandListRef}>
                   {toVisualBlocks(page.list).map((block) => {
                     if (block.kind === "multi") {
                       return (
@@ -487,7 +850,7 @@ export function EventEditor({
                           selected={selectedCommand === block.rawIndex}
                           editing={editingCommand === block.rawIndex}
                           onSelect={() => setSelectedCommand(block.rawIndex)}
-                          onStartEdit={() => setEditingCommand(block.rawIndex)}
+                          onStartEdit={() => startCommandEdit(block.rawIndex)}
                           onUpdateLines={(lines) => {
                             const contCode = PARENT_CONT[block.cmd.code]!;
                             updatePage((p) => {
@@ -497,6 +860,10 @@ export function EventEditor({
                             setDirty(true);
                           }}
                           onStopEditing={() => setEditingCommand(null)}
+                          onRegisterDraftCommit={registerActiveInlineDraftCommit}
+                          onDraftChange={handleInlineDraftChange}
+                          onDraftCommit={handleInlineDraftCommit}
+                          onDraftCancel={handleInlineDraftCancel}
                         />
                       );
                     }
@@ -509,9 +876,13 @@ export function EventEditor({
                         selected={selectedCommand === i}
                         editing={editingCommand === i}
                         onClick={() => setSelectedCommand(i)}
-                        onDoubleClick={() => { if (cmd.code !== 0) setEditingCommand(i); }}
+                        onDoubleClick={() => { if (cmd.code !== 0) startCommandEdit(i); }}
                         onParamChange={(paramIdx, value) => handleUpdateCommandParam(i, paramIdx, value)}
                         onStopEditing={() => setEditingCommand(null)}
+                        onRegisterDraftCommit={registerActiveInlineDraftCommit}
+                        onDraftChange={handleInlineDraftChange}
+                        onDraftCommit={handleInlineDraftCommit}
+                        onDraftCancel={handleInlineDraftCancel}
                         mapInfos={mapInfos}
                         switchNames={switchNames}
                         variableNames={variableNames}
@@ -531,34 +902,42 @@ export function EventEditor({
 
         {/* Footer */}
         <div className="event-editor-footer">
-          <span style={{ fontSize: 10, color: "#8c8fa1" }}>
+          <span className="event-editor-keyboard-hints" style={{ fontSize: 10, color: "#8c8fa1" }}>
             Select + Edit · Del/Ins · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save
           </span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              className="event-editor-btn"
-              onClick={() => { revisionRef.current += 1; setSaveError(null); undo(); setDirty(true); }}
-              disabled={!canUndo}
-              title="Undo (Ctrl+Z)"
-              style={{ padding: "6px 10px" }}
-            >
-              ↩
-            </button>
-            <button
-              className="event-editor-btn"
-              onClick={() => { revisionRef.current += 1; setSaveError(null); redo(); setDirty(true); }}
-              disabled={!canRedo}
-              title="Redo (Ctrl+Y)"
-              style={{ padding: "6px 10px" }}
-            >
-              ↪
-            </button>
+          <div className="event-editor-footer-actions">
             <button
               className="event-editor-btn event-editor-btn-primary"
               onClick={handleOk}
               disabled={saving}
             >
-              {saving ? "Saving..." : "OK"}
+              {saving ? "Saving..." : "Save & close"}
+            </button>
+            <button
+              className="event-editor-btn"
+              aria-label="Save All from event editor"
+              onClick={() => void handleSaveAll()}
+              disabled={saving || savingAll}
+            >
+              {savingAll ? "Saving..." : "Save All"}
+            </button>
+            <button
+              className="event-editor-btn"
+              onClick={() => { revisionRef.current += 1; setSaveNotice(null); setSaveError(null); undo(); setDirty(true); }}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo event edit"
+            >
+              ↩
+            </button>
+            <button
+              className="event-editor-btn"
+              onClick={() => { revisionRef.current += 1; setSaveNotice(null); setSaveError(null); redo(); setDirty(true); }}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y)"
+              aria-label="Redo event edit"
+            >
+              ↪
             </button>
             <button className="event-editor-btn" onClick={handleCancel} disabled={saving}>
               Cancel

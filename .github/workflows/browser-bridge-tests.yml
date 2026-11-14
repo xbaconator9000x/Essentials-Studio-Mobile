@@ -80,8 +80,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux Tauri dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libasound2-dev libudev-dev libxdo-dev patchelf
+          # GitHub-hosted Ubuntu mirrors occasionally serve stale package indexes or
+          # temporarily fail DNS resolution. Retry the entire update/install pair.
+          # Never mask a persistent dependency failure as a passing test.
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o Acquire::Retries=3 && \
+               sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libasound2-dev libudev-dev libxdo-dev patchelf; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Ubuntu package mirror unavailable after three attempts"
+              exit 1
+            fi
+            sudo rm -rf /var/lib/apt/lists/*
+            sleep $((attempt * 15))
+          done
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

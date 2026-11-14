@@ -10,9 +10,11 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import struct
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -26,8 +28,12 @@ spec.loader.exec_module(helper)
 def run_adb(*args: str, timeout: int = 45) -> bytes:
     completed = subprocess.run(["adb", *args], capture_output=True, timeout=timeout)
     if completed.returncode:
+        detail = (completed.stdout + b"\n" + completed.stderr).decode(
+            errors="replace"
+        ).strip()
         raise RuntimeError(
-            f"adb {args[:3]!r} failed: {completed.stderr.decode(errors='replace')[-500:]}"
+            f"adb {args[:3]!r} failed with exit code {completed.returncode}: "
+            f"{detail[-500:]}"
         )
     return completed.stdout
 
@@ -54,11 +60,96 @@ def find_named(nodes: list[dict[str, str]], name: str) -> dict[str, str]:
         if (node.get("text", "").strip() == name
                 and usable_bounds(node.get("bounds", ""))):
             return node
+    for node in nodes:
+        description = node.get("content-desc", "").strip()
+        if ((description == name or description.startswith(f"{name} "))
+                and usable_bounds(node.get("bounds", ""))):
+            return node
     raise AssertionError(f"Missing Android UI control: {name}")
+
+
+def find_button(nodes: list[dict[str, str]], name: str) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if node.get("text", "").strip() == name
+        and node.get("class") == "android.widget.Button"
+        and node.get("clickable") == "true"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
+def focused_dialogue_field(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if (
+            "EditText" in node.get("class", "")
+            or "dialogue lines" in node.get("content-desc", "").lower()
+        )
+        and node.get("focused") == "true"
+        and usable_bounds(node.get("bounds", ""))
+    ), None)
+
+
+def visible_dialogue_editor(nodes: list[dict[str, str]], original: str) -> dict[str, str] | None:
+    return next((
+        node for node in nodes
+        if usable_bounds(node.get("bounds", ""))
+        and (
+            (
+                "EditText" in node.get("class", "")
+                and original in node.get("text", "")
+            )
+            or "dialogue lines" in node.get("content-desc", "").lower()
+        )
+    ), None)
 
 
 def tap_named(nodes: list[dict[str, str]], name: str) -> None:
     helper.tap(helper.center(find_named(nodes, name)["bounds"]))
+
+
+def map_editor_visible(nodes: list[dict[str, str]]) -> bool:
+    if any(find_button(nodes, layer) is None for layer in ("L1", "L2", "L3", "Ev")):
+        return False
+    return len([
+        node for node in nodes
+        if node.get("class") == "android.widget.Image"
+        and usable_bounds(node.get("bounds", ""))
+    ]) == 2
+
+
+def wait_for_restarted_map(evidence: Path) -> tuple[list[dict[str, str]], int, int]:
+    nodes = helper.dump_ui(evidence, "restart-project-open")
+    if not map_editor_visible(nodes):
+        # A fresh Android process restores the project in its portrait Projects
+        # overview. Enter Maps through the bounded navigation button, not the
+        # similarly named static section heading.
+        maps_button = find_button(nodes, "Maps")
+        if maps_button is None:
+            raise AssertionError(
+                "Reopened project showed neither map editor controls nor a "
+                "touchable Maps navigation button"
+            )
+        helper.tap(helper.center(maps_button["bounds"]))
+
+    run_adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    run_adb("shell", "settings", "put", "system", "user_rotation", "1")
+    deadline = time.monotonic() + 30
+    last_size = (0, 0)
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "restart-map-editor")
+        screenshot = run_adb("exec-out", "screencap", "-p")
+        if screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+            last_size = struct.unpack(">II", screenshot[16:24])
+            if last_size[0] > last_size[1] and map_editor_visible(nodes):
+                (evidence / "restart-map-editor.png").write_bytes(screenshot)
+                return nodes, *last_size
+        time.sleep(1)
+    visible = [node.get("text", "") for node in nodes if node.get("text")]
+    raise AssertionError(
+        f"Reopened project did not reach the landscape map editor; "
+        f"screen={last_size!r}, visible text={visible[-16:]!r}"
+    )
 
 
 def private_map_path(package: str) -> str:
@@ -108,6 +199,23 @@ def status_visible(nodes: list[dict[str, str]], status: str) -> bool:
         and usable_bounds(node.get("bounds", ""))
         for node in nodes
     )
+
+
+def save_all_success_visible(nodes: list[dict[str, str]]) -> bool:
+    return any(
+        "All registered editor changes were saved to the working project."
+        in node.get("text", "")
+        and usable_bounds(node.get("bounds", "")) is not None
+        for node in nodes
+    )
+
+
+def save_all_completed_in_log(log: str) -> bool:
+    lock = log.rfind("[save-all] operation lock acquired")
+    native_save = log.find("[save-all] native map save completed", lock)
+    operation = log.find("[save-all] operation completed", native_save)
+    reset = log.find("[save-all] toolbar state saving=false", operation)
+    return lock >= 0 and lock < native_save < operation < reset
 
 
 def editor_images(nodes: list[dict[str, str]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -209,12 +317,114 @@ def command_text_is_visible(nodes: list[dict[str, str]], text: str) -> bool:
     return any(text in node.get("text", "") for node in nodes)
 
 
-def remaining_input(current: str, expected: str) -> str:
-    if not expected.startswith(current):
-        raise AssertionError(
-            f"Dialogue input changed unexpectedly: {current!r} is not a prefix of {expected!r}"
+def dialogue_edit_committed(nodes: list[dict[str, str]], text: str) -> bool:
+    return any(
+        text in node.get("text", "")
+        and "EditText" not in node.get("class", "")
+        and usable_bounds(node.get("bounds", "")) is not None
+        for node in nodes
+    )
+
+
+def is_gboard_audio_permission_prompt(nodes: list[dict[str, str]]) -> bool:
+    return any(
+        node.get("package") == "com.google.android.permissioncontroller"
+        and node.get("text", "").strip() == "Allow Gboard to record audio?"
+        for node in nodes
+    )
+
+
+def gboard_audio_permission_deny_button(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+    if not is_gboard_audio_permission_prompt(nodes):
+        return None
+    button = find_button(nodes, "Deny")
+    if button is None:
+        raise AssertionError("Gboard audio permission prompt has no visible Deny button")
+    return button
+
+
+def dialogue_ready_to_save(nodes: list[dict[str, str]], text: str) -> bool:
+    return dialogue_edit_committed(nodes, text) and find_button(nodes, "Save & close") is not None
+
+
+def wait_for_dialogue_input(evidence: Path, expected: str, previous: str,
+                            timeout: int = 5) -> str:
+    deadline = time.monotonic() + timeout
+    observations: list[dict[str, str]] = []
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-input")
+        field = focused_dialogue_field(nodes)
+        if field:
+            value = field.get("text", "")
+            observations.append({
+                "text": value,
+                "bounds": field.get("bounds", ""),
+                "class": field.get("class", ""),
+            })
+            if value == expected:
+                return value
+            if not previous.startswith(value) and not expected.startswith(value):
+                raise AssertionError(
+                    f"Dialogue input changed unexpectedly: {value!r}, "
+                    f"expected {expected!r}"
+                )
+        time.sleep(0.25)
+    (evidence / "dialogue-input-observations.json").write_text(
+        json.dumps(observations, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    raise AssertionError(
+        f"Dialogue input did not reach {expected!r} from {previous!r}; "
+        f"focused field observations={observations!r}"
+    )
+
+
+def wait_for_focused_dialogue_field(evidence: Path, timeout: int = 8) -> dict[str, str]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        nodes = helper.dump_ui(evidence, "event-dialogue-focused-field")
+        field = focused_dialogue_field(nodes)
+        if field is not None:
+            return field
+        time.sleep(0.25)
+    raise AssertionError("Focused dialogue field was not exposed after dismissing the keyboard")
+
+
+def set_focused_dialogue_text(evidence: Path, updated: str) -> None:
+    if updated != "Edited synthetic dialogue":
+        raise AssertionError(f"Unsupported synthetic dialogue replacement: {updated!r}")
+    jar_path = os.environ.get("ANDROID_DIALOGUE_INPUT_TEST_JAR", "")
+    if not jar_path:
+        raise AssertionError("Android accessibility dialogue input helper is unavailable")
+    remote_jar = "/data/local/tmp/essentials-dialogue-input-test.jar"
+    try:
+        pushed = run_adb("push", jar_path, remote_jar)
+        result = run_adb(
+            "shell", "uiautomator", "runtest", remote_jar,
+            "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest",
         )
-    return expected[len(current):]
+    except RuntimeError as exc:
+        (evidence / "dialogue-accessibility-input.txt").write_text(
+            str(exc), encoding="utf-8"
+        )
+        raise
+    (evidence / "dialogue-accessibility-input.txt").write_bytes(pushed + result)
+    if not dialogue_input_test_succeeded(result):
+        raise AssertionError(
+            "Android accessibility dialogue input test did not complete successfully: "
+            f"{result.decode(errors='replace')[-2000:]}"
+        )
+
+
+def dialogue_input_test_succeeded(output: bytes) -> bool:
+    return (
+        b"DIALOGUE_INPUT_TEST_PASS" in output
+        and b"DIALOGUE_OK_ACTION_PASS" in output
+        and b"OK (1 test)" in output
+        and b"FAILURES!!!" not in output
+        and b"Test run aborted" not in output
+        and b"NoClassDefFoundError" not in output
+    )
 
 
 def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None:
@@ -228,108 +438,98 @@ def edit_dialogue_in_editor(evidence: Path, original: str, updated: str) -> None
         raise AssertionError(f"Visible dialogue command {original!r} was not found")
     helper.tap(helper.center(row["bounds"]))
     nodes = helper.dump_ui(evidence, "event-dialogue-selected")
-    tap_named(nodes, "Edit")
+    tap_named(nodes, "Edit dialogue")
 
     deadline = time.monotonic() + 10
     editor = None
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-editing")
-        editor = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and original in node.get("text", "")
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
+        editor = visible_dialogue_editor(nodes, original)
         if editor:
             break
         time.sleep(1)
     if editor is None:
-        raise AssertionError("Double-tap did not expose the visible dialogue text editor")
+        raise AssertionError("The explicit Edit dialogue action did not expose the visible text editor")
 
-    helper.tap(helper.center(editor["bounds"]))
-    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    run_adb("shell", "input", "keyevent", *("KEYCODE_DEL",) * len(original))
-    run_adb("shell", "input", "text", updated.replace(" ", "%s"))
+    field = wait_for_focused_dialogue_field(evidence)
+    if not field.get("text"):
+        raise AssertionError("Focused dialogue field has no accessible initial text")
+    try:
+        set_focused_dialogue_text(evidence, updated)
+    except (AssertionError, RuntimeError):
+        (evidence / "event-dialogue-input-failure.png").write_bytes(
+            run_adb("exec-out", "screencap", "-p")
+        )
+        raise
 
+    # Confirm with the single explicit action; blurring the field or hiding the
+    # IME must not commit an unconfirmed draft.
     deadline = time.monotonic() + 12
-    attempted_value = None
-    input_bounds = editor["bounds"]
-    field_text = ""
+    confirm_taps = 0
     while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "event-dialogue-input")
-        field = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and node.get("bounds") == input_bounds
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
-        if field:
-            field_text = field.get("text", "")
-            if field_text == updated:
-                break
-            if field_text == original and attempted_value is None:
-                time.sleep(0.5)
-                continue
-            try:
-                suffix = remaining_input(field_text, updated)
-            except AssertionError:
-                (evidence / "event-dialogue-input-failure.png").write_bytes(
-                    run_adb("exec-out", "screencap", "-p")
-                )
-                raise
-            if suffix and field_text != attempted_value:
-                attempted_value = field_text
-                run_adb("shell", "input", "text", suffix.replace(" ", "%s"))
+        nodes = helper.dump_ui(evidence, "event-dialogue-finishing")
+        permission_deny = gboard_audio_permission_deny_button(nodes)
+        if permission_deny is not None:
+            (evidence / "gboard-audio-permission.png").write_bytes(
+                run_adb("exec-out", "screencap", "-p")
+            )
+            helper.tap(helper.center(permission_deny["bounds"]))
+            confirm_taps = 0
+            time.sleep(0.5)
+            continue
+        if dialogue_edit_committed(nodes, updated):
+            break
+        confirm_button = find_button(nodes, "OK")
+        if confirm_button is not None and confirm_taps < 3:
+            helper.tap(helper.center(confirm_button["bounds"]))
+            confirm_taps += 1
         time.sleep(0.5)
-    run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "event-dialogue-input-committed")
-        field = next((
-            node for node in nodes
-            if "EditText" in node.get("class", "")
-            and node.get("bounds") == input_bounds
-            and usable_bounds(node.get("bounds", ""))
-        ), None)
-        if field:
-            field_text = field.get("text", "")
-            if field_text == updated:
-                break
-        time.sleep(0.5)
-    if field_text != updated:
+    else:
         (evidence / "event-dialogue-input-failure.png").write_bytes(
             run_adb("exec-out", "screencap", "-p")
         )
         raise AssertionError(
-            f"Dialogue input stopped at {field_text!r}, expected {updated!r}"
+            f"Dialogue edit did not leave its input field with committed text {updated!r}; "
+            f"OK taps={confirm_taps}"
         )
 
+    # Do not send Back here: once the IME is gone it closes the event editor.
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         nodes = helper.dump_ui(evidence, "event-dialogue-edited")
-        if command_text_is_visible(nodes, updated):
+        if dialogue_ready_to_save(nodes, updated):
             (evidence / "event-dialogue-edited.png").write_bytes(
                 run_adb("exec-out", "screencap", "-p")
             )
-            tap_named(nodes, "OK")
+            tap_named(nodes, "Save & close")
             return
         time.sleep(1)
-    raise AssertionError(f"Edited dialogue {updated!r} was not visible after input")
+    raise AssertionError(
+        f"Committed dialogue {updated!r} or visible OK action was lost after finishing the edit"
+    )
 
 
 def wait_for_map_after_event_save(evidence: Path):
     deadline = time.monotonic() + 30
+    last_nodes: list[dict[str, str]] = []
     while time.monotonic() < deadline:
-        nodes = helper.dump_ui(evidence, "map-after-event-save")
-        if helper.editor_visible(nodes) and not any(
-            "Event [007] Synthetic Guide" in node.get("text", "") for node in nodes
+        last_nodes = helper.dump_ui(evidence, "map-after-event-save")
+        if helper.editor_visible(last_nodes) and not any(
+            "Event [007] Synthetic Guide" in node.get("text", "") for node in last_nodes
         ):
-            return nodes
-        if any(node.get("text", "").strip() == "Save failed"
-               for node in nodes):
-            raise AssertionError("Native event dialogue save failed")
+            return last_nodes
+        errors = [
+            node.get("text", "").strip() for node in last_nodes
+            if "Save failed" in node.get("text", "")
+            or "event edit" in node.get("text", "").lower()
+        ]
+        if errors:
+            raise AssertionError(f"Native event dialogue save did not complete: {errors!r}")
         time.sleep(1)
-    raise AssertionError("Event editor did not close after saving dialogue")
+    visible = [node.get("text", "").strip() for node in last_nodes if node.get("text")]
+    raise AssertionError(
+        f"Event editor did not close after saving dialogue; visible text={visible[-12:]!r}"
+    )
 
 
 def run(package: str, evidence: Path) -> None:
@@ -387,11 +587,37 @@ def run(package: str, evidence: Path) -> None:
         edit_dialogue_in_editor(evidence, "Synthetic dialogue", "Edited synthetic dialogue")
         nodes = wait_for_map_after_event_save(evidence)
         helper.tap(helper.wait_for(evidence, "map-save-control", "Save All", 12))
-        time.sleep(5)
+        deadline = time.monotonic() + 90
+        log_output = ""
+        while time.monotonic() < deadline:
+            nodes = helper.dump_ui(evidence, "map-save-progress")
+            log_output = run_adb("logcat", "-d", "-s", "Tauri/Console:I").decode(
+                errors="replace"
+            )
+            if save_all_completed_in_log(log_output):
+                break
+            time.sleep(1)
+        else:
+            visible = [n.get("text", "") for n in nodes if n.get("text")]
+            screenshot = run_adb("exec-out", "screencap", "-p")
+            if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise AssertionError("Save All timeout screenshot was not a PNG")
+            (evidence / "map-save-timeout.png").write_bytes(screenshot)
+            save_events = [line for line in log_output.splitlines() if "[save-all]" in line]
+            raise AssertionError(
+                f"Save All did not finish; visible text={visible[-12:]!r}; "
+                f"save events={save_events[-8:]!r}"
+            )
         nodes = helper.dump_ui(evidence, "map-after-save")
+        screenshot = run_adb("exec-out", "screencap", "-p")
+        if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise AssertionError("Post-save screenshot was not a PNG")
+        (evidence / "map-after-save.png").write_bytes(screenshot)
         if any("Save failed" in n.get("text", "") or "Error saving" in n.get("text", "")
                for n in nodes):
             raise AssertionError("Editor reported a Save All failure")
+        if not save_all_success_visible(nodes):
+            raise AssertionError("Save All did not show working-project success status")
         after = read_private_map(package, path)
         receipt["map_sha256_after"] = hashlib.sha256(after).hexdigest()
         if after == before:
@@ -405,22 +631,204 @@ def run(package: str, evidence: Path) -> None:
         receipt["original_zip_unchanged"] = True
         receipt["dialogue_before"] = "Synthetic dialogue"
         receipt["dialogue_after"] = "Edited synthetic dialogue"
+
+        run_adb("shell", "am", "force-stop", package)
+        time.sleep(2)
+        run_adb(
+            "shell", "monkey", "-p", package,
+            "-c", "android.intent.category.LAUNCHER", "1",
+        )
+        helper.wait_for(evidence, "restart-welcome", "Reopen Last Project", 45)
+        nodes = helper.dump_ui(evidence, "restart-welcome")
+        if helper.editor_visible(nodes):
+            raise AssertionError("Process restart unexpectedly skipped explicit project reopening")
+        tap_named(nodes, "Reopen Last Project")
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            nodes = helper.dump_ui(evidence, "restart-project-open")
+            helper.reject_editor_anr(nodes)
+            if helper.editor_visible(nodes):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError("Reopen Last Project did not restore the Android editor")
+        reopened_path = private_map_path(package)
+        if reopened_path != path:
+            raise AssertionError(
+                f"Reopen Last Project changed working-copy identity: {reopened_path!r} != {path!r}"
+            )
+        reopened_map = read_private_map(package, reopened_path)
+        reopened_sha = hashlib.sha256(reopened_map).hexdigest()
+        if reopened_map != after:
+            raise AssertionError(
+                f"Save All working-copy bytes changed after process restart: "
+                f"{reopened_sha} != {receipt['map_sha256_after']}"
+            )
+        nodes, width, height = wait_for_restarted_map(evidence)
+        event_nodes = open_synthetic_event(
+            evidence, nodes, width, height, "restart"
+        )
+        if not command_text_is_visible(event_nodes, "Edited synthetic dialogue"):
+            raise AssertionError("Reopened working copy lost the saved event dialogue")
+        (evidence / "restart-event-dialogue.png").write_bytes(
+            run_adb("exec-out", "screencap", "-p")
+        )
+        source_hash = run_adb(
+            "shell", "sha256sum", "/sdcard/Download/EssentialsSynthetic.zip"
+        ).decode().split()[0]
+        if source_hash != imported["fixture_sha256"]:
+            raise AssertionError("Original imported ZIP changed during process restart")
+        run_adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        nodes = wait_for_map_after_event_save(evidence)
+        receipt["working_copy_sha256_after_restart"] = reopened_sha
+        receipt["process_restart_pass"] = True
+        receipt["reopened_dialogue"] = "Edited synthetic dialogue"
         receipt["result"] = "emulator_map_touch_save_pass"
     finally:
+        try:
+            (evidence / "map-save-logcat.txt").write_bytes(
+                run_adb("logcat", "-d", "-v", "threadtime")
+            )
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            (evidence / "map-save-logcat-error.txt").write_text(
+                str(exc), encoding="utf-8"
+            )
         (evidence / "map-edit-receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
         )
 
 
 def selftest() -> None:
-    assert remaining_input("Edited synthetic", "Edited synthetic dialogue") == " dialogue"
-    assert remaining_input("Edited synthetic dialogue", "Edited synthetic dialogue") == ""
+    original_dump_ui = helper.dump_ui
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            helper.dump_ui = lambda *_args, **_kwargs: [{
+                "text": "Edited synthetic dialogue",
+                "class": "android.widget.EditText",
+                "focused": "true",
+                "bounds": "[100,200][700,300]",
+            }]
+            assert wait_for_dialogue_input(
+                Path(temp_dir), "Edited synthetic dialogue", "Synthetic dialogue"
+            ) == "Edited synthetic dialogue"
+        finally:
+            helper.dump_ui = original_dump_ui
+
+    assert save_all_success_visible([{
+        "text": "All registered editor changes were saved to the working project. "
+                "The imported source ZIP is unchanged.",
+        "bounds": "[20,100][600,180]",
+    }])
+    assert not save_all_success_visible([{"text": "Save all failed: storage unavailable"}])
+    assert not save_all_success_visible([{
+        "text": "All registered editor changes were saved to the working project.",
+        "bounds": "[0,0][0,0]",
+    }])
+    assert not save_all_success_visible([])
+    assert dialogue_edit_committed([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
+    ], "Edited synthetic dialogue")
+    assert not dialogue_edit_committed([
+        {"text": "Edited synthetic dialogue", "class": "android.widget.EditText",
+         "bounds": "[1015,385][1792,441]"},
+    ], "Edited synthetic dialogue")
+    assert is_gboard_audio_permission_prompt([
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.google.android.permissioncontroller"},
+    ])
+    assert gboard_audio_permission_deny_button([
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.google.android.permissioncontroller"},
+        {"text": "Deny", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[356,787][1437,934]"},
+    ]) is not None
     try:
-        remaining_input("Unexpected", "Edited synthetic dialogue")
-    except AssertionError:
-        pass
+        gboard_audio_permission_deny_button([
+            {"text": "Allow Gboard to record audio?",
+             "package": "com.google.android.permissioncontroller"},
+        ])
+    except AssertionError as exc:
+        assert "no visible Deny button" in str(exc)
     else:
-        raise AssertionError("Unexpected dialogue input was accepted")
+        raise AssertionError("Gboard permission prompt without Deny action was accepted")
+    unrelated_permission = [
+        {"text": "Allow Gboard to record audio?",
+         "package": "com.android.permissioncontroller"},
+        {"text": "Deny", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[356,787][1437,934]"},
+    ]
+    assert not is_gboard_audio_permission_prompt(unrelated_permission)
+    assert gboard_audio_permission_deny_button(unrelated_permission) is None
+    assert dialogue_ready_to_save([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
+        {"text": "Save & close", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[1464,863][1598,945]"},
+    ], "Edited synthetic dialogue")
+    assert not dialogue_ready_to_save([
+        {"text": "Edited synthetic dialogue", "class": "android.view.View",
+         "bounds": "[735,378][1794,443]"},
+    ], "Edited synthetic dialogue")
+    assert find_button([
+        {"text": "OK", "class": "android.widget.Button",
+         "clickable": "true", "bounds": "[1464,863][1598,945]"},
+    ], "OK") is not None
+    assert find_button([
+        {"text": "OK", "class": "android.widget.Button",
+         "clickable": "false", "bounds": "[1464,863][1598,945]"},
+    ], "OK") is None
+    assert find_button([
+        {"text": "Done editing", "class": "android.widget.Button",
+         "clickable": "true", "bounds": "[1464,863][1598,945]"},
+    ], "OK") is None
+    original_run_adb = globals()["run_adb"]
+    original_jar = os.environ.get("ANDROID_DIALOGUE_INPUT_TEST_JAR")
+    observed_commands: list[tuple[str, ...]] = []
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            os.environ["ANDROID_DIALOGUE_INPUT_TEST_JAR"] = "/tmp/dialogue-test.jar"
+            globals()["run_adb"] = lambda *args, timeout=45: (
+                observed_commands.append(args)
+                or (
+                    b"DIALOGUE_OK_ACTION_PASS\nDIALOGUE_INPUT_TEST_PASS\nOK (1 test)"
+                    if "runtest" in args else b"1 file pushed"
+                )
+            )
+            set_focused_dialogue_text(Path(temp_dir), "Edited synthetic dialogue")
+            assert (Path(temp_dir) / "dialogue-accessibility-input.txt").read_bytes() == (
+                b"1 file pushedDIALOGUE_OK_ACTION_PASS\nDIALOGUE_INPUT_TEST_PASS\nOK (1 test)"
+            )
+        finally:
+            globals()["run_adb"] = original_run_adb
+            if original_jar is None:
+                os.environ.pop("ANDROID_DIALOGUE_INPUT_TEST_JAR", None)
+            else:
+                os.environ["ANDROID_DIALOGUE_INPUT_TEST_JAR"] = original_jar
+    assert observed_commands == [
+        ("push", "/tmp/dialogue-test.jar", "/data/local/tmp/essentials-dialogue-input-test.jar"),
+        ("shell", "uiautomator", "runtest", "/data/local/tmp/essentials-dialogue-input-test.jar",
+         "-c", "com.xbaconator.essentialsstudiomobile.smoketests.DialogueInputTest"),
+    ]
+    assert dialogue_input_test_succeeded(
+        b"DIALOGUE_OK_ACTION_PASS\nDIALOGUE_INPUT_TEST_PASS\nOK (1 test)\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
+    assert not dialogue_input_test_succeeded(
+        b"DIALOGUE_OK_ACTION_PASS\nDIALOGUE_INPUT_TEST_PASS\nINSTRUMENTATION_STATUS_CODE: -1"
+    )
+    assert not dialogue_input_test_succeeded(
+        b"DIALOGUE_INPUT_TEST_PASS\nOK (1 test)\nINSTRUMENTATION_STATUS_CODE: -1"
+    )
+    assert not dialogue_input_test_succeeded(b"OK (1 test)")
+    assert not dialogue_input_test_succeeded(
+        b"DIALOGUE_INPUT_TEST_PASS\nFAILURES!!!\nTests run: 1, Failures: 1\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
+    assert not dialogue_input_test_succeeded(
+        b"Test run aborted: NoClassDefFoundError\nOK (1 test)\n"
+        b"INSTRUMENTATION_STATUS_CODE: -1"
+    )
 
     assert bounds("[10,20][100,120]") == (10, 20, 100, 120)
     for bad in ("[0,0][0,10]", "[10,10][1,20]", "nonsense"):
@@ -456,6 +864,23 @@ def selftest() -> None:
     assert status_has(nodes, "Layer 1/3", "384")
     assert not status_has(nodes, "Layer 1/3", "385")
     assert status_visible(nodes, "Layer 1/3")
+    assert not save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed"
+    )
+    assert save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed\n"
+        "[save-all] toolbar state saving=false"
+    )
+    assert not save_all_completed_in_log(
+        "[save-all] operation lock acquired\n"
+        "[save-all] toolbar state saving=false\n"
+        "[save-all] native map save completed\n"
+        "[save-all] operation completed"
+    )
     assert paint_point(nodes, 1794, 1080) == (789, 355)
     assert palette_point(nodes, 1794, 1080) == (1361, 394)
     original_run_adb = globals()["run_adb"]
@@ -466,6 +891,58 @@ def selftest() -> None:
     finally:
         globals()["run_adb"] = original_run_adb
     assert usable_bounds("[0,0][0,0]") is None
+    overview = [
+        {"text": "Maps", "class": "android.widget.TextView",
+         "clickable": "false", "bounds": "[28,693][118,737]"},
+        {"text": "Maps", "class": "android.widget.Button",
+         "clickable": "true", "bounds": "[280,1774][543,1794]"},
+    ]
+    assert find_button(overview, "Maps") is overview[1]
+    assert not map_editor_visible(overview)
+    dialogue_edit_action = {
+        "text": "Edit dialogue",
+        "content-desc": "Edit dialogue",
+        "bounds": "[100,200][160,250]",
+    }
+    assert find_named([dialogue_edit_action], "Edit dialogue") is dialogue_edit_action
+    accessible_dialogue_editor = {
+        "text": "",
+        "content-desc": "Show Text dialogue lines",
+        "focused": "true",
+        "bounds": "[100,200][400,320]",
+    }
+    assert visible_dialogue_editor(
+        [accessible_dialogue_editor], "Original synthetic dialogue"
+    ) is accessible_dialogue_editor
+    assert focused_dialogue_field(
+        [accessible_dialogue_editor]
+    ) is accessible_dialogue_editor
+    native_dialogue_editor = {
+        "text": "Original synthetic dialogue",
+        "class": "android.widget.EditText",
+        "focused": "false",
+        "bounds": "[100,200][400,320]",
+    }
+    assert visible_dialogue_editor(
+        [native_dialogue_editor], "Original synthetic dialogue"
+    ) is native_dialogue_editor
+    assert focused_dialogue_field([native_dialogue_editor]) is None
+    map_editor = [
+        {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[1057,462][1147,527]"},
+        *[
+            {"text": layer, "class": "android.widget.Button", "clickable": "true",
+             "bounds": f"[{left},462][{left + 90},527]"}
+            for layer, left in (("L1", 805), ("L2", 889), ("L3", 973))
+        ],
+        {"text": "", "class": "android.widget.Image", "bounds": "[679,315][1241,1018]"},
+        {"text": "", "class": "android.widget.Image", "bounds": "[1241,354][1794,1039]"},
+    ]
+    assert map_editor_visible(map_editor)
+    assert not map_editor_visible([
+        {"text": "Ev", "class": "android.widget.Button", "clickable": "true",
+         "bounds": "[0,0][100,50]"},
+    ])
     nodes[5]["bounds"] = "[0,0][0,0]"
     assert find_named(nodes, "L1")["bounds"] == "[1399,217][1488,283]"
     try:

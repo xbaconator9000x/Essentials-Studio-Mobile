@@ -46,6 +46,24 @@ function canPaint(map: MapRenderData, x: number, y: number, layer: number, tileI
     && validCell(map, x, y);
 }
 
+/** Sample the exact stored tile on the active layer, or the topmost visible
+ * non-empty tile in All Layers. Signed sentinel values are not paintable. */
+export function sampleMapTile(map: MapRenderData, x: number, y: number, activeLayer: number, visible: readonly boolean[] = [true, true, true]): { tileId: number; layer: number } | null {
+  if (!validMapShape(map) || !validCell(map, x, y)) return null;
+  if (validLayer(activeLayer)) {
+    const tileId = getTile(map.tiles, x, y, activeLayer, map.width, map.height);
+    return validTileId(tileId) ? { tileId, layer: activeLayer } : null;
+  }
+  if (activeLayer !== -1) return null;
+  for (let layer = 2; layer >= 0; layer--) {
+    if (!visible[layer]) continue;
+    const tileId = getTile(map.tiles, x, y, layer, map.width, map.height);
+    if (validTileId(tileId) && tileId > 0) return { tileId, layer };
+  }
+  const layer = visible.findIndex(Boolean);
+  return layer >= 0 && layer < 3 ? { tileId: 0, layer } : null;
+}
+
 /** A single tile change for undo/redo. */
 export interface TileChange {
   x: number;
@@ -295,11 +313,200 @@ export function paintTile(
   return changes;
 }
 
+/** Produce one canonical delta per XP tile cell after an autotile-aware operation.
+ * Neighbour updates can touch the same cell repeatedly; the intermediate
+ * changes must never be used directly for undo or the original value is lost. */
+function canonicalMapLayerChanges(
+  map: MapRenderData, layer: number, before: number[],
+): TileChange[] {
+  const area = map.width * map.height;
+  const changes: TileChange[] = [];
+  for (let i = 0; i < area; i++) {
+    const oldTileId = before[i];
+    const newTileId = map.tiles[layer * area + i];
+    if (oldTileId !== newTileId) changes.push({
+      x: i % map.width, y: Math.floor(i / map.width), layer, oldTileId, newTileId,
+    });
+  }
+  return changes;
+}
+
+export function paintRectangle(
+  map: MapRenderData, x1: number, y1: number, x2: number, y2: number,
+  layer: number, tileId: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(layer)) return [];
+  const area = map.width * map.height;
+  const before = map.tiles.slice(layer * area, (layer + 1) * area);
+  paintRectangleInternal(map, x1, y1, x2, y2, layer, tileId);
+  return canonicalMapLayerChanges(map, layer, before);
+}
+
+/** Erase a selected rectangular region on one XP tile layer or all three.
+ * Events are deliberately excluded. Uses autotile-aware rectangle painting
+ * and returns an atomic, canonical undo ledger across the affected layers. */
+export function clearMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const layers = activeLayer === -1 ? [0, 1, 2] : [activeLayer];
+  const changes: TileChange[] = [];
+  for (const layer of layers) {
+    changes.push(...paintRectangle(map, rect.x1, rect.y1, rect.x2, rect.y2, layer, 0));
+  }
+  return changes;
+}
+
+/** Translate a tile selection by one or more cells, optionally copying it.
+ * A source snapshot prevents overlap corruption. The destination is clipped
+ * to map bounds and all three XP layers remain independent. This is a single
+ * undoable edit; events and metadata are never moved. */
+/** Exchange two XP tile layers within a rectangular selection, without
+ * flattening autotiles or changing events. A canonical delta makes the entire
+ * exchange one reversible operation. */
+/** Copy selected XP tile cells between layers without touching events or metadata.
+ * The source is snapshotted first, so this remains deterministic and undoable.
+ * In preserve mode zero source cells leave the destination unchanged. */
+export function copyMapTileRegionToLayer(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  sourceLayer: number,
+  destinationLayer: number,
+  emptyMode: "preserve" | "replace" = "preserve",
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(sourceLayer) || !validLayer(destinationLayer)
+      || sourceLayer === destinationLayer || (emptyMode !== "preserve" && emptyMode !== "replace")
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const source = map.tiles.slice(sourceLayer * area, (sourceLayer + 1) * area);
+  const before = map.tiles.slice(destinationLayer * area, (destinationLayer + 1) * area);
+  for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+    const index = y * map.width + x;
+    if (emptyMode === "replace" || source[index] !== 0)
+      map.tiles[destinationLayer * area + index] = source[index];
+  }
+  return canonicalMapLayerChanges(map, destinationLayer, before);
+}
+
+export function swapMapTileLayers(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  firstLayer: number,
+  secondLayer: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(firstLayer) || !validLayer(secondLayer)
+      || firstLayer === secondLayer
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const firstBefore = map.tiles.slice(firstLayer * area, (firstLayer + 1) * area);
+  const secondBefore = map.tiles.slice(secondLayer * area, (secondLayer + 1) * area);
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const index = y * map.width + x;
+      map.tiles[firstLayer * area + index] = secondBefore[index];
+      map.tiles[secondLayer * area + index] = firstBefore[index];
+    }
+  }
+  return [
+    ...canonicalMapLayerChanges(map, firstLayer, firstBefore),
+    ...canonicalMapLayerChanges(map, secondLayer, secondBefore),
+  ];
+}
+
+/** Mirror selected XP tile positions, independently on one or all tile layers.
+ * Tile IDs are preserved byte-for-byte (including signed i16 sentinels and
+ * autotile pattern IDs); this is a positional transform, not sprite flipping.
+ * No events, metadata or tiles outside the rectangle are changed. */
+export function mirrorMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+  axis: "horizontal" | "vertical" | "rotate180",
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || (axis !== "horizontal" && axis !== "vertical" && axis !== "rotate180")
+      || ![rect.x1, rect.y1, rect.x2, rect.y2].every(Number.isSafeInteger)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom) return [];
+  const area = map.width * map.height;
+  const changes: TileChange[] = [];
+  for (const layer of activeLayer === -1 ? [0, 1, 2] : [activeLayer]) {
+    const before = map.tiles.slice(layer * area, (layer + 1) * area);
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+      const sourceX = axis !== "vertical" ? left + right - x : x;
+      const sourceY = axis !== "horizontal" ? top + bottom - y : y;
+      map.tiles[layer * area + y * map.width + x] = before[sourceY * map.width + sourceX];
+    }
+    changes.push(...canonicalMapLayerChanges(map, layer, before));
+  }
+  return changes;
+}
+
+export function translateMapTileRegion(
+  map: MapRenderData,
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  activeLayer: number,
+  dx: number,
+  dy: number,
+  mode: "move" | "copy" = "move",
+): TileChange[] {
+  if (!validMapShape(map) || (activeLayer !== -1 && !validLayer(activeLayer))
+      || ![rect.x1, rect.y1, rect.x2, rect.y2, dx, dy].every(Number.isSafeInteger)
+      || (mode !== "move" && mode !== "copy") || (dx === 0 && dy === 0)) return [];
+  const left = Math.max(0, Math.min(rect.x1, rect.x2));
+  const right = Math.min(map.width - 1, Math.max(rect.x1, rect.x2));
+  const top = Math.max(0, Math.min(rect.y1, rect.y2));
+  const bottom = Math.min(map.height - 1, Math.max(rect.y1, rect.y2));
+  if (left > right || top > bottom || left + dx < 0 || top + dy < 0
+      || right + dx >= map.width || bottom + dy >= map.height) return [];
+  const area = map.width * map.height;
+  const layers = activeLayer === -1 ? [0, 1, 2] : [activeLayer];
+  const changes: TileChange[] = [];
+  for (const layer of layers) {
+    const before = map.tiles.slice(layer * area, (layer + 1) * area);
+    if (mode === "move") {
+      for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++)
+        map.tiles[layer * area + y * map.width + x] = 0;
+    }
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++)
+      map.tiles[layer * area + (y + dy) * map.width + x + dx] =
+        before[y * map.width + x];
+    changes.push(...canonicalMapLayerChanges(map, layer, before));
+  }
+  return changes;
+}
+
+export function floodFill(
+  map: MapRenderData, x: number, y: number, layer: number, tileId: number,
+): TileChange[] {
+  if (!validMapShape(map) || !validLayer(layer)) return [];
+  const area = map.width * map.height;
+  const before = map.tiles.slice(layer * area, (layer + 1) * area);
+  floodFillInternal(map, x, y, layer, tileId);
+  return canonicalMapLayerChanges(map, layer, before);
+}
+
 /**
  * Paint a rectangular area. Returns all changes.
  * For autotiles, resolves all patterns after placing all tiles.
  */
-export function paintRectangle(
+function paintRectangleInternal(
   mapData: MapRenderData,
   x1: number,
   y1: number,
@@ -372,23 +579,30 @@ export function paintRectangle(
     }
   }
 
-  // Update neighbors along the border of the rectangle (same autotile slot)
-  const borderNeighbors = new Set<string>();
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      for (const [dx, dy] of NEIGHBOR_OFFSETS) {
-        const nx = x + dx;
-        const ny = y + dy;
-        // Only external neighbors (not inside the rectangle)
-        if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
-        if (nx < 0 || nx >= mapData.width || ny < 0 || ny >= mapData.height) continue;
-        borderNeighbors.add(`${nx},${ny}`);
-      }
+  // Only perimeter cells can touch an external neighbor. Avoid visiting
+  // every interior tile again on large filled rectangles.
+  const borderNeighbors = new Set<number>();
+  const addExternalNeighbors = (x: number, y: number) => {
+    for (const [dx, dy] of NEIGHBOR_OFFSETS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
+      if (nx < 0 || nx >= mapData.width || ny < 0 || ny >= mapData.height) continue;
+      borderNeighbors.add(ny * mapData.width + nx);
     }
+  };
+  for (let x = minX; x <= maxX; x++) {
+    addExternalNeighbors(x, minY);
+    if (maxY !== minY) addExternalNeighbors(x, maxY);
+  }
+  for (let y = minY + 1; y < maxY; y++) {
+    addExternalNeighbors(minX, y);
+    if (maxX !== minX) addExternalNeighbors(maxX, y);
   }
 
-  for (const key of borderNeighbors) {
-    const [nx, ny] = key.split(",").map(Number);
+  for (const index of borderNeighbors) {
+    const nx = index % mapData.width;
+    const ny = Math.floor(index / mapData.width);
     const neighborTile = getTile(mapData.tiles, nx, ny, layer, mapData.width, mapData.height);
     if (isAutotile(neighborTile) && getAutotileIndex(neighborTile) === atSlot) {
       const change = resolveAutotile(mapData, nx, ny, layer, atSlot);
@@ -410,7 +624,7 @@ export function paintRectangle(
  * Flood fill from a starting position. Returns all changes.
  * For autotiles, fills with the correct pattern for each cell.
  */
-export function floodFill(
+function floodFillInternal(
   mapData: MapRenderData,
   startX: number,
   startY: number,
@@ -442,17 +656,17 @@ export function floodFill(
 
   // Phase 1: BFS to find all cells to fill (match by same tile ID or same autotile slot)
   const filled: [number, number][] = [];
-  const visited = new Set<string>();
-  const queue: [number, number][] = [[startX, startY]];
+  // Mark cells when enqueued, not when dequeued. The previous algorithm
+  // repeatedly enqueued boundary/nonmatching cells, inflating the queue on
+  // large XP maps and causing avoidable Android WebView stalls.
+  const seen = new Uint8Array(mapData.width * mapData.height);
+  const queue: number[] = [startY * mapData.width + startX];
+  seen[queue[0]] = 1;
 
-  // shift() is O(n) and freezes WebView on large map fills.
   for (let head = 0; head < queue.length; head++) {
-    const [x, y] = queue[head];
-    const key = `${x},${y}`;
-
-    if (visited.has(key)) continue;
-    if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) continue;
-
+    const index = queue[head];
+    const x = index % mapData.width;
+    const y = Math.floor(index / mapData.width);
     const currentId = getTile(mapData.tiles, x, y, layer, mapData.width, mapData.height);
 
     // Match: for autotiles match by slot, for regular tiles match by exact ID
@@ -464,11 +678,22 @@ export function floodFill(
     }
     if (!matches) continue;
 
-    visited.add(key);
     filled.push([x, y]);
 
-    // Add 4-directional neighbors
-    queue.push([x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]);
+    // Each in-bounds cell enters the queue at most once, even if it
+    // borders many matching cells. This bounds queue memory to map area.
+    const neighbors = [
+      x > 0 ? index - 1 : -1,
+      x + 1 < mapData.width ? index + 1 : -1,
+      y > 0 ? index - mapData.width : -1,
+      y + 1 < mapData.height ? index + mapData.width : -1,
+    ];
+    for (const next of neighbors) {
+      if (next >= 0 && !seen[next]) {
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
   }
 
   if (filled.length === 0) return [];
@@ -638,36 +863,51 @@ export function pasteTileRegion(
   mapData: MapRenderData,
   clipboard: TileClipboard,
   origin: { x: number; y: number },
-  activeLayer: number
+  activeLayer: number,
+  emptyTileMode: "replace" | "preserve" = "replace",
 ): TileChange[] {
   const { tiles, width, height } = mapData;
-  if (!validMapShape(mapData) || !Number.isInteger(activeLayer)
+  if ((emptyTileMode !== "replace" && emptyTileMode !== "preserve")
+    || !validMapShape(mapData) || !Number.isInteger(activeLayer)
     || (activeLayer !== -1 && !validLayer(activeLayer))
-    || !Number.isInteger(origin.x) || !Number.isInteger(origin.y)
+    || !Number.isSafeInteger(origin.x) || !Number.isSafeInteger(origin.y)
     || !Number.isSafeInteger(clipboard.width) || !Number.isSafeInteger(clipboard.height)
     || clipboard.width <= 0 || clipboard.height <= 0
     || !Number.isSafeInteger(clipboard.width * clipboard.height)
     || !Array.isArray(clipboard.layers)) return [];
-  const layerIndices = activeLayer >= 0 ? [activeLayer] : [0, 1, 2];
+  // A single-layer selection may be pasted into another active tile layer.
+  // Multi-layer selections retain their original XP layer mapping.
+  if (clipboard.layers.length !== 3 || !clipboard.layers.every(Array.isArray)) return [];
+  const sourceLayers = [0, 1, 2].filter((layer) => clipboard.layers[layer].length > 0);
+  const mappings = activeLayer >= 0
+    ? sourceLayers.length === 1
+      ? [{ source: sourceLayers[0], destination: activeLayer }]
+      : [{ source: activeLayer, destination: activeLayer }]
+    : [0, 1, 2].map((layer) => ({ source: layer, destination: layer }));
 
-  // Validate all selected layers before any write; no partial paste.
-  for (const l of layerIndices) {
-    const values = clipboard.layers[l];
-    if (!Array.isArray(values)) return [];
+  // Validate the entire clipboard before any write; no partial paste.
+  for (const values of clipboard.layers) {
     if (values.length > 0 && (values.length !== clipboard.width * clipboard.height
       || !values.every(validStoredTileId))) return [];
   }
 
+  // Clip iteration to the destination map. A large or mostly off-screen
+  // clipboard must not consume time proportional to its full dimensions.
+  const startX = Math.max(0, -origin.x);
+  const startY = Math.max(0, -origin.y);
+  const endX = Math.min(clipboard.width, width - origin.x);
+  const endY = Math.min(clipboard.height, height - origin.y);
+  if (startX >= endX || startY >= endY) return [];
   const changes: TileChange[] = [];
-  for (const l of layerIndices) {
-    const layerData = clipboard.layers[l];
+  for (const { source, destination: l } of mappings) {
+    const layerData = clipboard.layers[source];
     if (!layerData || layerData.length === 0) continue;
-    for (let dy = 0; dy < clipboard.height; dy++) {
-      for (let dx = 0; dx < clipboard.width; dx++) {
+    for (let dy = startY; dy < endY; dy++) {
+      for (let dx = startX; dx < endX; dx++) {
         const tx = origin.x + dx;
         const ty = origin.y + dy;
-        if (tx < 0 || tx >= width || ty < 0 || ty >= height) continue;
         const newTileId = layerData[dy * clipboard.width + dx] ?? 0;
+        if (emptyTileMode === "preserve" && newTileId === 0) continue;
         const offset = l * width * height + ty * width + tx;
         const oldTileId = tiles[offset] ?? 0;
         if (oldTileId === newTileId) continue;

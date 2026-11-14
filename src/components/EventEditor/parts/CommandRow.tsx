@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef } from "react";
 import type { EventCommand } from "../../../types";
 import { getCommandDef, summarizeCommand } from "../../../services/eventCommands";
 import { CommandParamEditor, hasParamEditor } from "../CommandParamEditor";
@@ -6,13 +7,16 @@ import { getCommandIcon, type VisualBlock } from "./commandHelpers";
 
 export function CommandRow({
   command,
-  index: _index,
   selected,
   editing,
   onClick,
   onDoubleClick,
   onParamChange,
   onStopEditing,
+  onRegisterDraftCommit,
+  onDraftChange,
+  onDraftCommit,
+  onDraftCancel,
   mapInfos,
   switchNames,
   variableNames,
@@ -26,13 +30,47 @@ export function CommandRow({
   onDoubleClick: () => void;
   onParamChange: (paramIndex: number, value: unknown) => void;
   onStopEditing: () => void;
+  onRegisterDraftCommit: (commit: (() => void) | null) => void;
+  onDraftChange: () => void;
+  onDraftCommit: () => void;
+  onDraftCancel: () => void;
   mapInfos?: Record<number, import("../../../types").MapInfo>;
   switchNames?: string[];
   variableNames?: string[];
   pbsIndex?: PbsIndex;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const def = getCommandDef(command.code);
   const summary = summarizeCommand(command.code, command.parameters, mapInfos, switchNames, variableNames);
+  const finishEditing = useCallback(() => {
+    onParamChange(0, inputRef.current?.value ?? String(command.parameters[0] ?? ""));
+    onDraftCommit();
+    onStopEditing();
+  }, [command.parameters, onDraftCommit, onParamChange, onStopEditing]);
+  useEffect(() => {
+    if (!editing || !isTextEditableCommand(command.code)) return;
+    const input = inputRef.current;
+    if (!input) return;
+    const revealEditor = () => input.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    input.focus({ preventScroll: true });
+    revealEditor();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", revealEditor);
+    viewport?.addEventListener("scroll", revealEditor);
+    return () => {
+      viewport?.removeEventListener("resize", revealEditor);
+      viewport?.removeEventListener("scroll", revealEditor);
+    };
+  }, [editing, command.code]);
+  useEffect(() => {
+    if (!editing || !isTextEditableCommand(command.code)) return;
+    onRegisterDraftCommit(finishEditing);
+    return () => onRegisterDraftCommit(null);
+  }, [editing, command.code, onRegisterDraftCommit, finishEditing]);
+  const cancelEditing = () => {
+    onDraftCancel();
+    onStopEditing();
+  };
 
   let rowClass = "event-command-row";
   if (selected) rowClass += " selected";
@@ -64,23 +102,47 @@ export function CommandRow({
         </span>
         <span className="event-command-icon">{icon}</span>
         <span className="event-command-name">{def.name}</span>
+        <div className="event-command-edit-actions" role="group" aria-label="Command edit actions">
+          <button
+            type="button"
+            className="event-command-done event-editor-btn event-editor-btn-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              finishEditing();
+            }}
+          >
+            OK
+          </button>
+          <button
+            type="button"
+            className="event-command-done event-editor-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancelEditing();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
         <input
+          ref={inputRef}
           className="event-command-edit-input"
           defaultValue={String(command.parameters[0] ?? "")}
           autoFocus
-          onBlur={(e) => {
-            onParamChange(0, e.target.value);
-            onStopEditing();
-          }}
+          autoCorrect="off"
+          spellCheck={false}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              onParamChange(0, (e.target as HTMLInputElement).value);
-              onStopEditing();
+              finishEditing();
+              e.preventDefault();
             }
             if (e.key === "Escape") {
-              onStopEditing();
+              cancelEditing();
+              e.preventDefault();
+              e.stopPropagation();
             }
           }}
+          onChange={onDraftChange}
           onClick={(e) => e.stopPropagation()}
         />
       </div>
@@ -128,6 +190,21 @@ export function CommandRow({
       <span className="event-command-params">
         {command.code === 0 ? "" : summary}
       </span>
+      {command.code !== 0 &&
+        (isTextEditableCommand(command.code) || hasParamEditor(command.code)) && (
+          <button
+            type="button"
+            className="event-command-inline-edit"
+            aria-label={`Edit ${def.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick();
+              onDoubleClick();
+            }}
+          >
+            Edit
+          </button>
+        )}
     </div>
   );
 }
@@ -155,6 +232,10 @@ export function MultiLineBlock({
   onStartEdit,
   onUpdateLines,
   onStopEditing,
+  onRegisterDraftCommit,
+  onDraftChange,
+  onDraftCommit,
+  onDraftCancel,
 }: {
   block: Extract<VisualBlock, { kind: "multi" }>;
   selected: boolean;
@@ -163,13 +244,46 @@ export function MultiLineBlock({
   onStartEdit: () => void;
   onUpdateLines: (lines: string[]) => void;
   onStopEditing: () => void;
+  onRegisterDraftCommit: (commit: (() => void) | null) => void;
+  onDraftChange: () => void;
+  onDraftCommit: () => void;
+  onDraftCancel: () => void;
 }) {
   const def = getCommandDef(block.cmd.code);
   const icon = getCommandIcon(block.cmd.code);
-  const allLines = [
-    String(block.cmd.parameters[0] ?? ""),
-    ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
-  ];
+  const allLines = block.cmd.code === 101
+    ? block.contCmds.map((c) => String(c.parameters[0] ?? ""))
+    : [
+        String(block.cmd.parameters[0] ?? ""),
+        ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
+      ];
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commitDraft = useCallback(() => {
+    const lines = (textareaRef.current?.value ?? "").split("\n");
+    onUpdateLines(lines.length > 0 ? lines : [""]);
+    onDraftCommit();
+    onStopEditing();
+  }, [onDraftCommit, onStopEditing, onUpdateLines]);
+  useEffect(() => {
+    if (!editing) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const revealEditor = () => textarea.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    textarea.focus({ preventScroll: true });
+    revealEditor();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", revealEditor);
+    viewport?.addEventListener("scroll", revealEditor);
+    return () => {
+      viewport?.removeEventListener("resize", revealEditor);
+      viewport?.removeEventListener("scroll", revealEditor);
+    };
+  }, [editing]);
+  useEffect(() => {
+    if (!editing) return;
+    onRegisterDraftCommit(commitDraft);
+    return () => onRegisterDraftCommit(null);
+  }, [editing, onRegisterDraftCommit, commitDraft]);
 
   const isComment = block.cmd.code === 108;
   const isScript = block.cmd.code === 355;
@@ -196,23 +310,47 @@ export function MultiLineBlock({
           <span className="event-command-name">{def.name}</span>
         </div>
         <div style={{ padding: "2px 12px 4px 34px" }}>
+          <div className="event-command-edit-actions" role="group" aria-label="Dialogue edit actions">
+            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
+              Each line becomes a continuation.
+            </div>
+            <button
+              type="button"
+              className="event-command-done event-editor-btn event-editor-btn-primary"
+              onClick={commitDraft}
+            >
+              OK
+            </button>
+            <button
+              type="button"
+              className="event-command-done event-editor-btn"
+              onClick={() => {
+                onDraftCancel();
+                onStopEditing();
+              }}
+            >
+              Cancel
+            </button>
+          </div>
           <textarea
+            ref={textareaRef}
             className="event-command-edit-textarea"
+            aria-label={`${def.name} dialogue lines`}
             defaultValue={allLines.join("\n")}
             autoFocus
+            autoCorrect="off"
+            spellCheck={false}
             rows={Math.max(2, allLines.length + 1)}
-            onBlur={(e) => {
-              const lines = e.target.value.split("\n").filter((_, idx, arr) => idx < arr.length || arr[idx] !== "");
-              onUpdateLines(lines.length > 0 ? lines : [""]);
-              onStopEditing();
-            }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") { onStopEditing(); e.preventDefault(); e.stopPropagation(); }
+              if (e.key === "Escape") {
+                onDraftCancel();
+                onStopEditing();
+                e.preventDefault();
+                e.stopPropagation();
+              }
             }}
+            onChange={onDraftChange}
           />
-          <div style={{ fontSize: 9, color: "#8c8fa1", marginTop: 2 }}>
-            Each line becomes a continuation. Press Escape to finish.
-          </div>
         </div>
       </div>
     );
@@ -225,6 +363,18 @@ export function MultiLineBlock({
         <span className="event-command-icon">{icon}</span>
         <span className="event-command-name">{def.name}</span>
         <span className="event-command-params">{allLines[0]}</span>
+        <button
+          type="button"
+          className="event-command-inline-edit"
+          aria-label={block.cmd.code === 101 ? "Edit dialogue" : `Edit ${def.name.toLowerCase()}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+            onStartEdit();
+          }}
+        >
+          {block.cmd.code === 101 ? "Edit dialogue" : "Edit"}
+        </button>
       </div>
       {allLines.slice(1).map((line, idx) => (
         <div

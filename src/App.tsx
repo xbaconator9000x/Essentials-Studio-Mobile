@@ -28,11 +28,25 @@ import {
   exportProjectZip,
   exportBrowserProjectZip,
   discardFailedProjectImport,
+  type AndroidDocumentImportProgress,
 } from "./services/archiveApi";
 import { importAndOpenProject } from "./services/importOpenGuards";
+import { pickAndroidDocument } from "./services/androidDocumentPicker";
 import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
+import { confirmProjectSwitch as confirmProjectSwitchWithSave } from "./services/projectSwitchGuards";
+import {
+  getLastMapId,
+  getLastProjectPath,
+  getRecentProjectPaths,
+  rememberLastMapId,
+  rememberRecentProjectPath,
+} from "./services/recentProject";
+import { installEditorBackHandler } from "./services/editorBackNavigation";
+import { MobileRecentProjects } from "./components/MobileRecentProjects";
+import { MobileWorkspaceBar } from "./components/MobileWorkspaceBar";
+import { MobileOperationFeedback } from "./components/MobileOperationFeedback";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
 import { TilesetPalette } from "./components/TilesetPalette/TilesetPalette";
@@ -42,13 +56,27 @@ import { CreateMapDialog } from "./components/MapProperties/CreateMapDialog";
 import { ScriptEditor } from "./components/ScriptEditor/ScriptEditor";
 import { DatabaseEditor } from "./components/DatabaseEditor/DatabaseEditor";
 import { PbsEntityEditor } from "./components/PbsEntityEditor/PbsEntityEditor";
+import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
 import { buildPbsIndex, type PbsIndex } from "./services/pbsIndex";
+import { supportsDirectProjectFolderOpen } from "./services/projectOpenMode";
+import {
+  readBooleanPanelPreference,
+  writeBooleanPanelPreference,
+} from "./services/panelPreferences";
 import {
   ProjectSaveProvider,
   useProjectSave,
   useEditorRegistration,
 } from "./context/ProjectSaveContext";
 import "./App.css";
+
+// Android's SAF save picker can expose a ZIP as generic octet-stream.
+const PROJECT_ARCHIVE_ACCEPT =
+  ".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed,application/octet-stream";
+const TILESET_PALETTE_PREFERENCE = "essentials-studio:map-editor:tileset-palette-visible";
+// A phone in landscape is often 750–900 CSS px. Keep the same mobile
+// navigation rather than silently swapping to the three-column desktop UI.
+const MOBILE_LAYOUT_QUERY = "(max-width: 900px)";
 
 /** Try to open a native folder picker via Tauri dialog plugin. */
 async function showFolderPicker(): Promise<string | null> {
@@ -74,10 +102,26 @@ async function showFolderPicker(): Promise<string | null> {
  */
 function AppContent() {
   const { saveAll, dirtyCount, hasUnsavedEdits, updateDirty } = useProjectSave();
-  const isAndroid = /Android/i.test(navigator.userAgent);
+  const canOpenProjectFolder = supportsDirectProjectFolderOpen(navigator.userAgent);
+  const isAndroid = !canOpenProjectFolder;
   const isBrowserDev = !("__TAURI_INTERNALS__" in window) && Boolean(import.meta.env.VITE_BROWSER_BACKEND_URL);
+  const [mobileLayout, setMobileLayout] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia(MOBILE_LAYOUT_QUERY).matches,
+  );
+  const [mobileSection, setMobileSection] = useState<"projects" | "maps" | "sprites" | "settings">("projects");
+  const [mobileEditEnabled, setMobileEditEnabled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const phoneViewport = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const updateLayout = (event: MediaQueryListEvent) => setMobileLayout(event.matches);
+    phoneViewport.addEventListener("change", updateLayout);
+    return () => phoneViewport.removeEventListener("change", updateLayout);
+  }, []);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [lastProjectPath, setLastProjectPath] = useState(getLastProjectPath);
+  const [recentProjectPaths, setRecentProjectPaths] = useState(getRecentProjectPaths);
   // A new Map on every App render invalidates project-scoped PBS loaders and
   // can reload Encounters/World panels while the user has unsaved edits.
   const pbsMapNames = useMemo(
@@ -98,6 +142,9 @@ function AppContent() {
   const [mapIsDirty, setMapIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    console.info(`[save-all] toolbar state saving=${saving}`);
+  }, [saving]);
   // Synchronous lease: fast repeated taps cannot start competing saves or exports.
   const editorOperationRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +174,147 @@ function AppContent() {
   const [showDatabase, setShowDatabase] = useState(false);
   const [showScripts, setShowScripts] = useState(false);
   const [showPbs, setShowPbs] = useState(false);
+  const [showSprites, setShowSprites] = useState(false);
+  const [showTilesetPalette, setShowTilesetPalette] = useState(
+    () => readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) ??
+      (typeof window.matchMedia !== "function" || !window.matchMedia(MOBILE_LAYOUT_QUERY).matches),
+  );
+  const [graphicsRevision, setGraphicsRevision] = useState(0);
+  const mobileBackState = useRef({
+    projectOpen: Boolean(project),
+    mobileLayout,
+    mobileSection,
+    showTilesetPalette,
+    editingEvent,
+    showDatabase,
+    showScripts,
+    showPbs,
+    showSprites,
+    propsMapId,
+    createMapParentId,
+    dirtyCount,
+  });
+  mobileBackState.current = {
+    projectOpen: Boolean(project),
+    mobileLayout,
+    mobileSection,
+    showTilesetPalette,
+    editingEvent,
+    showDatabase,
+    showScripts,
+    showPbs,
+    showSprites,
+    propsMapId,
+    createMapParentId,
+    dirtyCount,
+  };
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const narrowViewport = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const updatePaletteVisibility = (event: MediaQueryListEvent) => {
+      if (readBooleanPanelPreference(TILESET_PALETTE_PREFERENCE) === null) {
+        setShowTilesetPalette(!event.matches);
+      }
+    };
+    narrowViewport.addEventListener("change", updatePaletteVisibility);
+    return () => narrowViewport.removeEventListener("change", updatePaletteVisibility);
+  }, []);
+
+  const activeProjectPath = project?.path;
+  const lastMobileProjectPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeProjectPath || !mobileLayout) return;
+    if (lastMobileProjectPathRef.current === activeProjectPath) return;
+    lastMobileProjectPathRef.current = activeProjectPath;
+    // A different project is a new editing scope. Back navigation between
+    // screens must retain dirty work, but opening another root must re-arm
+    // read-only preview and close a palette scoped to the previous project.
+    setMobileEditEnabled(false);
+    setMobileSection("projects");
+    setShowTilesetPalette(false);
+  }, [activeProjectPath, mobileLayout]);
+
+  useEffect(() => {
+    if (!activeProjectPath || !mobileLayout) return;
+    const sentinel = { essentialsStudioBack: true };
+    const hasBackLayer = () => {
+      const state = mobileBackState.current;
+      return Boolean(
+        state.editingEvent || state.showDatabase || state.showScripts || state.showPbs ||
+        state.showSprites || state.propsMapId !== null || state.createMapParentId !== null ||
+        (state.mobileSection === "maps" && state.showTilesetPalette) ||
+        state.mobileSection !== "projects"
+      );
+    };
+    const handleBack = () => {
+      if (!hasBackLayer()) return;
+      window.history.pushState(sentinel, "", window.location.href);
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }));
+    };
+    window.history.pushState(sentinel, "", window.location.href);
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
+  }, [activeProjectPath, mobileLayout]);
+
+  useEffect(() => {
+    if (!activeProjectPath || mobileLayout || !editingEvent) return;
+    return installEditorBackHandler(window);
+  }, [activeProjectPath, editingEvent, mobileLayout]);
+
+  useEffect(() => {
+    const handleMobileEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const state = mobileBackState.current;
+      if (!state.mobileLayout || !state.projectOpen || state.editingEvent) return;
+
+      const hasOverlay = Boolean(
+        state.showDatabase || state.showScripts || state.showPbs || state.showSprites ||
+        state.propsMapId !== null || state.createMapParentId !== null
+      );
+      if (hasOverlay) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const close = () => {
+          if (state.propsMapId !== null) setPropsMapId(null);
+          else if (state.createMapParentId !== null) setCreateMapParentId(null);
+          else if (state.showSprites) setShowSprites(false);
+          else if (state.showPbs) setShowPbs(false);
+          else if (state.showScripts) setShowScripts(false);
+          else if (state.showDatabase) setShowDatabase(false);
+        };
+        if (state.dirtyCount > 0) {
+          void confirmEditor("Discard unsaved changes and close this editor?").then(discard => {
+            if (discard) close();
+          });
+        } else {
+          close();
+        }
+        return;
+      }
+
+      if (state.mobileSection === "maps" && state.showTilesetPalette) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setShowTilesetPalette(false);
+        return;
+      }
+      if (state.mobileSection !== "projects") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        // Sections are views of the same mounted project. Moving to the map
+        // list must never suggest discarding edits or clear Save All state.
+        // Only actually opening a *different project* runs the save guard.
+        setMobileSection("projects");
+      }
+    };
+    window.addEventListener("keydown", handleMobileEscape);
+    return () => window.removeEventListener("keydown", handleMobileEscape);
+  }, []);
 
   // Refs let callbacks always read the latest values without stale closures.
   const mapDataRef = useRef<MapRenderData | null>(null);
@@ -139,6 +327,7 @@ function AppContent() {
   const projectOpenCoordinator = useRef(new ProjectOpenCoordinator());
   const mapSelectionCoordinator = useRef(new ProjectOpenCoordinator());
   const [archiveProgress, setArchiveProgress] = useState<number | null>(null);
+  const [archiveProgressDetail, setArchiveProgressDetail] = useState<string | null>(null);
   const [archiveOutcome, setArchiveOutcome] = useState<string | null>(null);
 
   useEffect(() => { mapDataRef.current = mapData; }, [mapData]);
@@ -168,8 +357,13 @@ function AppContent() {
     const savedRevision = mapEditRevisionRef.current;
     setLoading(true);
     try {
+      console.info("[save-all] map callback entered", md.id);
       await saveThenMarkClean(
-        () => saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height),
+        async () => {
+          console.info("[save-all] invoking native map save", md.id);
+          await saveMap(proj.path, md.id, tilesSnapshot, md.width, md.height);
+          console.info("[save-all] native map save completed", md.id);
+        },
         () => updateMapDirty(false),
         () => mapStillUnchanged(
           { projectPath: proj.path, map: md, revision: savedRevision },
@@ -203,12 +397,15 @@ function AppContent() {
   // Every Save All entry point must freeze in-memory edits, not just ZIP export.
   const saveAllWithLock = useCallback(async (): Promise<void> => {
     if (editorOperationRef.current) {
+      console.warn("[save-all] rejected: project operation already running");
       throw new Error("Another project save or export is already running");
     }
+    console.info("[save-all] operation lock acquired");
     editorOperationRef.current = true;
     setSaving(true);
     try {
       await saveAll();
+      console.info("[save-all] operation completed");
     } finally {
       editorOperationRef.current = false;
       setSaving(false);
@@ -219,18 +416,12 @@ function AppContent() {
 
   // A project switch must never silently unmount dirty event, map or PBS editors.
   // Cancel keeps the current project active; save failures also abort the switch.
-  const confirmProjectSwitch = useCallback(async (): Promise<boolean> => {
-    if (!projectRef.current || !hasUnsavedEdits()) return true;
-    const saveFirst = await confirmEditor("Save all unsaved changes before switching projects? Cancel keeps the current project open.");
-    if (!saveFirst) return false;
-    await saveAllWithLock();
-    // Allow React's editor registration effects to publish their clean state.
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-    if (hasUnsavedEdits()) {
-      throw new Error("New or unsaved edits remain after saving. Project switch cancelled.");
-    }
-    return true;
-  }, [saveAllWithLock, hasUnsavedEdits]);
+  const confirmProjectSwitch = useCallback(() => confirmProjectSwitchWithSave({
+    hasActiveProject: Boolean(projectRef.current),
+    hasUnsavedEdits,
+    confirm: confirmEditor,
+    saveAll: saveAllWithLock,
+  }), [saveAllWithLock, hasUnsavedEdits]);
 
   const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
     if (!skipSwitchGuard && !(await confirmProjectSwitch())) return;
@@ -242,9 +433,11 @@ function AppContent() {
       setError(null);
       // Validate the candidate's initial XP map and tileset before clearing
       // the current project. A corrupt ZIP must not replace a working editor.
-      const { project: proj, initialMap, initialTileset } = await prepareProjectBeforeOpen(path, {
-        openProject, loadMap, loadTileset,
-      });
+      const { project: proj, initialMap, initialTileset } = await prepareProjectBeforeOpen(
+        path,
+        { openProject, loadMap, loadTileset },
+        getLastMapId(path),
+      );
       lease.assertCurrent();
 
       // Load the first map's actual graphics BEFORE making the imported project
@@ -268,6 +461,9 @@ function AppContent() {
       }
       projectRef.current = proj;
       setProject(proj);
+      rememberRecentProjectPath(proj.path);
+      setLastProjectPath(proj.path);
+      setRecentProjectPaths(getRecentProjectPaths());
       setMapData(initialMap);
       mapDataRef.current = initialMap;
       setTilesetInfo(initialTileset);
@@ -275,6 +471,7 @@ function AppContent() {
       setAutotileImages(initialImages?.autotiles ?? [null, null, null, null, null, null, null]);
       setCurrentMapId(initialMap?.id ?? null);
       currentMapIdRef.current = initialMap?.id ?? null;
+      if (initialMap) rememberLastMapId(proj.path, initialMap.id);
       updateMapDirty(false);
       // Close project-bound editors so stale event IDs cannot write to the new project.
       setEditingEvent(null);
@@ -313,14 +510,27 @@ function AppContent() {
     }
   }, [updateMapDirty, confirmProjectSwitch, hasUnsavedEdits]);
 
+  const handleReopenLastProject = useCallback(async () => {
+    if (!lastProjectPath) return;
+    try {
+      await handleOpenProject(lastProjectPath);
+    } catch (err) {
+      setError(`Could not reopen last project: ${err}`);
+    }
+  }, [handleOpenProject, lastProjectPath]);
+
   const handleBrowseProject = useCallback(async () => {
+    if (!canOpenProjectFolder) {
+      setArchiveOutcome("On Android, import an Essentials project ZIP instead of opening a folder.");
+      return;
+    }
     try {
       const selected = await showFolderPicker();
       if (selected) await handleOpenProject(selected);
     } catch (err) {
       setError(`Could not open project: ${err}`);
     }
-  }, [handleOpenProject]);
+  }, [canOpenProjectFolder, handleOpenProject]);
 
   // ── Archive import into private app storage ─────────────────────────────────
   const handleImportSource = useCallback(async <T,>(
@@ -336,6 +546,7 @@ function AppContent() {
     editorOperationRef.current = true;
     setLoading(true);
     setArchiveProgress(0);
+    setArchiveProgressDetail(null);
     setArchiveOutcome(null);
     setError(null);
     try {
@@ -362,6 +573,7 @@ function AppContent() {
       editorOperationRef.current = false;
       setLoading(false);
       setArchiveProgress(null);
+      setArchiveProgressDetail(null);
     }
   }, [confirmProjectSwitch, handleOpenProject]);
 
@@ -372,7 +584,7 @@ function AppContent() {
 
   const handlePickAndroidProjectZip = useCallback(async () => {
     try {
-      const selected = await open({
+      const selected = await pickAndroidDocument(() => open({
         multiple: false,
         // Android DocumentsUI providers disagree on ZIP MIME types
         // (application/zip vs application/x-zip-compressed). A restrictive
@@ -380,12 +592,9 @@ function AppContent() {
         // Select via the native provider, then let the bounded Rust ZIP
         // validator reject anything that is not a safe project archive.
         // This does not grant filesystem access or bypass the SAF picker.
-      });
+      }), 120_000);
       if (selected === null) {
-        // tauri-plugin-dialog reports both a cancelled picker and a failed
-        // native picker callback as null on Android. Never leave that silent.
-        console.info("[android-import] document picker returned no selection");
-        setArchiveOutcome("No project ZIP was returned by the Android document picker; nothing was imported.");
+        setArchiveOutcome("Project ZIP import cancelled. No project was imported.");
         return;
       }
       console.info("[android-import] document picker returned a selection");
@@ -393,21 +602,48 @@ function AppContent() {
       if (typeof selected !== "string") {
         throw new Error("Android document picker returned an unsupported selection");
       }
-      await handleImportSource(selected, importProjectZipFromAndroidDocument);
+      const importArchive = (
+        uri: string,
+        onProgress?: (percent: number) => void,
+      ) => {
+        setArchiveProgressDetail("Waiting for Android to open the selected project ZIP...");
+        return importProjectZipFromAndroidDocument(uri, onProgress, (progress: AndroidDocumentImportProgress) => {
+          if (progress.stage === "reading") {
+            const megabytes = (progress.bytesRead / (1024 * 1024)).toFixed(1);
+            setArchiveProgressDetail(`Read ${megabytes} MiB from Android ZIP...`);
+          } else if (progress.stage === "validating") {
+            setArchiveProgressDetail("Validating ZIP and creating the private project copy...");
+          } else {
+            setArchiveProgressDetail("ZIP imported; opening project...");
+          }
+        });
+      };
+      await handleImportSource(selected, importArchive);
     } catch (err) {
       setError(`Project ZIP import failed: ${String(err)}`);
     }
   }, [handleImportSource]);
 
   const handleSaveAll = useCallback(async () => {
-    if (editorOperationRef.current) return;
+    if (editorOperationRef.current) {
+      console.warn("[save-all] toolbar tap ignored: project operation already running");
+      return;
+    }
+    const hadUnsavedEdits = hasUnsavedEdits();
     setError(null);
+    setArchiveOutcome(null);
     try {
       await saveAllWithLock();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      setArchiveOutcome(hasUnsavedEdits()
+        ? "Save completed, but unsaved editor changes remain."
+        : hadUnsavedEdits
+          ? "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits."
+          : "No unsaved editor changes were registered; nothing to save. Events saved with Save & close are already in the working project.");
     } catch (err) {
       setError(`Save all failed: ${String(err)}`);
     }
-  }, [saveAllWithLock]);
+  }, [saveAllWithLock, hasUnsavedEdits]);
 
   const handleExportProjectZip = useCallback(async () => {
     const active = projectRef.current;
@@ -469,7 +705,7 @@ function AppContent() {
    * (used when reloading the current map after property changes, or on initial
    * project open when dirty state has already been cleared).
    */
-  const handleSelectMap = useCallback(async (mapId: number, skipGuard = false) => {
+  const handleSelectMap = useCallback(async (mapId: number, skipGuard = false, openMobileEditor = false) => {
     const path = projectRef.current?.path;
     if (!path) return;
     const lease = mapSelectionCoordinator.current.begin();
@@ -536,6 +772,10 @@ function AppContent() {
       const changedMap = mapId !== currentMapIdRef.current;
       setCurrentMapId(mapId);
       currentMapIdRef.current = mapId;
+      rememberLastMapId(path, mapId);
+      // Only navigate away from the map tree after the destination has loaded
+      // and all unsaved-edit guards have accepted the transition.
+      if (openMobileEditor && isCurrent()) setMobileSection("maps");
       // Re-selecting/reloading the same map must not silently unmount an open
       // event editor with unsaved dialogue or command edits.
       if (changedMap) setEditingEvent(null);
@@ -662,10 +902,13 @@ function AppContent() {
   // Close the event editor and reload the current map so any saved changes to the
   // event (graphic, name, position) are reflected on the canvas immediately.
   const handleCloseEventEditor = useCallback(async () => {
+    console.info("[event-save] close callback received");
     setEditingEvent(null);
     const mapId = currentMapIdRef.current;
     if (mapId !== null) {
+      console.info("[event-save] refreshing map after event close", { mapId });
       await handleSelectMap(mapId, true);
+      console.info("[event-save] map refresh after event close completed", { mapId });
     }
   }, [handleSelectMap]);
 
@@ -840,13 +1083,20 @@ function AppContent() {
           <div className="app-welcome-content">
             <h1>Essentials Studio</h1>
             <p>A modern editor for Pokémon Essentials projects</p>
-            <button
-              className="app-welcome-btn"
-              onClick={handleBrowseProject}
-              disabled={loading}
-            >
-              {loading ? "Opening..." : "Open Project Folder"}
-            </button>
+            {canOpenProjectFolder && (
+              <button
+                className="app-welcome-btn"
+                onClick={handleBrowseProject}
+                disabled={loading}
+              >
+                {loading ? "Opening..." : "Open Project Folder"}
+              </button>
+            )}
+            {lastProjectPath && (
+              <button className="app-welcome-btn" onClick={() => void handleReopenLastProject()} disabled={loading}>
+                Reopen Last Project
+              </button>
+            )}
             {/* The native Android dialog can return without resolving its
                 callback (emulator 41304956412). Use the bounded File.slice
                 importer first; retain the scoped native picker as fallback. */}
@@ -855,7 +1105,7 @@ function AppContent() {
             ) : (
             <label className="app-welcome-btn app-archive-picker">
               Import Essentials Project ZIP
-              <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+              <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
                 aria-label="Choose Essentials Project ZIP" disabled={loading}
                 onChange={event => {
                   const file = event.target.files?.[0];
@@ -863,6 +1113,9 @@ function AppContent() {
                   if (file) void handleImportProjectZip(file);
                 }} />
             </label>
+            )}
+            {isAndroid && (
+              <p role="note">On Android, open projects from a ZIP archive. The source ZIP remains unchanged.</p>
             )}
             {isAndroid && (
               <button className="app-welcome-btn" aria-label="Use native Android document picker"
@@ -898,8 +1151,9 @@ function AppContent() {
         <span className="app-title">
           Essentials Studio — {project.name}{dirtyCount > 0 ? " *" : ""}
         </span>
+        {mobileLayout && <span className="app-preview-badge">PREVIEW</span>}
         <div className="app-titlebar-right">
-          <button className="app-titlebar-btn" disabled={loading || saving || dirtyCount === 0}
+          <button className="app-titlebar-btn" disabled={loading || saving}
             onClick={() => void handleSaveAll()}>
             {saving ? "Saving..." : "Save All"}
           </button>
@@ -911,6 +1165,9 @@ function AppContent() {
           </button>
           <button className="app-titlebar-btn" onClick={() => setShowPbs(true)} disabled={loading || saving}>
             PBS Data
+          </button>
+          <button className="app-titlebar-btn" onClick={() => setShowSprites(true)} disabled={loading || saving}>
+            Sprites
           </button>
           <button
             className="app-titlebar-btn app-titlebar-btn--play"
@@ -928,7 +1185,7 @@ function AppContent() {
           ) : (
           <label className="app-titlebar-btn app-archive-picker">
             Import ZIP...
-            <input type="file" accept=".zip,application/zip" className="app-archive-picker-input"
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
               aria-label="Choose Essentials Project ZIP" disabled={loading || saving}
               onChange={event => {
                 const file = event.target.files?.[0];
@@ -943,50 +1200,134 @@ function AppContent() {
               Import ZIP (native)
             </button>
           )}
-          {archiveProgress !== null && <span className="app-loading">{archiveProgress}%</span>}
-          <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
-            Open...
-          </button>
+          {archiveProgress !== null && (
+            <span className="app-loading">
+              {archiveProgressDetail ?? `${archiveProgress}%`}
+            </span>
+          )}
+          {canOpenProjectFolder && (
+            <button className="app-titlebar-btn" onClick={handleBrowseProject} disabled={loading || saving}>
+              Open...
+            </button>
+          )}
           {loading && <span className="app-loading">Loading...</span>}
         </div>
       </div>
 
-      {archiveProgress !== null && (
-        <div className="app-operation-status" role="status" aria-live="polite">
-          {archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`}
-        </div>
+      {mobileLayout ? (
+        <MobileOperationFeedback
+          progress={archiveProgress === null ? null
+            : archiveProgressDetail ??
+              (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
+          outcome={archiveOutcome}
+          error={error}
+          onDismissOutcome={() => setArchiveOutcome(null)}
+          onDismissError={() => setError(null)}
+        />
+      ) : (
+        <>
+          {archiveProgress !== null && (
+            <div className="app-operation-status" role="status" aria-live="polite">
+              {archiveProgressDetail ??
+                (archiveProgress === 0 ? "Preparing project ZIP — please wait..." : `Project ZIP operation: ${archiveProgress}%`)}
+            </div>
+          )}
+          {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
+          {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
+        </>
       )}
-      {archiveOutcome && <div className="app-operation-status" role="status" aria-live="polite">{archiveOutcome}</div>}
-      {error && <div className="app-operation-status app-operation-error" role="alert">{error}</div>}
 
-      {/* Main layout — map editor always visible */}
-      <div className="app-body">
+      {mobileLayout && (
+        <MobileWorkspaceBar
+          section={mobileSection}
+          projectName={project.name}
+          mapName={currentMapId !== null
+            ? (project.map_infos[currentMapId]?.name ?? `Map ${String(currentMapId).padStart(3, "0")}`)
+            : null}
+          dirtyCount={dirtyCount}
+          busy={loading || saving}
+          editingEnabled={mobileEditEnabled}
+          paletteVisible={showTilesetPalette}
+          onShowProjects={() => setMobileSection("projects")}
+          onToggleEditing={() => setMobileEditEnabled((enabled) => !enabled)}
+          onTogglePalette={() => setShowTilesetPalette((visible) => {
+            const next = !visible;
+            writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, next);
+            return next;
+          })}
+          onSaveAll={() => void handleSaveAll()}
+          onExportZip={() => void handleExportProjectZip()}
+        />
+      )}
+
+      {/* Desktop keeps the three-panel layout; Android uses project/map screens. */}
+      <div className={`app-body${mobileLayout ? ` app-body--mobile app-body--mobile-${mobileSection}` : ""}`}>
+        <section className="app-mobile-project-summary">
+          <div>
+            <h1>{project.name}</h1>
+            <p>{Object.keys(project.map_infos).length} maps available</p>
+          </div>
+          <p>Select a map to open the editor. Your source ZIP remains unchanged.</p>
+          <label className="app-mobile-import-btn">
+            Import disposable ZIP
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
+              aria-label="Import disposable project ZIP" disabled={loading || saving}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+          </label>
+          <MobileRecentProjects
+            paths={recentProjectPaths}
+            currentPath={project.path}
+            disabled={loading || saving}
+            onSelect={(path) => {
+              void handleOpenProject(path).catch((cause) => {
+                setError(`Could not switch project: ${String(cause)}`);
+              });
+            }}
+          />
+        </section>
         {/* Left: Map tree */}
         <MapTreePanel
           mapInfos={project.map_infos}
           currentMapId={currentMapId}
-          onSelectMap={(id) => handleSelectMap(id)}
+          onSelectMap={(id) => {
+            void handleSelectMap(id, false, mobileLayout);
+          }}
           onCreateMap={handleCreateMap}
           onDeleteMap={handleDeleteMap}
           onRenameMap={handleRenameMap}
           onMapProperties={handleMapProperties}
+          readOnly={mobileLayout && !mobileEditEnabled}
         />
 
         {/* Center: Map editor */}
         <MapEditor
+          key={project.path}
           mapData={mapData}
           tilesetInfo={tilesetInfo}
           tilesetImage={tilesetImage}
           autotileImages={autotileImages}
           projectPath={project.path}
           selectedTileId={selectedTileId}
+          onSelectTile={setSelectedTileId}
           currentMapId={currentMapId ?? undefined}
           startPosition={startPosition ?? undefined}
           hasClipboardEvent={clipboardEvent !== null}
-          shortcutsDisabled={Boolean(editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
+          readOnly={mobileLayout && !mobileEditEnabled}
+          paletteVisible={showTilesetPalette}
+          onTogglePalette={() => setShowTilesetPalette((visible) => {
+            const next = !visible;
+            writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, next);
+            return next;
+          })}
+          graphicsRevision={graphicsRevision}
+          shortcutsDisabled={Boolean(mobileLayout && !mobileEditEnabled || editingEvent || showDatabase || showScripts || showPbs || propsMapId !== null || createMapParentId !== null || loading || saving)}
           onMapDirty={handleMapDirty}
-          onOpenEvent={handleOpenEvent}
-          onCreateEvent={handleCreateEvent}
+          onOpenEvent={mobileLayout && !mobileEditEnabled ? undefined : handleOpenEvent}
+          onCreateEvent={mobileLayout && !mobileEditEnabled ? undefined : handleCreateEvent}
           onDeleteEvent={handleDeleteEvent}
           onSetStartPosition={handleSetStartPosition}
           onCopyEvent={handleCopyEvent}
@@ -994,14 +1335,92 @@ function AppContent() {
         />
 
         {/* Right: Tileset palette */}
-        <TilesetPalette
-          tilesetInfo={tilesetInfo}
-          tilesetImage={tilesetImage}
-          autotileImages={autotileImages}
-          selectedTileId={selectedTileId}
-          onSelectTile={setSelectedTileId}
-        />
+        {showTilesetPalette && (
+          <TilesetPalette
+            key={`${project.path}:${currentMapId ?? "none"}`}
+            tilesetInfo={tilesetInfo}
+            tilesetImage={tilesetImage}
+            autotileImages={autotileImages}
+            selectedTileId={selectedTileId}
+            onSelectTile={setSelectedTileId}
+            onClose={() => {
+              writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, false);
+              setShowTilesetPalette(false);
+            }}
+          />
+        )}
+
+        <section className="app-mobile-settings">
+          <h1>Project &amp; export</h1>
+          <p>Current project: <strong>{project.name}</strong></p>
+          <div className="app-mobile-tools-section" role="group" aria-label="Project data editors">
+            <h2>Project editors</h2>
+            <p>Edit Pokémon data, Ruby scripts and PBS records from the same project workspace.</p>
+            <div className="app-mobile-tools-grid">
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowDatabase(true)}>Database</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowScripts(true)}>Ruby Scripts</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => setShowPbs(true)}>PBS Data</button>
+              <button type="button" disabled={loading || saving}
+                onClick={() => { setMobileSection("sprites"); setShowSprites(true); }}>Sprite Editor</button>
+            </div>
+          </div>
+          <details className="app-mobile-safety-note">
+            <summary>Safety: keep your original project ZIP</summary>
+            <p>This is an experimental Android build. Work on a disposable copy until you have verified Save All and ZIP export on your device.</p>
+          </details>
+          {canOpenProjectFolder && (
+            <button onClick={handleBrowseProject} disabled={loading || saving}>Open project folder</button>
+          )}
+          <label className="app-mobile-import-btn">
+            Import disposable ZIP
+            <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
+              aria-label="Import disposable project ZIP from Settings" disabled={loading || saving}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportProjectZip(file);
+              }} />
+          </label>
+          <button disabled={loading || saving} onClick={() => void handleSaveAll()}>
+            Save All
+          </button>
+          <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
+            Export ZIP
+          </button>
+        </section>
+        {mobileLayout && mobileSection === "sprites" && (
+          <section className="app-mobile-sprite-preview">
+            <h1>Sprite tools</h1>
+            <p>Browse and edit project sprites using touch controls. Saving a sprite writes to the disposable working project, not the imported source ZIP.</p>
+            <div className="app-mobile-safety-note" role="alert">
+              Keep the original ZIP and open the editor only on a disposable project copy.
+            </div>
+            <button onClick={() => setShowSprites(true)}>Open Sprite Editor</button>
+          </section>
+        )}
       </div>
+
+      {mobileLayout && !showSprites && (
+        <nav className="app-mobile-nav" aria-label="Main navigation">
+          {([
+            ["projects", "Projects"],
+            ["maps", "Maps"],
+            ["sprites", "Sprites"],
+            ["settings", "Settings"],
+          ] as const).map(([section, label]) => (
+            <button key={section} aria-current={mobileSection === section ? "page" : undefined}
+              onClick={() => {
+                setMobileSection(section);
+                if (section === "sprites") setShowSprites(false);
+              }}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {/* Database editor modal */}
       {showDatabase && (
@@ -1032,6 +1451,18 @@ function AppContent() {
             <ScriptEditor projectPath={project.path} onClose={() => setShowScripts(false)} />
           </div>
         </div>
+      )}
+
+      {showSprites && (
+        <SpriteEditor
+          key={project.path}
+          projectPath={project.path}
+          onClose={() => {
+            setShowSprites(false);
+            if (mobileLayout) setMobileSection("sprites");
+          }}
+          onSaved={() => setGraphicsRevision((revision) => revision + 1)}
+        />
       )}
 
       {/* Event editor modal */}
@@ -1077,8 +1508,9 @@ function AppContent() {
         </div>
       )}
 
-      {/* Error display */}
-      {error && (
+      {/* The mobile alert already appears in the compact receipt strip.
+          Do not duplicate a long native error at the bottom of the canvas. */}
+      {!mobileLayout && error && (
         <div className="app-error">
           <span>{error}</span>
           <button onClick={() => setError(null)}>x</button>

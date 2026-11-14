@@ -307,3 +307,26 @@
   font-weight: 600;
   z-index: 100;
 }
+
+/* Stack script navigation above CodeMirror in portrait. Keep the native Ruby
+   source buffer and existing Save All registration unchanged. */
+@media (max-width: 900px) {
+  .script-editor-wrapper, .script-editor { min-width: 0; min-height: 0; }
+  .script-editor { flex-direction: column; }
+  .script-list-panel {
+    width: 100%;
+    flex: 0 1 auto;
+    min-height: 105px;
+    max-height: min(26dvh, 210px);
+    border-right: 0;
+    border-bottom: 1px solid var(--color-surface0);
+  }
+  .script-list-header { min-height: 44px; padding: 5px 10px; }
+  .script-list-add-btn { min-height: 44px; min-width: 44px; font-size: 22px; }
+  .script-list-item { min-height: 44px; padding: 8px 10px; font-size: 13px; }
+  .script-code-panel { flex: 1 1 0; min-height: 0; min-width: 0; }
+  .script-code-editor { min-height: 0; }
+  .script-code-editor .cm-editor { min-height: 0; }
+  .script-context-menu button { min-height: 44px; font-size: 13px; }
+  .global-search-input { min-height: 44px; font-size: 16px; }
+}

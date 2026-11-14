@@ -1,12 +1,121 @@
+const MAP_TILE_SIZE = 32;
+
 export interface GesturePoint {
   x: number;
   y: number;
 }
 
+export function clampContextMenuPosition(
+  point: GesturePoint,
+  viewportWidth: number,
+  viewportHeight: number,
+  menuWidth = 200,
+  menuHeight = 200,
+  margin = 8,
+): GesturePoint {
+  if (![point.x, point.y, viewportWidth, viewportHeight, menuWidth, menuHeight, margin].every(Number.isFinite)) {
+    return { x: margin, y: margin };
+  }
+  const maxX = Math.max(margin, viewportWidth - menuWidth - margin);
+  const maxY = Math.max(margin, viewportHeight - menuHeight - margin);
+  return {
+    x: Math.max(margin, Math.min(point.x, maxX)),
+    y: Math.max(margin, Math.min(point.y, maxY)),
+  };
+}
+
+export function clampMapViewport(
+  viewportX: number,
+  viewportY: number,
+  mapWidth: number,
+  mapHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  zoom: number,
+): GesturePoint {
+  if (
+    !Number.isFinite(zoom) ||
+    zoom <= 0 ||
+    !Number.isFinite(mapWidth) ||
+    !Number.isFinite(mapHeight) ||
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(viewportHeight)
+  ) {
+    return { x: 0, y: 0 };
+  }
+  const visibleWidth = Math.max(0, viewportWidth / (MAP_TILE_SIZE * zoom));
+  const visibleHeight = Math.max(0, viewportHeight / (MAP_TILE_SIZE * zoom));
+  return {
+    x: Math.min(Math.max(0, Number.isFinite(viewportX) ? viewportX : 0), Math.max(0, mapWidth - visibleWidth)),
+    y: Math.min(Math.max(0, Number.isFinite(viewportY) ? viewportY : 0), Math.max(0, mapHeight - visibleHeight)),
+  };
+}
+
+export function centerMapViewportOnTile(
+  tileX: number,
+  tileY: number,
+  mapWidth: number,
+  mapHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  zoom: number,
+): GesturePoint {
+  const visibleWidth = viewportWidth / (MAP_TILE_SIZE * zoom);
+  const visibleHeight = viewportHeight / (MAP_TILE_SIZE * zoom);
+  return clampMapViewport(
+    tileX + 0.5 - visibleWidth / 2,
+    tileY + 0.5 - visibleHeight / 2,
+    mapWidth,
+    mapHeight,
+    viewportWidth,
+    viewportHeight,
+    zoom,
+  );
+}
+
+export function rasterizeTileLine(start: GesturePoint, end: GesturePoint): GesturePoint[] {
+  // Touch cancellation, corrupt project coordinates and synthetic pointer events
+  // must never produce an unbounded tile allocation or unsafe map indices.
+  // A 32K-cell stroke is already larger than a practical RMXP editing gesture.
+  if (![start.x, start.y, end.x, end.y].every(Number.isSafeInteger) ||
+      Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) > 32_768) return [];
+  let x = Math.floor(start.x);
+  let y = Math.floor(start.y);
+  const endX = Math.floor(end.x);
+  const endY = Math.floor(end.y);
+  const dx = Math.abs(endX - x);
+  const sx = x < endX ? 1 : -1;
+  const dy = -Math.abs(endY - y);
+  const sy = y < endY ? 1 : -1;
+  let error = dx + dy;
+  const cells: GesturePoint[] = [];
+
+  while (true) {
+    cells.push({ x, y });
+    if (x === endX && y === endY) return cells;
+    const doubledError = 2 * error;
+    if (doubledError >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubledError <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+}
+
 export type TouchGestureAction =
   | { type: "tap"; point: GesturePoint }
   | { type: "long-press"; point: GesturePoint }
-  | { type: "pan"; deltaX: number; deltaY: number }
+  | {
+      type: "pan";
+      deltaX: number;
+      deltaY: number;
+      from: GesturePoint;
+      point: GesturePoint;
+      paint: boolean;
+    }
   | {
       type: "pinch";
       scale: number;
@@ -61,7 +170,7 @@ export function resolveMapTapTarget(
 
 export class TouchGestureMachine {
   private readonly pointers = new Map<number, PointerPosition>();
-  private mode: "idle" | "pending" | "pan" | "pinch" | "suppressed" = "idle";
+  private mode: "idle" | "pending" | "pan" | "pinch" | "pinch-pan" | "suppressed" = "idle";
   private previousPinchDistance = 0;
   private previousPinchCenter: GesturePoint = { x: 0, y: 0 };
   private readonly movementThreshold: number;
@@ -106,21 +215,35 @@ export class TouchGestureMachine {
         return null;
       }
       this.mode = "pan";
+      const from = { x: pointer.lastX, y: pointer.lastY };
       pointer.lastX = point.x;
       pointer.lastY = point.y;
       return {
         type: "pan",
         deltaX: point.x - pointer.startX,
         deltaY: point.y - pointer.startY,
+        from,
+        point,
+        paint: true,
       };
     }
 
     if (this.mode === "pan") {
+      const from = { x: pointer.lastX, y: pointer.lastY };
       const deltaX = point.x - pointer.lastX;
       const deltaY = point.y - pointer.lastY;
       pointer.lastX = point.x;
       pointer.lastY = point.y;
-      return { type: "pan", deltaX, deltaY };
+      return { type: "pan", deltaX, deltaY, from, point, paint: true };
+    }
+
+    if (this.mode === "pinch-pan" && this.pointers.size === 1) {
+      const from = { x: pointer.lastX, y: pointer.lastY };
+      const deltaX = point.x - pointer.lastX;
+      const deltaY = point.y - pointer.lastY;
+      pointer.lastX = point.x;
+      pointer.lastY = point.y;
+      return { type: "pan", deltaX, deltaY, from, point, paint: false };
     }
 
     if (this.mode !== "pinch" || this.pointers.size !== 2) return null;
@@ -128,7 +251,11 @@ export class TouchGestureMachine {
     const [first, second] = [...this.pointers.values()];
     const distance = this.distance(first, second);
     const center = this.center(first, second);
-    const scale = this.previousPinchDistance > 0 ? distance / this.previousPinchDistance : 1;
+    // Coincident fingers produce a zero-length baseline. Keep zoom stable until
+    // both pointers separate, rather than dividing by zero or jumping on the
+    // first movement. A subsequent move can establish a usable baseline.
+    const scale = this.previousPinchDistance > 0 && distance > 0
+      ? distance / this.previousPinchDistance : 1;
     const action: TouchGestureAction = {
       type: "pinch",
       scale,
@@ -164,6 +291,13 @@ export class TouchGestureMachine {
     this.pointers.delete(pointerId);
     if (this.pointers.size === 0) {
       this.mode = "idle";
+    } else if (this.mode === "pinch" && this.pointers.size === 1) {
+      const remaining = this.pointers.values().next().value as PointerPosition;
+      remaining.startX = remaining.x;
+      remaining.startY = remaining.y;
+      remaining.lastX = remaining.x;
+      remaining.lastY = remaining.y;
+      this.mode = "pinch-pan";
     } else {
       this.mode = "suppressed";
     }

@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveMapTapTarget, TouchGestureMachine } from "../src/services/mapGestures.ts";
+import {
+  clampMapViewport,
+  centerMapViewportOnTile,
+  rasterizeTileLine,
+  resolveMapTapTarget,
+  TouchGestureMachine,
+  clampContextMenuPosition,
+} from "../src/services/mapGestures.ts";
+
+test("context menu position stays within the viewport with a safe margin", () => {
+  assert.deepEqual(clampContextMenuPosition({ x: 900, y: 700 }, 1000, 800), { x: 792, y: 592 });
+  assert.deepEqual(clampContextMenuPosition({ x: 0, y: 0 }, 320, 240), { x: 8, y: 8 });
+  assert.deepEqual(clampContextMenuPosition({ x: 100, y: 100 }, 100, 80), { x: 8, y: 8 });
+});
 
 test("tap stays a tap below the movement threshold; dragging pans without tapping", () => {
   const gestures = new TouchGestureMachine();
@@ -16,6 +29,17 @@ test("tap stays a tap below the movement threshold; dragging pans without tappin
     type: "pan",
     deltaX: 15,
     deltaY: 0,
+    from: { x: 20, y: 20 },
+    point: { x: 35, y: 20 },
+    paint: true,
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 41, y: 24 }), {
+    type: "pan",
+    deltaX: 6,
+    deltaY: 4,
+    from: { x: 35, y: 20 },
+    point: { x: 41, y: 24 },
+    paint: true,
   });
   assert.equal(gestures.pointerUp(2, { x: 35, y: 20 }, 300), null);
 });
@@ -57,7 +81,50 @@ test("two-finger movement pinches and suppresses a trailing single-finger tap", 
     deltaY: 0,
   });
   assert.equal(gestures.pointerUp(2, { x: 40, y: 10 }, 20), null);
-  assert.equal(gestures.pointerUp(1, { x: 10, y: 10 }, 30), null);
+  assert.deepEqual(gestures.pointerMove(1, { x: 15, y: 10 }), {
+    type: "pan",
+    deltaX: 5,
+    deltaY: 0,
+    from: { x: 10, y: 10 },
+    point: { x: 15, y: 10 },
+    paint: false,
+  });
+  assert.equal(gestures.pointerUp(1, { x: 15, y: 10 }, 30), null);
+
+  gestures.pointerDown(3, { x: 10, y: 10 }, 40);
+  gestures.pointerDown(4, { x: 30, y: 10 }, 41);
+  gestures.pointerMove(4, { x: 40, y: 10 });
+  gestures.pointerUp(4, { x: 40, y: 10 }, 50);
+  assert.equal(gestures.pointerUp(3, { x: 10, y: 10 }, 60), null);
+});
+
+test("coincident two-finger touches do not cause an infinite zoom or accidental painting", () => {
+  const gestures = new TouchGestureMachine();
+  gestures.pointerDown(1, { x: 40, y: 40 }, 0);
+  gestures.pointerDown(2, { x: 40, y: 40 }, 1);
+  assert.deepEqual(gestures.pointerMove(2, { x: 50, y: 40 }), {
+    type: "pinch",
+    scale: 1,
+    center: { x: 45, y: 40 },
+    deltaX: 5,
+    deltaY: 0,
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 60, y: 40 }), {
+    type: "pinch",
+    scale: 2,
+    center: { x: 50, y: 40 },
+    deltaX: 5,
+    deltaY: 0,
+  });
+  assert.deepEqual(gestures.pointerMove(2, { x: 40, y: 40 }), {
+    type: "pinch",
+    scale: 1,
+    center: { x: 40, y: 40 },
+    deltaX: -10,
+    deltaY: 0,
+  });
+  assert.equal(gestures.pointerUp(2, { x: 40, y: 40 }, 40), null);
+  assert.equal(gestures.pointerUp(1, { x: 40, y: 40 }, 50), null);
 });
 
 test("event-layer taps inspect an event, create on empty cells, and reject out-of-bounds cells", () => {
@@ -75,4 +142,47 @@ test("event-layer taps inspect an event, create on empty cells, and reject out-o
   assert.deepEqual(resolveMapTapTarget({ x: 1.5, y: 0 }, 4, 3, 0, events), {
     type: "outside",
   });
+});
+
+test("map viewport clamps at each edge and keeps small maps anchored at origin", () => {
+  assert.deepEqual(clampMapViewport(-4, 90, 20, 10, 320, 160, 1), { x: 0, y: 5 });
+  assert.deepEqual(clampMapViewport(90, 90, 4, 3, 320, 160, 1), { x: 0, y: 0 });
+  assert.deepEqual(clampMapViewport(2, 2, 20, 10, 320, 160, 0), { x: 0, y: 0 });
+});
+
+test("event navigation centers the tile when possible and clamps at map boundaries", () => {
+  assert.deepEqual(centerMapViewportOnTile(10, 5, 20, 10, 320, 160, 1), { x: 5.5, y: 3 });
+  assert.deepEqual(centerMapViewportOnTile(0, 0, 20, 10, 320, 160, 1), { x: 0, y: 0 });
+  assert.deepEqual(centerMapViewportOnTile(2, 1, 4, 3, 320, 160, 1), { x: 0, y: 0 });
+});
+
+test("touch paint interpolation includes every tile between fast diagonal samples", () => {
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 3, y: 2 }), [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 3, y: 2 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: 3, y: 2 }, { x: 0, y: 0 }), [
+    { x: 3, y: 2 },
+    { x: 2, y: 1 },
+    { x: 1, y: 1 },
+    { x: 0, y: 0 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: 1, y: 1 }, { x: 1, y: 1 }), [
+    { x: 1, y: 1 },
+  ]);
+  assert.deepEqual(rasterizeTileLine({ x: Number.NaN, y: 1 }, { x: 1, y: 1 }), []);
+});
+
+test("map strokes reject corrupt and oversized pointer paths without allocating huge arrays", () => {
+  for (const invalid of [NaN, Infinity, -Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: invalid, y: 1 }), []);
+  }
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 1_000_000, y: 0 }), []);
+  assert.deepEqual(rasterizeTileLine({ x: -32_769, y: 0 }, { x: 0, y: 0 }), []);
+  assert.equal(rasterizeTileLine({ x: 0, y: 0 }, { x: 32_768, y: 0 }).length, 32_769);
+  assert.deepEqual(rasterizeTileLine({ x: 0, y: 0 }, { x: 3, y: 0 }), [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+  ]);
 });

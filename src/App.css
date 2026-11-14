@@ -61,6 +61,7 @@ body,
 .app-body {
   flex: 1;
   display: flex;
+  position: relative;
   overflow: hidden;
 }
 
@@ -267,4 +268,384 @@ body,
   text-align: center;
   touch-action: none;
   cursor: progress;
+}
+
+.app-preview-badge,
+.app-mobile-experimental-banner,
+.app-mobile-map-controls,
+.app-mobile-project-summary,
+.app-mobile-nav,
+.app-mobile-settings {
+  display: none;
+}
+
+.app-mobile-import-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.app-mobile-import-btn input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .editor-modal-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .editor-modal {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .app-titlebar {
+    padding: max(5px, env(safe-area-inset-top)) 10px 5px;
+    gap: 6px;
+    min-height: 42px;
+  }
+
+  .app-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-preview-badge {
+    display: inline-block;
+    flex-shrink: 0;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .app-titlebar-right {
+    display: none;
+  }
+
+  .app-mobile-experimental-banner {
+    display: block;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    background: #4a2d19;
+    color: #ffe0ad;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .app-mobile-map-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--color-mantle);
+    font-size: 12px;
+  }
+
+  .app-mobile-map-controls button,
+  .app-mobile-settings button,
+  .app-mobile-nav button {
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface1);
+    border-radius: 8px;
+    background: var(--color-surface0);
+    color: var(--color-text);
+    font: inherit;
+    font-weight: 600;
+  }
+
+  .app-body--mobile {
+    min-height: 0;
+    flex-direction: row;
+  }
+
+  .app-body--mobile .app-mobile-project-summary {
+    display: none;
+  }
+
+  .app-body--mobile-projects {
+    flex-direction: column;
+  }
+
+  .app-body--mobile-projects .app-mobile-project-summary {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    max-height: min(38dvh, 320px);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--color-base);
+    border-bottom: 1px solid var(--color-surface0);
+  }
+
+  .app-mobile-project-summary h1,
+  .app-mobile-settings h1 {
+    font-size: 20px;
+  }
+
+  .app-mobile-project-summary p,
+  .app-mobile-settings p {
+    color: var(--color-subtext1);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .app-body--mobile-projects .map-tree-panel {
+    width: 100%;
+    min-width: 0;
+    flex: 1;
+    border: 0;
+  }
+
+  .app-body--mobile-projects .map-editor,
+  .app-body--mobile-projects .tileset-palette,
+  .app-body--mobile-maps .map-tree-panel,
+  .app-body--mobile-settings .map-tree-panel,
+  .app-body--mobile-settings .map-editor,
+  .app-body--mobile-settings .tileset-palette,
+  .app-body--mobile-sprites .map-tree-panel,
+  .app-body--mobile-sprites .map-editor,
+  .app-body--mobile-sprites .tileset-palette {
+    display: none !important;
+  }
+
+  .app-body--mobile-maps .map-editor {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .app-body--mobile-settings .app-mobile-settings {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    overflow-y: auto;
+    padding: 18px 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .app-mobile-safety-note {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    border: 1px solid #d97706;
+    border-radius: 8px;
+    background: #4a2d19;
+    color: #ffe0ad;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .app-mobile-safety-note summary {
+    display: list-item;
+    cursor: pointer;
+    min-height: 44px;
+    align-content: center;
+    font-weight: 600;
+    touch-action: manipulation;
+  }
+  .app-mobile-safety-note p {
+    margin: 5px 0 8px;
+    color: inherit;
+  }
+  .app-mobile-safety-note summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  .app-body--mobile-sprites {
+    flex-direction: column;
+  }
+
+  .app-mobile-sprite-preview {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    overflow-y: auto;
+    padding: 18px 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .app-mobile-sprite-preview h1 {
+    font-size: 20px;
+  }
+
+  .app-mobile-sprite-preview p {
+    color: var(--color-subtext1);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .app-mobile-settings .app-mobile-import-btn {
+    width: 100%;
+  }
+
+  .app-mobile-tools-section {
+    display: grid;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-surface0);
+  }
+
+  .app-mobile-tools-section h2 {
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .app-mobile-tools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .app-mobile-tools-grid button {
+    min-width: 0;
+    min-height: 52px;
+    text-align: center;
+    touch-action: manipulation;
+  }
+
+  .app-mobile-tools-grid button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  .app-mobile-nav {
+    display: flex;
+    flex: 0 0 auto;
+    min-height: 56px;
+    justify-content: space-around;
+    gap: 5px;
+    padding: 4px 6px max(5px, env(safe-area-inset-bottom));
+    z-index: 9;
+    background: var(--color-mantle);
+    border-top: 1px solid var(--color-surface0);
+  }
+
+  .app-mobile-nav button {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 3px;
+    font-size: 12px;
+    touch-action: manipulation;
+  }
+
+  .app-mobile-nav button[aria-current="page"] {
+    border-color: var(--color-accent);
+    background: var(--color-surface1);
+    color: var(--color-accent);
+  }
+
+  .app-welcome {
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .app-welcome-content {
+    display: flex;
+    width: min(100%, 420px);
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .app-welcome-content h1 {
+    font-size: 25px;
+  }
+
+  .app-welcome-content p {
+    margin-bottom: 8px;
+  }
+
+  .app-welcome-btn {
+    width: 100%;
+    min-height: 52px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .app-welcome-hint {
+    margin-top: 4px;
+  }
+}
+
+/* A rotated phone must remain a canvas-first mobile editor, not fall back
+   to the desktop's three narrow panes. Keep primary actions above the map
+   without requiring an extra multirow toolbar or hidden overflow menu. */
+@media (max-width: 900px) and (orientation: landscape) {
+  .app-titlebar {
+    min-height: 34px;
+    /* Android's landscape WebView reports a zero CSS safe-area inset even
+       when the system status bar remains overlaid. Reserve a modest top strip
+       to keep the project title out from under the clock and status icons. */
+    padding: max(24px, env(safe-area-inset-top)) 8px 2px;
+  }
+  .app-preview-badge {
+    padding: 2px 5px;
+  }
+  .app-mobile-project-summary h1,
+  .app-mobile-settings h1 {
+    font-size: 17px;
+  }
+  .app-body--mobile-projects .app-mobile-project-summary {
+    max-height: 34dvh;
+    padding: 6px 10px;
+    gap: 4px;
+  }
+  .app-body--mobile-settings .app-mobile-settings {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .app-body--mobile-sprites .app-mobile-sprite-preview {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .app-mobile-nav {
+    min-height: 48px;
+    padding: 2px 5px max(2px, env(safe-area-inset-bottom));
+  }
+  .app-mobile-nav button {
+    min-height: 44px;
+    padding-block: 3px;
+  }
+  .app-mobile-tools-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }

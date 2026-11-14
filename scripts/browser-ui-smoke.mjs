@@ -22,10 +22,85 @@ const output = [];
 let server;
 let browser;
 let page;
+const pageConsole = [];
 function sha(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
+function inspectSpritePng(path, originalPath) {
+  const helperPath = resolve("scripts/android-emulator-sprite-smoke.py");
+  const source = [
+    "import importlib.util, json, sys",
+    "from pathlib import Path",
+    "spec = importlib.util.spec_from_file_location('sprite_smoke', sys.argv[1])",
+    "module = importlib.util.module_from_spec(spec)",
+    "spec.loader.exec_module(module)",
+    "payload = Path(sys.argv[2]).read_bytes()",
+    "width, height, rows = module.png_rgba_rows(payload)",
+    "pixel = module.png_pixel(payload, width // 2, height // 2)",
+    "new_color_pixels = module.count_new_color_pixels(Path(sys.argv[3]).read_bytes(), payload, (230, 69, 83, 255)) if len(sys.argv) > 3 else None",
+    "print(json.dumps({'width': width, 'height': height, 'center': pixel, 'newColorPixels': new_color_pixels}))",
+  ].join("\n");
+  return JSON.parse(execFileSync(
+    "python3",
+    originalPath ? ["-c", source, helperPath, path, originalPath] : ["-c", source, helperPath, path],
+    { encoding: "utf8" },
+  ));
+}
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function startWeb(input, workspace) {
+  const env = { ...process.env };
+  delete env.ESSENTIALS_BROWSER_WORKSPACE;
+  if (workspace) env.ESSENTIALS_BROWSER_WORKSPACE = workspace;
+  server = spawn("node", ["scripts/dev-web.mjs", input], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    // Isolate npm/Vite/Rust descendants so a failed assertion cannot leave
+    // pipe handles open and strand the Actions job until cancellation.
+    detached: process.platform !== "win32",
+  });
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on("data", chunk => {
+      const value = chunk.toString();
+      output.push(value);
+      if (process.env.CI) process.stdout.write(value);
+    });
+  }
+  server.on("error", error => output.push("Launch error: " + error.message));
+}
+async function stopWeb() {
+  const child = server;
+  if (!child) return;
+  if (child.exitCode === null) {
+    await new Promise(resolveExit => {
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null) {
+          try {
+            if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+            else child.kill("SIGKILL");
+          } catch (error) {
+            if (error?.code !== "ESRCH") throw error;
+          }
+        }
+        resolveExit();
+      }, 5000);
+      child.once("exit", () => {
+        clearTimeout(timeout);
+        resolveExit();
+      });
+      try {
+        if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+        else child.kill("SIGTERM");
+      } catch (error) {
+        clearTimeout(timeout);
+        if (error?.code !== "ESRCH") throw error;
+        resolveExit();
+      }
+    });
+  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  if (server === child) server = null;
+}
 async function invokeRead(command, args = {}) {
   const response = await fetch("http://127.0.0.1:5173/api/browser/invoke", {
     method: "POST",
@@ -50,38 +125,40 @@ async function ready() {
   throw Error("Browser editor did not start within 180 seconds");
 }
 try {
-  server = spawn("node", ["scripts/dev-web.mjs", original], {
-    env: { ...process.env, ESSENTIALS_BROWSER_WORKSPACE: join(temp, "browser-working-copy") },
-    stdio: ["ignore", "pipe", "pipe"],
-    // Isolate npm/Vite/Rust descendants so a failed assertion cannot leave
-    // pipe handles open and strand the Actions job until cancellation.
-    detached: process.platform !== "win32",
-  });
-  for (const stream of [server.stdout, server.stderr]) {
-    stream.on("data", chunk => {
-      const value = chunk.toString();
-      output.push(value);
-      if (process.env.CI) process.stdout.write(value);
-    });
-  }
-  server.on("error", error => output.push("Launch error: " + error.message));
+  const workspace = join(temp, "browser-working-copy");
+  startWeb(original, workspace);
   const root = await ready();
+  const sourceSpritePath = join(root, "Graphics/Characters/SyntheticGuide.png");
+  const sourceSpriteHash = sha(sourceSpritePath);
+  const sourceSpriteInfo = inspectSpritePng(sourceSpritePath);
   const chrome = [process.env.CHROME_BIN, "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"]
     .find(path => path && existsSync(path));
   assert.ok(chrome, "No Chrome executable on CI runner; set CHROME_BIN");
   browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
-  page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const browserContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    hasTouch: true,
+  });
+  page = await browserContext.newPage();
   const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(error.message));
+  page.on("console", message => pageConsole.push(`${message.type()}: ${message.text()}`));
   await page.goto("http://127.0.0.1:5173/", { waitUntil: "domcontentloaded", timeout: 30_000 });
   await page.getByRole("button", { name: "Open Project Folder" }).click();
   await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 45_000 });
   const before = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(before.width, 2);
   assert.equal(before.height, 2);
-  const targetTile = before.tiles[0] === 48 ? 96 : 48;
-  await page.getByRole("button", { name: "Auto", exact: true }).click();
-  await page.locator(".autotile-item").nth(targetTile === 48 ? 0 : 1).click();
+  // The synthetic project intentionally declares no autotile graphics. Empty
+  // autotile slots are disabled in the real editor, so exercise a valid regular
+  // tileset tile instead of attempting to click a nonexistent resource.
+  const targetTile = before.tiles[0] === 384 ? 385 : 384;
+  await page.getByRole("button", { name: "Tiles", exact: true }).click();
+  const tilesetPicker = page.getByRole("button", { name: "Tiles", exact: true });
+  await tilesetPicker.waitFor({ state: "visible" });
+  const tilesetCanvas = page.locator(".tileset-canvas");
+  await tilesetCanvas.waitFor({ state: "visible", timeout: 15_000 });
+  await tilesetCanvas.click({ position: { x: targetTile === 385 ? 48 : 16, y: 16 } });
   await page.locator(".map-editor-canvas").click({ position: { x: 16, y: 16 } });
   await page.getByRole("button", { name: "Save All" }).waitFor({ state: "visible" });
   await page.waitForFunction(() => {
@@ -89,22 +166,21 @@ try {
     return button && !button.disabled;
   }, null, { timeout: 10_000 });
   await page.getByRole("button", { name: "Save All" }).click();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(b => b.textContent?.trim() === "Save All");
-    return button?.disabled === true;
-  }, null, { timeout: 20_000 });
+  await page.getByText(
+    "All registered editor changes were saved to the working project. The imported source ZIP is unchanged; export a new ZIP to share your edits.",
+    { exact: true },
+  )
+    .waitFor({ state: "visible", timeout: 20_000 });
+  assert.equal(sha(original), originalHash, "Save All must not modify the imported source ZIP");
   const after = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   const differences = after.tiles.map((tile, index) => ({ tile, index }))
     .filter(({ tile, index }) => tile !== before.tiles[index]);
   assert.equal(differences.length, 1, "One UI-painted tile must persist to native RXDATA");
-  // XP autotiles have 48 shape variants per selected palette entry.
-  // Painting recalculates the shape from neighbouring tiles (48 -> 95 in
-  // the synthetic fixture), so compare the autotile family, not shape ID.
+  // Regular RMXP tile IDs are stable; verify the exact tile selected in
+  // the rendered React palette was persisted to the native RXDATA map.
   const savedTile = differences[0].tile;
-  assert.ok(Number.isInteger(savedTile) && savedTile >= 48 && savedTile < 48 + 7 * 48,
-    "Painted tile must remain a valid XP autotile ID");
-  assert.equal(Math.floor((savedTile - 48) / 48), Math.floor((targetTile - 48) / 48),
-    "The selected UI autotile family must be saved");
+  assert.equal(savedTile, targetTile,
+    "The regular tileset tile selected in React must persist exactly");
   await page.screenshot({ path: join(evidence, "browser-map-saved.png"), fullPage: true });
   // Exercise the actual React event editor, not a direct HTTP save_event call.
   // Its native save writes to the same Map001.rxdata as the painted tile.
@@ -112,27 +188,46 @@ try {
   assert.ok(eventInfo && Number.isInteger(eventInfo.x) && Number.isInteger(eventInfo.y),
     "Synthetic map must expose event 7 with integer coordinates");
   const dialogueBefore = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueBefore.pages[0].list[0].parameters[0], "Synthetic dialogue");
-  await page.getByRole("button", { name: "Ev", exact: true }).click();
+  assert.equal(dialogueBefore.pages[0].list[0].code, 101);
+  assert.deepEqual(dialogueBefore.pages[0].list[0].parameters, ["", 0, 0, 2]);
+  assert.equal(dialogueBefore.pages[0].list[1].code, 401);
+  assert.equal(dialogueBefore.pages[0].list[1].parameters[0], "Synthetic dialogue");
+  await page.getByRole("button", { name: "Events layer", exact: true }).click();
   await page.locator(".map-editor-canvas").click({
     position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
   });
   const eventEditor = page.locator(".event-editor");
   await eventEditor.waitFor({ timeout: 15_000 });
-  // Single-line Show Text renders CommandRow; multi-line text uses MultiLineBlock.
-  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first().dblclick();
+  // Use the visible mobile action as well as retaining the desktop double-click
+  // path; this catches regressions where the editor is not exposed to touch users.
+  await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first()
+    .getByRole("button", { name: "Edit dialogue" }).click();
   const dialogueEditor = eventEditor.locator(".event-command-edit-input, .event-command-edit-textarea");
   await dialogueEditor.waitFor({ timeout: 10_000 });
   const updatedDialogue = "Chromium event dialogue roundtrip";
   await dialogueEditor.fill(updatedDialogue);
-  await eventEditor.locator(".event-editor-header").click(); // Commit on blur.
+  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
-  await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
-  await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.waitForFunction(
+    () => document.querySelector(".app-title")?.textContent?.includes(" *"),
+    null,
+    { timeout: 10_000 },
+  );
+  await eventEditor.getByRole("button", { name: "Save All from event editor", exact: true }).click();
+  await eventEditor.getByRole("status")
+    .filter({ hasText: "All registered editor changes were saved." })
+    .waitFor({ state: "visible", timeout: 20_000 });
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], updatedDialogue,
-    "Dialogue edited through React must persist in native RMXP event commands");
+  assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
+    "Show Text face graphic must remain unchanged");
+  const savedDialogue = dialogueAfter.pages[0].list[1].parameters[0];
+  assert.equal(savedDialogue, updatedDialogue,
+    `Save All must persist dialogue edited through React in native RMXP event commands.\n` +
+    `Observed "${savedDialogue}". Save diagnostics:\n` +
+    pageConsole.filter(message => /\[save-all\]|\[event-save\]/.test(message)).slice(-100).join("\n"));
+  await eventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
   // Saving the event must not undo the tile edit saved earlier.
   const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(afterEvent.tiles[differences[0].index], differences[0].tile);
@@ -172,8 +267,83 @@ try {
   const mapAfterPbs = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(mapAfterPbs.tiles[differences[0].index], differences[0].tile);
   const eventAfterPbs = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
-  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], updatedDialogue);
+  assert.equal(eventAfterPbs.pages[0].list[0].parameters[0], "");
+  assert.equal(eventAfterPbs.pages[0].list[1].parameters[0], updatedDialogue);
   await page.screenshot({ path: join(evidence, "browser-pbs-saved.png"), fullPage: true });
+
+  // Restart the actual React app and Rust bridge against the existing working
+  // copy, then reopen the project through the UI before exporting it.
+  await stopWeb();
+  startWeb(root);
+  await ready();
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.getByRole("button", { name: "Open Project Folder" }).click();
+  await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 45_000 });
+  const restartMap = await invokeRead("load_map", { projectPath: root, mapId: 1 });
+  assert.deepEqual(restartMap.tiles, afterEvent.tiles,
+    "Map edits must remain on disk and reload after React and Rust process restart");
+  const restartEvent = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(restartEvent.pages[0].list[1].parameters[0], updatedDialogue,
+    "Dialogue edits must remain on disk and reload after React and Rust process restart");
+  await page.getByRole("button", { name: "Events layer", exact: true }).click();
+  await page.locator(".map-editor-canvas").click({
+    position: { x: eventInfo.x * 32 + 16, y: eventInfo.y * 32 + 16 },
+  });
+  const restartedEventEditor = page.locator(".event-editor");
+  await restartedEventEditor.waitFor({ timeout: 15_000 });
+  await restartedEventEditor.locator(".event-command-params")
+    .filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
+  await restartedEventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await restartedEventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  const restartPbs = await invokeRead("load_pbs_file", { projectPath: root, filename: "pokemon.txt" });
+  assert.equal(
+    restartPbs[0].fields.find(field => field.key === "Name")?.value,
+    updatedPokemonName,
+    "PBS edits must remain on disk after React and Rust process restart",
+  );
+  await page.screenshot({ path: join(evidence, "browser-project-reopened.png"), fullPage: true });
+
+  // Exercise the real portrait SpriteEditor through touch input and the native
+  // private-project save command. This closes the missing UI-to-ZIP sprite path.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileNavigation = page.getByRole("navigation", { name: "Main navigation" });
+  await mobileNavigation.getByRole("button", { name: "Sprites", exact: true }).click();
+  await page.getByRole("button", { name: "Open Sprite Editor" }).click();
+  const spriteEditor = page.getByRole("dialog", { name: "Sprite editor" });
+  await spriteEditor.waitFor({ timeout: 15_000 });
+  await spriteEditor.getByRole("button", { name: "Tools ▸" }).click();
+  await spriteEditor.getByRole("button", { name: "Select #e64553" }).click();
+  const spriteCanvas = spriteEditor.getByRole("application", { name: "Sprite canvas" });
+  const spriteBounds = await spriteCanvas.boundingBox();
+  assert.ok(spriteBounds && spriteBounds.width > 0 && spriteBounds.height > 0,
+    "Portrait sprite canvas must have a usable touch target");
+  await spriteCanvas.tap({
+    position: { x: spriteBounds.width / 2, y: spriteBounds.height / 2 },
+  });
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ timeout: 10_000 });
+  await spriteEditor.getByRole("button", { name: "Save sprite" }).click();
+  await spriteEditor.getByRole("combobox", { name: "Select project character sprite" })
+    .waitFor({ timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const picker = document.querySelector('[aria-label="Select project character sprite"]');
+    return picker?.value === "SyntheticGuide_copy";
+  }, null, { timeout: 15_000 });
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ state: "hidden", timeout: 15_000 });
+  const copiedSpritePath = join(root, "Graphics/Characters/SyntheticGuide_copy.png");
+  assert.equal(sha(sourceSpritePath), sourceSpriteHash,
+    "Saving a sprite copy through the mobile editor must not change its source PNG");
+  const copiedSpriteInfo = inspectSpritePng(copiedSpritePath, sourceSpritePath);
+  assert.deepEqual(
+    { width: copiedSpriteInfo.width, height: copiedSpriteInfo.height },
+    { width: sourceSpriteInfo.width, height: sourceSpriteInfo.height },
+    "Sprite copy must preserve the source PNG dimensions",
+  );
+  assert.ok(copiedSpriteInfo.newColorPixels > 0,
+    "Touch painting must add the selected palette color to the saved copy");
+  await page.screenshot({ path: join(evidence, "browser-sprite-copy-saved.png"), fullPage: true });
+  await spriteEditor.getByRole("button", { name: "Close" }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "Export ZIP..." }).click();
   const status = page.locator(".app-operation-status").filter({ hasText: "ZIP saved to local file:" });
@@ -188,18 +358,227 @@ try {
     "scripts/verify_project_roundtrip.py", original, exported,
     "--allow-changed", "Data/Map001.rxdata",
     "--allow-changed", "PBS/pokemon.txt",
+    "--allow-added", "Graphics/Characters/SyntheticGuide_copy.png",
   ], { encoding: "utf8" }));
   assert.equal(verification.status, "verified");
-  assert.deepEqual(verification.approved_changed_files, ["Data/Map001.rxdata", "PBS/pokemon.txt"]);
+  assert.deepEqual(verification.approved_changed_files, [
+    "Data/Map001.rxdata",
+    "PBS/pokemon.txt",
+  ]);
+  assert.deepEqual(verification.approved_added_files, [
+    "Graphics/Characters/SyntheticGuide_copy.png",
+  ]);
   const reopened = execFileSync("src-tauri/target/debug/browser_archive", [
     "import", exported, join(temp, "reopened"),
   ], { encoding: "utf8" }).trim();
   assert.equal(sha(join(root, "Data/Map001.rxdata")), sha(join(reopened, "Data/Map001.rxdata")));
   assert.equal(sha(join(root, "PBS/pokemon.txt")), sha(join(reopened, "PBS/pokemon.txt")),
     "Exported/reimported PBS must preserve the actual UI edit");
+  assert.equal(
+    sha(join(root, "Graphics/Characters/SyntheticGuide_copy.png")),
+    sha(join(reopened, "Graphics/Characters/SyntheticGuide_copy.png")),
+    "Sprite copy edited through the mobile UI must survive ZIP export and reimport byte-for-byte",
+  );
+  assert.equal(sha(join(root, "Graphics/Characters/SyntheticGuide.png")), sourceSpriteHash,
+    "Export and reimport must preserve the original character graphic");
+  assert.deepEqual(
+    inspectSpritePng(
+      join(reopened, "Graphics/Characters/SyntheticGuide_copy.png"),
+      join(reopened, "Graphics/Characters/SyntheticGuide.png"),
+    ),
+    copiedSpriteInfo,
+    "Export/reimport must preserve sprite dimensions and painted pixel",
+  );
   assert.equal(sha(original), originalHash, "Original ZIP must not change");
   assert.deepEqual(pageErrors, [], "No uncaught browser JavaScript errors");
   await page.screenshot({ path: join(evidence, "browser-export-complete.png"), fullPage: true });
+
+  // Verify the actual React portrait layout using a rights-cleared project.
+  // These checks are browser viewport evidence, NOT Android KVM acceptance.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  const workspaceActions = page.locator(".app-mobile-workspace-bar");
+  await workspaceActions.waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Save All must be directly available on a phone, not hidden in Settings");
+  assert.equal(await workspaceActions.getByRole("button", { name: "Export project ZIP" }).isVisible(), true,
+    "ZIP export must be directly available on a phone");
+  await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
+  await page.getByRole("combobox", { name: "Select active map tool" }).waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "hidden" });
+  const mobileMetrics = await page.evaluate(() => ({
+    canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
+    compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
+    commandStripHeight: document.querySelector(".app-mobile-workspace-bar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(mobileMetrics.canvasHeight >= 120,
+    "Portrait editor must preserve a usable canvas after toolbars: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.compactToolbarHeight <= 92,
+    "Compact portrait toolbar should not expand into multiple obstructing rows: " + JSON.stringify(mobileMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Choose another map" }).click();
+  await page.locator(".app-mobile-project-summary").waitFor({ state: "visible" });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Save All must stay available when navigating back to the map list");
+  // Mobile map management must be reachable without a mouse right-click,
+  // but must not write to the fixture until the user chooses an operation.
+  const treeAction = page.getByRole("button", { name: /Map actions for/ }).first();
+  await treeAction.waitFor({ state: "visible", timeout: 10_000 });
+  await treeAction.click();
+  await page.getByRole("button", { name: "New Child Map..." }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-map-actions.png"), fullPage: true });
+  await page.locator(".map-tree-context-overlay").click({ position: { x: 2, y: 2 } });
+  await workspaceActions.getByRole("button", { name: "Lock map organisation" }).click();
+  assert.equal(await page.getByRole("button", { name: /Map actions for/ }).count(), 0,
+    "Read-only mobile map list must not offer mutation buttons");
+  await page.screenshot({ path: join(evidence, "browser-mobile-project-list.png"), fullPage: true });
+  // The export receipt must not push the canvas off-screen on a phone.
+  // Inspecting and dismissing the full native receipt must remain possible.
+  const operationFeedback = page.locator(".app-mobile-operation-feedback");
+  await operationFeedback.waitFor({ state: "visible", timeout: 10_000 });
+  const operationBox = await operationFeedback.boundingBox();
+  assert.ok(operationBox && operationBox.height <= 70,
+    "Native export receipts must start compact on a portrait viewport: " +
+      JSON.stringify(operationBox));
+  await operationFeedback.getByRole("button", { name: "Show full operation details" }).click();
+  assert.ok((await operationFeedback.innerText()).includes("ZIP saved to local file:"),
+    "Details must preserve the complete native ZIP export receipt");
+  await operationFeedback.getByRole("button", { name: "Dismiss operation message" }).click();
+  await operationFeedback.waitFor({ state: "hidden" });
+
+  // The Tools screen must expose the actual desktop-backed editors, and
+  // opening them must produce usable portrait layouts without extra writes.
+  await navigation.getByRole("button", { name: "Settings", exact: true }).click();
+  const projectTools = page.getByRole("group", { name: "Project data editors" });
+  for (const label of ["Database", "Ruby Scripts", "PBS Data", "Sprite Editor"]) {
+    assert.equal(await projectTools.getByRole("button", { name: label, exact: true }).isVisible(), true,
+      label + " must be reachable from mobile Tools");
+  }
+  await projectTools.getByRole("button", { name: "PBS Data" }).click();
+  const pbsModal = page.locator(".pbs-entity-editor");
+  await pbsModal.waitFor({ state: "visible", timeout: 30_000 });
+  const pbsMetrics = await pbsModal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    sidebarHeight: element.querySelector(".pbs-entity-sidebar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(pbsMetrics.width <= 392 && pbsMetrics.sidebarHeight <= 90,
+    "PBS mobile category rail must not consume desktop-width space: " + JSON.stringify(pbsMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-pbs-editor.png"), fullPage: true });
+  await pbsModal.locator(".pbs-entity-close").click();
+  await pbsModal.waitFor({ state: "hidden", timeout: 15_000 });
+
+  await projectTools.getByRole("button", { name: "Database" }).click();
+  const dbModal = page.locator(".db-editor");
+  await dbModal.waitFor({ state: "visible", timeout: 30_000 });
+  // This rights-cleared fixture includes Tilesets.rxdata but omits some
+  // other database files. Select a *real available tab* and wait for its
+  // asynchronous native load before measuring the phone list panel.
+  await dbModal.getByRole("button", { name: "Tilesets", exact: true }).click();
+  const activeDbList = dbModal.locator(".db-list-panel:visible").first();
+  await activeDbList.waitFor({ state: "visible", timeout: 30_000 });
+  const dbMetrics = await dbModal.evaluate(element => ({
+    listWidth: [...element.querySelectorAll(".db-list-panel")]
+      .map(node => node.getBoundingClientRect().width).find(width => width > 0) ?? 0,
+    panelWidth: element.getBoundingClientRect().width,
+  }));
+  assert.ok(dbMetrics.listWidth >= dbMetrics.panelWidth - 6,
+    "Database portrait list must stack above the entity form: " + JSON.stringify(dbMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-database-editor.png"), fullPage: true });
+  await dbModal.getByRole("button", { name: "Cancel" }).click();
+  await dbModal.waitFor({ state: "hidden", timeout: 15_000 });
+
+  await projectTools.getByRole("button", { name: "Ruby Scripts" }).click();
+  const scriptModal = page.locator(".script-editor-wrapper");
+  await scriptModal.waitFor({ state: "visible", timeout: 30_000 });
+  const scriptMetrics = await scriptModal.evaluate(element => ({
+    listWidth: element.querySelector(".script-list-panel")?.getBoundingClientRect().width ?? 0,
+    panelWidth: element.getBoundingClientRect().width,
+  }));
+  assert.ok(scriptMetrics.listWidth >= scriptMetrics.panelWidth - 6,
+    "Ruby Scripts portrait navigation must stack above CodeMirror: " + JSON.stringify(scriptMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-ruby-editor.png"), fullPage: true });
+  await scriptModal.getByRole("button", { name: "Cancel" }).click();
+  await scriptModal.waitFor({ state: "hidden", timeout: 15_000 });
+  assert.deepEqual(pageErrors, [], "Portrait tool navigation must not produce uncaught React errors");
+
+  // A landscape phone is ~844 CSS px wide, despite being only 390px tall.
+  // It must retain the mobile workspace, rather than switching to desktop
+  // panes and hiding the Save/Export/Maps navigation controls.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  await workspaceActions.waitFor({ state: "visible", timeout: 15_000 });
+  await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  // Earlier map-list testing deliberately locked editing. Rotating and
+  // navigating must preserve that safe view-only state until explicitly armed.
+  await workspaceActions.getByRole("button", { name: "Enable map editing" })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
+  await workspaceActions.getByRole("button", { name: "Switch map to view mode" })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  const landscapeMetrics = await page.evaluate(() => {
+    const measure = selector => document.querySelector(selector)?.getBoundingClientRect();
+    const canvas = measure(".map-editor-canvas-container");
+    const toolbar = measure(".map-editor-toolbar");
+    const strip = measure(".app-mobile-workspace-bar");
+    const nav = measure(".app-mobile-nav");
+    const actions = [...document.querySelectorAll(".app-mobile-workspace-actions > button")];
+    return {
+      viewport: [window.innerWidth, window.innerHeight],
+      canvasHeight: canvas?.height ?? 0,
+      toolbarHeight: toolbar?.height ?? 0,
+      commandStripHeight: strip?.height ?? 0,
+      navHeight: nav?.height ?? 0,
+      actionsWithinViewport: actions.every(button => {
+        const rect = button.getBoundingClientRect();
+        return rect.width >= 44 && rect.left >= -1 && rect.right <= window.innerWidth + 1;
+      }),
+    };
+  });
+  assert.ok(landscapeMetrics.canvasHeight >= 95,
+    "Landscape phone must retain usable map canvas: " + JSON.stringify(landscapeMetrics));
+  assert.ok(landscapeMetrics.toolbarHeight <= 92 &&
+    landscapeMetrics.commandStripHeight <= 58,
+    "Landscape app bars must not obstruct the canvas: " + JSON.stringify(landscapeMetrics));
+  assert.ok(landscapeMetrics.actionsWithinViewport,
+    "All landscape Save/Export/Edit/Tiles actions must fit within the phone viewport");
+  for (const label of ["Save all changes", "Export project ZIP", "Choose another map", "Hide tile palette"]) {
+    if (label === "Hide tile palette") continue;
+    assert.equal(await workspaceActions.getByRole("button", { name: label }).isVisible(), true,
+      label + " must remain visible after landscape rotation");
+  }
+  await page.screenshot({ path: join(evidence, "browser-landscape-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-landscape-map-tiles.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
+
+  await navigation.getByRole("button", { name: "Settings", exact: true }).click();
+  await projectTools.getByRole("button", { name: "PBS Data" }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-landscape-project-editors.png"), fullPage: true });
+  await projectTools.getByRole("button", { name: "PBS Data" }).click();
+  await pbsModal.waitFor({ state: "visible", timeout: 30_000 });
+  const landscapePbs = await pbsModal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    sidebarHeight: element.querySelector(".pbs-entity-sidebar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(landscapePbs.width <= 846 && landscapePbs.sidebarHeight <= 90,
+    "Landscape phone PBS editor must keep a compact category rail: " + JSON.stringify(landscapePbs));
+  await page.screenshot({ path: join(evidence, "browser-landscape-pbs-editor.png"), fullPage: true });
+  await pbsModal.locator(".pbs-entity-close").click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Rotating back to portrait must preserve the mobile Save All path");
+  assert.deepEqual(pageErrors, [], "Landscape rotation and editor navigation must not produce uncaught React errors");
+  await page.screenshot({ path: join(evidence, "browser-portrait-after-rotation.png"), fullPage: true });
+
   const receipt = {
     status: "real Chromium map/event/PBS UI → Rust saves → native ZIP export → reimport passed",
     originalZipSha256: originalHash,
@@ -207,6 +586,20 @@ try {
     changedTile: differences[0],
     changedDialogue: updatedDialogue,
     changedPokemonName: updatedPokemonName,
+    changedSpriteCopy: {
+      path: "Graphics/Characters/SyntheticGuide_copy.png",
+      sha256: sha(copiedSpritePath),
+      dimensions: [copiedSpriteInfo.width, copiedSpriteInfo.height],
+      centerPixel: copiedSpriteInfo.center,
+      newPalettePixels: copiedSpriteInfo.newColorPixels,
+      sourcePngUnchanged: true,
+    },
+    reactAndNativeProcessRestartPassed: true,
+    browserPortraitWorkspaceVerified: true,
+    browserLandscapeWorkspaceVerified: true,
+    mobileProjectEditorsVerified: true,
+    mobileMetrics,
+    landscapeMetrics,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
@@ -215,21 +608,14 @@ try {
 } catch (error) {
   console.error(error);
   if (page) await page.screenshot({ path: join(evidence, "browser-ui-failure.png"), fullPage: true }).catch(() => {});
-  writeFileSync(join(evidence, "failure.txt"), String(error) + "\n" + output.join("").slice(-15000));
+  writeFileSync(
+    join(evidence, "failure.txt"),
+    `${String(error)}\n\nBrowser console:\n${pageConsole.slice(-200).join("\n")}\n\nBackend output:\n${output.join("").slice(-15000)}`,
+  );
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  if (server && server.exitCode === null && server.pid) {
-    try {
-      if (process.platform !== "win32") process.kill(-server.pid, "SIGTERM");
-      else server.kill("SIGTERM");
-    } catch (error) {
-      if (error?.code !== "ESRCH") throw error;
-    }
-  }
-  // Destroy inherited pipes even if a nested cargo/Vite child ignores TERM.
-  server?.stdout?.destroy();
-  server?.stderr?.destroy();
+  await stopWeb();
   await delay(600);
   rmSync(temp, { recursive: true, force: true });
 }

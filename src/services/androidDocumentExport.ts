@@ -3,6 +3,8 @@
  * a scoped content URI; native Rust streams and byte-verifies the ZIP.
  * Cancellation is not success and must never call the write command.
  */
+import { pickAndroidDocument } from "./androidDocumentPicker.ts";
+
 export async function exportAndroidDocument(
   exportId: string,
   expectedBytes: number,
@@ -10,9 +12,11 @@ export async function exportAndroidDocument(
   io: {
     pickDestination: (filename: string) => Promise<string | null>;
     writeAndVerify: (exportId: string, documentUri: string) => Promise<number>;
+    discardDestination: (exportId: string, documentUri: string) => Promise<void>;
   },
   onProgress?: (percent: number) => void,
   pickerTimeoutMs = 120_000,
+  format = "ZIP",
 ): Promise<"saved" | "cancelled"> {
   // The Android DocumentsUI save sheet can close without resolving the
   // tauri-plugin-dialog callback. Never leave the editor loading forever.
@@ -23,13 +27,25 @@ export async function exportAndroidDocument(
   onProgress?.(20);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let documentUri: string | null;
+  let pickerTimedOut = false;
   try {
     documentUri = await Promise.race([
-      io.pickDestination(filename),
+      pickAndroidDocument(() => io.pickDestination(filename)).then(async (uri) => {
+        if (pickerTimedOut && uri !== null) {
+          await io.discardDestination(exportId, uri).catch((error: unknown) => {
+            console.error(`Could not remove late Android ${format} destination:`, error);
+          });
+          return null;
+        }
+        return uri;
+      }),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(
-          "Android document picker did not return a destination. No ZIP bytes were written by the editor; retry export."
-        )), pickerTimeoutMs);
+        timer = setTimeout(() => {
+          pickerTimedOut = true;
+          reject(new Error(
+            `Android document picker did not return a destination. No ${format} bytes were written by the editor; retry export.`
+          ));
+        }, pickerTimeoutMs);
       }),
     ]);
   } finally {
@@ -42,7 +58,7 @@ export async function exportAndroidDocument(
   onProgress?.(95);
   const verifiedBytes = await io.writeAndVerify(exportId, documentUri);
   if (verifiedBytes !== expectedBytes) {
-    throw new Error("Android ZIP export readback size mismatch");
+    throw new Error(`Android ${format} export readback size mismatch`);
   }
   onProgress?.(100);
   return "saved";

@@ -26,6 +26,23 @@ export function replaceMultiLineBlock(
   while (end < list.length && list[end].code === continuationCode &&
          list[end].indent === parent.indent) end++;
   const previous = list.slice(rawIndex, end);
+  if (parent.code === 101) {
+    const updatedContinuations: EventCommand[] = lines.map((line, index) => {
+      const old = previous[index + 1];
+      return {
+        ...(old ?? {}),
+        code: continuationCode,
+        indent: old?.indent ?? parent.indent,
+        parameters: [line, ...(old?.parameters?.slice(1) ?? [])],
+      };
+    });
+    return [
+      ...list.slice(0, rawIndex),
+      parent,
+      ...updatedContinuations,
+      ...list.slice(end),
+    ];
+  }
   const updated: EventCommand[] = lines.map((line, index) => {
     const old = previous[index];
     return {

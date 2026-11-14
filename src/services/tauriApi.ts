@@ -37,6 +37,12 @@ const DEMO_READ_COMMANDS = new Set([
 
 /** Browser development uses the local token-protected Vite proxy. Demo is read-only. */
 async function browserInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  // A packaged Android editor must never display synthetic project data when
+  // its native bridge fails to initialize. Fail visibly instead of masquerading
+  // as a successfully opened Essentials project.
+  if (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent)) {
+    throw new Error("Android native editor bridge is unavailable. Restart the app; no project data was loaded or changed.");
+  }
   const endpoint = import.meta.env.VITE_BROWSER_BACKEND_URL as string | undefined;
   if (endpoint) return callBrowserBridge(cmd, args, endpoint, window.location.origin);
   if (!DEMO_READ_COMMANDS.has(cmd)) {
@@ -242,6 +248,34 @@ export async function getAssetPath(
     assetType,
     assetName,
   })) as string;
+}
+
+export async function savePrivateProjectSprite(
+  projectPath: string,
+  sourceName: string,
+  targetName: string,
+  mode: "original" | "copy",
+  imageData: string,
+): Promise<string> {
+  return invoke<string>("save_private_project_sprite", {
+    projectPath,
+    sourceName,
+    targetName,
+    mode,
+    imageData,
+  });
+}
+
+export async function importPrivateProjectSprite(
+  projectPath: string,
+  targetName: string,
+  imageData: string,
+): Promise<string> {
+  return invoke<string>("import_private_project_sprite", {
+    projectPath,
+    targetName,
+    imageData,
+  });
 }
 
 /**
@@ -608,12 +642,15 @@ async function mockInvoke(
             trigger: (args?.eventId as number) === 1 ? 3 : 0,
             list: [
               { code: 108, indent: 0, parameters: ["This is a mock event for development"] },
-              { code: 101, indent: 0, parameters: ["Hello! Welcome to the mock project."] },
+              { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+              { code: 401, indent: 0, parameters: ["Hello! Welcome to the mock project."] },
               { code: 401, indent: 0, parameters: ["This is a continuation line."] },
               { code: 111, indent: 0, parameters: [0, 1, 0] },
-              { code: 101, indent: 1, parameters: ["The switch is ON!"] },
+              { code: 101, indent: 1, parameters: ["", 0, 0, 2] },
+              { code: 401, indent: 1, parameters: ["The switch is ON!"] },
               { code: 411, indent: 0, parameters: [] },
-              { code: 101, indent: 1, parameters: ["The switch is OFF."] },
+              { code: 101, indent: 1, parameters: ["", 0, 0, 2] },
+              { code: 401, indent: 1, parameters: ["The switch is OFF."] },
               { code: 412, indent: 0, parameters: [] },
               { code: 355, indent: 0, parameters: ["pbMessage(\"Hello from script!\")"] },
               { code: 0, indent: 0, parameters: [] },
