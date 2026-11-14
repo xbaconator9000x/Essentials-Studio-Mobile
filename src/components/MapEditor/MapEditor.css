@@ -221,7 +221,7 @@
   padding: 4px 6px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-event-list-controls select { min-height: 44px; font-size: 14px; }
 }
 
@@ -296,7 +296,7 @@
   padding: 12px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-event-list-search input,
   .map-event-list-search button {
     min-height: 44px;
@@ -390,7 +390,7 @@
   background: rgba(30, 102, 245, 0.5);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar {
     flex-wrap: wrap;
     gap: 8px;
@@ -448,7 +448,7 @@
   }
 }
 
-@media (min-width: 701px) {
+@media (min-width: 901px) {
   .map-touch-hint {
     display: none;
   }
@@ -471,7 +471,7 @@
   background: var(--color-surface0);
   border-radius: 4px;
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-layer-visibility .toolbar-check { min-height: 44px; }
   .map-layer-visibility input { width: 20px; height: 20px; }
 }
@@ -502,7 +502,7 @@
   align-items: center;
   gap: 6px;
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar { column-gap: 8px; row-gap: 6px; padding: 6px 8px; }
   .map-toolbar-event-actions .toolbar-btn { min-height: 48px; }
   .map-event-list-header-actions button { min-height: 44px; }
@@ -512,7 +512,7 @@
 
 /* The expanded phone toolbar may contain several rows of controls.
    Keep the canvas usable while letting those rows scroll independently. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar {
     max-height: min(36vh, 232px);
     overflow-y: auto;
@@ -588,7 +588,7 @@
 .map-navigator-event-picker { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .map-navigator-event-picker select { width: 100%; }
 .map-coordinate-navigator [role="alert"] { color: var(--color-red, #e64553); }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-coordinate-navigator {
     top: 4px; left: 4px;
     width: calc(100% - 8px);
@@ -602,7 +602,7 @@
    Expand "Tools" for the complete desktop-style controls. */
 .map-toolbar-native-tool-select { display: none; }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar--compact {
     display: flex;
     flex-wrap: nowrap;
@@ -695,7 +695,7 @@
 
 /* Task-focused portrait workspace: one toolbar row for navigation, the active
    editor panel below it. Desktop keeps the original full command surface. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar--compact {
     max-height: min(28vh, 190px);
     gap: 6px;
@@ -727,14 +727,14 @@
   }
   .map-editor-toolbar--compact .toolbar-separator { display: none; }
 }
-@media (min-width: 701px) {
+@media (min-width: 901px) {
   .map-toolbar-compact-tabs { display: none; }
 }
 
 /* The task-based mobile toolbar supersedes the legacy single-line rail.
    In particular, never hide its Pan/More buttons: the previous selector
    .map-toolbar-quick-tools > button made those commands unreachable. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar.map-editor-toolbar--compact {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -792,7 +792,7 @@
 /* Browser-verified canvas-first constraint: the compact toolbar must never
    consume a 220px vertical panel on a 390px portrait viewport. Keep task tabs
    and active controls in a single horizontally scrollable command rail. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .map-editor-toolbar.map-editor-toolbar--compact {
     display: flex;
     flex-flow: row nowrap;
