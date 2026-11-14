@@ -8,6 +8,8 @@ landscape relayout. This is not a physical ARM64 test or import/export gate.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import struct
 import json
 import os
 from pathlib import Path
@@ -30,11 +32,13 @@ def adb(*args: str, timeout: int = 45, check: bool = True) -> subprocess.Complet
     return response
 
 
-def screenshot(name: str) -> None:
+def screenshot(name: str) -> tuple[int, int]:
     data = adb("exec-out", "screencap", "-p", timeout=50).stdout
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise AssertionError(f"Android screenshot {name} was not a valid PNG")
+    width, height = struct.unpack(">II", data[16:24])
     (EVIDENCE / f"{name}.png").write_bytes(data)
+    return width, height
 
 
 def ui_nodes(name: str) -> list[dict[str, str]]:
@@ -83,6 +87,57 @@ def wait_ui(needle: str, name: str, timeout: int = 100) -> list[dict[str, str]]:
             last_message = str(error)
         time.sleep(3)
     raise AssertionError(f"Could not reach UI '{needle}' ({name}): {last_message}")
+
+
+def action(nodes: list[dict[str, str]], name: str) -> tuple[int, int] | None:
+    """Find an enabled, visible Android accessibility *button*, not a heading."""
+    for item in nodes:
+        if not item.get("class", "").endswith("Button"):
+            continue
+        if name.casefold() in label(item).casefold() and item.get("clickable") != "false":
+            coords = locate([item], name)
+            if coords:
+                return coords
+    return None
+
+
+def tap(coords: tuple[int, int]) -> None:
+    adb("shell", "input", "tap", str(coords[0]), str(coords[1]))
+
+
+def tap_button(nodes: list[dict[str, str]], name: str) -> None:
+    coords = action(nodes, name)
+    if not coords:
+        raise AssertionError(f"Missing accessible Android button {name!r}: "
+                             f"{[label(n) for n in nodes if label(n)][-18:]!r}")
+    tap(coords)
+
+
+def assert_visible_controls(nodes: list[dict[str, str]], names: tuple[str, ...],
+                            size: tuple[int, int]) -> None:
+    """Fail when mobile buttons are off-screen after actual rotation."""
+    width, height = size
+    for name in names:
+        point = action(nodes, name)
+        if point is None:
+            raise AssertionError(f"{name!r} not a visible touch button in {width}x{height}")
+        if not (0 < point[0] < width and 0 < point[1] < height):
+            raise AssertionError(f"{name!r} is outside {width}x{height}: {point}")
+
+
+def rotate(landscape: bool, name: str, expected_ui: str) -> tuple[list[dict[str, str]], tuple[int, int]]:
+    """Verify both native framebuffer orientation and fresh WebView controls."""
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "user_rotation", "1" if landscape else "0")
+    deadline = time.monotonic() + 40
+    size = (0, 0)
+    while time.monotonic() < deadline:
+        size = screenshot(name)
+        if (size[0] > size[1]) == landscape:
+            nodes = wait_ui(expected_ui, name, timeout=25)
+            return nodes, size
+        time.sleep(2)
+    raise AssertionError(f"Native Android rotation did not settle for {name}: {size}")
 
 
 def current_focus() -> str:
@@ -143,12 +198,20 @@ def main() -> None:
     nodes = wait_ui("Import Essentials Project ZIP", "portrait-welcome")
     if not any(item.get("package", "") == package for item in nodes):
         raise AssertionError("Welcome control is not owned by the installed editor package")
-    if not locate(nodes, "Import ZIP via Android document picker"):
-        raise AssertionError("Native SAF picker is not accessible on the Android welcome screen")
-    screenshot("portrait-welcome")
-    coords = locate(nodes, "Import ZIP via Android document picker")
-    assert coords
-    adb("shell", "input", "tap", str(coords[0]), str(coords[1]))
+    native_picker_label = "Use native Android document picker"
+    assert_visible_controls(nodes, ("Choose Essentials Project ZIP", native_picker_label),
+                            screenshot("portrait-welcome"))
+
+    # The first orientation proof happens before fixture import. This
+    # guarantees landscape evidence even if DocumentsUI import later fails.
+    nodes, landscape_welcome = rotate(True, "landscape-welcome", "Import Essentials Project ZIP")
+    assert_visible_controls(nodes, ("Choose Essentials Project ZIP", native_picker_label),
+                            landscape_welcome)
+    nodes, portrait_welcome = rotate(False, "portrait-welcome-return", "Import Essentials Project ZIP")
+    assert_visible_controls(nodes, ("Choose Essentials Project ZIP", native_picker_label),
+                            portrait_welcome)
+
+    tap_button(nodes, native_picker_label)
     # The system document picker can appear under several Android package names.
     deadline = time.monotonic() + 60
     picker_found = False
@@ -164,15 +227,9 @@ def main() -> None:
     adb("shell", "input", "keyevent", "4")
     wait_ui("Import Essentials Project ZIP", "picker-return")
 
-    # Exercise actual Android orientation redraw and make sure WebView
-    # navigation remains accessible, rather than just checking a process.
-    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
-    adb("shell", "settings", "put", "system", "user_rotation", "1")
-    nodes = wait_ui("Import Essentials Project ZIP", "landscape-welcome")
-    screenshot("landscape-welcome")
-    adb("shell", "settings", "put", "system", "user_rotation", "0")
-    wait_ui("Import Essentials Project ZIP", "portrait-return")
-    screenshot("portrait-return")
+    nodes, portrait_size = rotate(False, "portrait-picker-return", "Import Essentials Project ZIP")
+    assert_visible_controls(nodes, ("Choose Essentials Project ZIP", native_picker_label),
+                            portrait_size)
     if not adb("shell", "pidof", package, check=False).stdout.strip():
         raise AssertionError("Application process exited during navigation")
 
