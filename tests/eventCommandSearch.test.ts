@@ -24,4 +24,15 @@ describe("event command search", () => {
     expect(nextEventCommandMatch(matches, -1, 1)).toBe(0);
     expect(nextEventCommandMatch([], 0, 1)).toBe(-1);
   });
+  it("matches case-insensitively without mutating the original RMXP commands", () => {
+    const before = JSON.stringify(commands);
+    expect(findEventCommandMatches(commands, "SeCrEt")).toEqual([0, 2]);
+    expect(findEventCommandMatches(commands, "does-not-exist")).toEqual([]);
+    expect(JSON.stringify(commands)).toBe(before);
+  });
+  it("handles an empty page and negative selections safely", () => {
+    expect(findEventCommandMatches([], "hello")).toEqual([]);
+    expect(nextEventCommandMatch([2, 8], -1, -1)).toBe(8);
+    expect(nextEventCommandMatch([2, 8], 5, 1)).toBe(8);
+  });
 });
