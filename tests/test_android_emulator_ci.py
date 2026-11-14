@@ -53,6 +53,23 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
         nodes[0]["bounds"] = "[10,15][30,38]"
         harness.assert_visible_controls(nodes, ("Save",), (40, 40))
 
+    def test_launcher_anr_cannot_be_misidentified_as_editor_anr(self):
+        package = "com.xbaconator.essentialsstudiomobile"
+        system_overlay = (
+            f"mFocusedApp=ActivityRecord{{... {package}/.MainActivity}}\\n"
+            "mFocusedWindow=Window{5e0317 u0 Application Not Responding: "
+            "com.google.android.apps.nexuslauncher}\\n"
+            f"ResumedActivity: {package}/.MainActivity\\n"
+        )
+        self.assertEqual(harness.focused_anr_owner(system_overlay),
+                         "com.google.android.apps.nexuslauncher")
+        self.assertEqual(harness.focused_anr_owner(system_overlay.replace(
+            "com.google.android.apps.nexuslauncher", package)), package)
+        self.assertIsNone(harness.focused_anr_owner(
+            f"mFocusedApp=ActivityRecord{{... {package}}}\\n"
+            f"mFocusedWindow=Window{{5e0317 u0 Splash Screen {package}}}\\n"
+        ))
+
     def test_verified_synthetic_fixture_is_nonprivate_and_exact(self):
         lines = (ROOT / "tests/fixtures/android-synthetic-project.zip.b64").read_text().splitlines()
         data = base64.b64decode("".join(
