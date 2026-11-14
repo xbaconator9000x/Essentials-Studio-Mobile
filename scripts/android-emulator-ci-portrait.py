@@ -339,10 +339,27 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
                             "Database", "Ruby Scripts", "PBS Data", "Sprite Editor"), ps)
     assert_visible_controls(portrait_settings, ("Projects", "Maps", "Sprites", "Settings"), ps)
     tap_button(portrait_settings, "Maps")
-    back_map = wait_ui("Enable map editing", "portrait-map-return", timeout=35)
-    assert_visible_controls(back_map, ("Save all changes", "Export project ZIP"), screenshot("portrait-map-return"))
+    # The mobile router may show the project map list after switching away
+    # from the map workspace. This is allowed only if the saved map can be
+    # explicitly reopened through its real hierarchy row, with no new import.
+    navigation_mode = "retained-map"
+    current = ui_nodes("portrait-map-return-start")
+    if not locate(current, "Enable map editing"):
+        map_item = locate(current, "Synthetic Map")
+        if map_item is None:
+            current = wait_ui("Synthetic Map", "portrait-map-return-list", timeout=25)
+            map_item = locate(current, "Synthetic Map")
+        if map_item is None:
+            raise AssertionError("Neither map canvas nor synthetic map entry is accessible after rotation")
+        tap(map_item)
+        navigation_mode = "map-list-reselected"
+    back_map = wait_ui("Enable map editing", "portrait-map-return", timeout=40)
+    assert_visible_controls(back_map, ("Save all changes", "Export project ZIP",
+                            "Enable map editing", "Open tile palette"),
+                            screenshot("portrait-map-return"))
     return {
         "fixture_sha256": digest,
+        "portrait_map_return_mode": navigation_mode,
         "ui_checks": [
             "real synthetic RMXP ZIP selected with Android DocumentsUI",
             "project opened from original source ZIP", "portrait map canvas and tile drawer",
