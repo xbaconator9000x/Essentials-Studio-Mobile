@@ -51,4 +51,34 @@ describe("cross-event RMXP command clipboard", () => {
     expect(cutCommandBlock(source, -1)).toBeNull();
     expect(cutCommandBlock(source, 99)).toBeNull();
   });
+  it("does not confuse nested RMXP code-zero branch endings with the page terminator", () => {
+    const commands = [
+      { code: 111, indent: 0, parameters: [0, 1, 0] },
+      { code: 101, indent: 1, parameters: ["inside branch"] },
+      { code: 401, indent: 1, parameters: ["continued"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 108, indent: 0, parameters: ["after branch"] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    const original = JSON.stringify(commands);
+    expect(getCommandInsertionIndex(commands, -1)).toBe(6);
+    expect(getCommandInsertionIndex(commands, 2)).toBe(3);
+    expect(getCommandInsertionIndex(commands, 3)).toBe(3);
+    expect(getCommandInsertionIndex(commands, 5)).toBe(6);
+    const pasted = prepareCommandBlockPaste(cloneCommandBlock(commands, 5), 0);
+    const atEnd = getCommandInsertionIndex(commands, -1);
+    const combined = [...commands.slice(0, atEnd), ...pasted, ...commands.slice(atEnd)];
+    expect(combined.map((c) => c.code)).toEqual([111, 101, 401, 0, 412, 108, 108, 0]);
+    expect(JSON.stringify(commands)).toBe(original);
+  });
+  it("supports event lists without an explicit final top-level terminator", () => {
+    const commands = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(commands, -1)).toBe(3);
+    expect(getCommandInsertionIndex(commands, 2)).toBe(3);
+  });
 });
