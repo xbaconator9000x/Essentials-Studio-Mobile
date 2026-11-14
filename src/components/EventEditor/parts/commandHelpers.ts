@@ -217,3 +217,30 @@ export function cutCommandBlock(
     selectedIndex: Math.max(0, range.start - 1),
   };
 }
+
+/** Construct a fresh command for an event page. Command picker definitions are
+ * shared across editor instances; never hand their parameter objects directly
+ * to a mutable event list. RMXP continuation commands are owned by parents.
+ */
+export function createEventCommand(
+  code: number, indent: number, defaultParams?: unknown[],
+): EventCommand | null {
+  if (!Number.isInteger(code) || code <= 0 || !Number.isInteger(indent) || indent < 0) return null;
+  if (code === 401 || code === 408 || code === 655) return null;
+  return {
+    code,
+    indent,
+    parameters: structuredClone(defaultParams ?? getDefaultParams(code)),
+  };
+}
+
+/** Insertion at the final page terminator always uses top-level indentation.
+ * Selecting a nested code-zero marker inserts before that marker at its depth.
+ */
+export function getCommandInsertionIndent(list: EventCommand[], selectedIndex: number): number {
+  const index = getCommandInsertionIndex(list, selectedIndex);
+  const last = list.length - 1;
+  if (index === last && list[last]?.code === 0 && list[last].indent === 0) return 0;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) return 0;
+  return list[selectedIndex].indent;
+}
