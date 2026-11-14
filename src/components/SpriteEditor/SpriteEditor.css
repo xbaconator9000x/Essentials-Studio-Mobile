@@ -358,7 +358,7 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .sprite-editor {
     width: 100vw;
     height: 100dvh;
@@ -503,7 +503,7 @@
   height: 18px;
   accent-color: var(--color-accent);
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .sprite-editor-mirror-options label { min-height: 44px; }
   .sprite-editor-mirror-options input[type="checkbox"] { width: 22px; height: 22px; }
 }
@@ -512,7 +512,7 @@
    horizontally rather than wrapping into two or three full-width rows. */
 .sprite-editor-title-mobile { display: none; }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .sprite-editor {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -602,7 +602,7 @@
 .sprite-editor-quick-tools[data-active-panel="transform"] [data-mobile-panel]:not([data-mobile-panel="transform"]) {
   display: none;
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .sprite-editor-quick-tools { max-height: min(28vh, 200px); overflow-y: auto; overscroll-behavior: contain; }
   .sprite-editor-mobile-tabs { position: sticky; top: 0; z-index: 2; background: var(--color-base); padding-block: 3px; }
 }
@@ -611,7 +611,7 @@
 /* Portrait usability: the image viewport must retain space even when the
    Android keyboard or a long transform panel reduces the visual viewport.
    Scroll controls within their own region, never the drawing surface. */
-@media (max-width: 700px) and (orientation: portrait) {
+@media (max-width: 900px) and (orientation: portrait) {
   .sprite-editor-overlay {
     align-items: stretch;
     justify-content: stretch;
