@@ -1,7 +1,12 @@
 /** Compare picker paths without changing the native path used to open a project. */
 export function projectPathIdentity(path: string): string {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized || path;
+  const normalized = path.replace(/\\/g, "/");
+  // Preserve filesystem roots: C:/ is not the drive-relative C:, and the
+  // leading // in a Windows UNC share is not a disposable separator.
+  if (normalized === "/" || normalized === "//") return normalized;
+  if (/^[A-Za-z]:\/$/.test(normalized)) return normalized;
+  const withoutTrailingSeparators = normalized.replace(/\/+$/, "");
+  return withoutTrailingSeparators || normalized;
 }
 
 const LAST_PROJECT_KEY = "essentials-studio:last-project";
