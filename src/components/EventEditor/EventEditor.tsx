@@ -26,6 +26,8 @@ import {
   getBlockEnd,
   getCommandBlockRange,
   getCommandInsertionIndex,
+  getCommandInsertionIndent,
+  createEventCommand,
   getDefaultParams,
   moveCommandBlock,
   prepareCommandBlockPaste,
@@ -260,8 +262,7 @@ export function EventEditor({
     const projectClipboard = getEventCommandClipboard(projectPath);
     if (!projectClipboard.length) return;
     const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
-    const destinationIndent = selectedCommand >= 0
-      ? page.list[selectedCommand]?.indent ?? 0 : 0;
+    const destinationIndent = getCommandInsertionIndent(page.list, selectedCommand);
     const pasted = prepareCommandBlockPaste(projectClipboard, destinationIndent);
     if (!pasted.length) return;
     updatePage((p) => {
@@ -298,11 +299,10 @@ export function EventEditor({
   const handleInsertCommand = useCallback(
     (def: CommandDef) => {
       if (!page) return;
-      const newCmd: EventCommand = {
-        code: def.code,
-        indent: selectedCommand >= 0 ? page.list[selectedCommand]?.indent ?? 0 : 0,
-        parameters: def.defaultParams ?? getDefaultParams(def.code),
-      };
+      const newCmd = createEventCommand(
+        def.code, getCommandInsertionIndent(page.list, selectedCommand), def.defaultParams,
+      );
+      if (!newCmd) return;
 
       // Insert after the entire block (past any continuations)
       const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
