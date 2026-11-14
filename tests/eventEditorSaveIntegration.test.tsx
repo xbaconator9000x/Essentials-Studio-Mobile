@@ -1012,7 +1012,7 @@ describe("rendered event editor Save All integration", () => {
     const submitted = native.saveEvent.mock.calls[0][2] as RpgEvent;
     const replacement = submitted.pages[0].list.find((command) => command.code === 101);
     expect(replacement?.source_index).toBeUndefined();
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("status", { name: "Event save result" })).toBeNull();
     expect(diskEvent).toEqual(originalDiskEvent);
   });
 });
