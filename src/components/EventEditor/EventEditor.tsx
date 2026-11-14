@@ -22,6 +22,7 @@ import {
   PARENT_CONT,
   canMoveCommandBlock,
   cloneCommandBlock,
+  cutCommandBlock,
   getBlockEnd,
   getCommandBlockRange,
   getCommandInsertionIndex,
@@ -241,22 +242,17 @@ export function EventEditor({
   }, [page, selectedCommand, projectPath]);
 
   const cutSelectedCommand = useCallback(() => {
-    if (!page || selectedCommand < 0) return;
-    const range = getCommandBlockRange(page.list, selectedCommand);
-    if (!range || page.list[range.start]?.code === 0) return;
-    const block = cloneCommandBlock(page.list, range.start);
-    if (!block.length) return;
-    // Copy first: an invalid clipboard must never cause destructive deletion.
-    setEventCommandClipboard(projectPath, block);
+    if (!page) return;
+    const cut = cutCommandBlock(page.list, selectedCommand);
+    if (!cut) return;
+    // Verify clipboard storage before modifying the source event.
+    setEventCommandClipboard(projectPath, cut.clipboard);
     const copied = getEventCommandClipboard(projectPath);
-    if (copied.length !== block.length) return;
+    if (copied.length !== cut.clipboard.length) return;
     setClipboard(copied);
-    updatePage((p) => ({
-      ...p,
-      list: p.list.filter((_, index) => index < range.start || index > range.end),
-    }));
+    updatePage((p) => ({ ...p, list: cut.list }));
     setEditingCommand(null);
-    setSelectedCommand(Math.max(0, range.start - 1));
+    setSelectedCommand(cut.selectedIndex);
   }, [page, selectedCommand, projectPath, updatePage]);
 
   const pasteCommand = useCallback(() => {
