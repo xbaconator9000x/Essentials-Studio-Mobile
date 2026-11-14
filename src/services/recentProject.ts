@@ -1,3 +1,9 @@
+/** Compare picker paths without changing the native path used to open a project. */
+export function projectPathIdentity(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized || path;
+}
+
 const LAST_PROJECT_KEY = "essentials-studio:last-project";
 const RECENT_PROJECTS_KEY = "essentials-studio:recent-projects";
 const RECENT_MAP_SELECTIONS_KEY = "essentials-studio:recent-map-selections";
@@ -50,9 +56,14 @@ export function getRecentProjectPaths(
     if (!stored) return [];
     const paths: unknown = JSON.parse(stored);
     if (!Array.isArray(paths)) return [];
-    return [...new Set(paths.filter((path): path is string =>
-      typeof path === "string" && validProjectPath(path)
-    ))].slice(0, MAX_RECENT_PROJECTS);
+    const seen = new Set<string>();
+    return paths.filter((path): path is string => {
+      if (typeof path !== "string" || !validProjectPath(path)) return false;
+      const identity = projectPathIdentity(path);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    }).slice(0, MAX_RECENT_PROJECTS);
   } catch {
     return [];
   }
@@ -64,7 +75,7 @@ export function rememberRecentProjectPath(
 ): void {
   if (!storage || !validProjectPath(path)) return;
   try {
-    const recent = getRecentProjectPaths(storage).filter((entry) => entry !== path);
+    const recent = getRecentProjectPaths(storage).filter((entry) => projectPathIdentity(entry) !== projectPathIdentity(path));
     storage.setItem(RECENT_PROJECTS_KEY, JSON.stringify([path, ...recent].slice(0, MAX_RECENT_PROJECTS)));
   } catch {
     // Project opening must work even when browser storage is unavailable.
@@ -88,7 +99,13 @@ function readRecentMapSelections(storage: ProjectPathStorage): RecentMapSelectio
       Number.isSafeInteger(entry.mapId) &&
       entry.mapId > 0
     );
-    return valid.slice(0, MAX_RECENT_MAP_SELECTIONS);
+    const seen = new Set<string>();
+    return valid.filter((entry) => {
+      const identity = projectPathIdentity(entry.projectPath);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    }).slice(0, MAX_RECENT_MAP_SELECTIONS);
   } catch {
     return [];
   }
@@ -99,7 +116,7 @@ export function getLastMapId(
   storage: ProjectPathStorage | null = browserStorage(),
 ): number | null {
   if (!storage || !validProjectPath(projectPath)) return null;
-  return readRecentMapSelections(storage).find((entry) => entry.projectPath === projectPath)?.mapId ?? null;
+  return readRecentMapSelections(storage).find((entry) => projectPathIdentity(entry.projectPath) === projectPathIdentity(projectPath))?.mapId ?? null;
 }
 
 export function rememberLastMapId(
@@ -110,7 +127,7 @@ export function rememberLastMapId(
   if (!storage || !validProjectPath(projectPath) || !Number.isSafeInteger(mapId) || mapId <= 0) return;
   try {
     const recent = readRecentMapSelections(storage)
-      .filter((entry) => entry.projectPath !== projectPath);
+      .filter((entry) => projectPathIdentity(entry.projectPath) !== projectPathIdentity(projectPath));
     storage.setItem(RECENT_MAP_SELECTIONS_KEY, JSON.stringify([
       { projectPath, mapId },
       ...recent,

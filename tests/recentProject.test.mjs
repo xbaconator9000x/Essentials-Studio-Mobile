@@ -123,3 +123,35 @@ test("ignores invalid map IDs and safely handles malformed or unavailable map st
   assert.doesNotThrow(() => rememberLastMapId("/private/project", 2, unavailableStorage));
   assert.equal(getLastMapId("/private/project", null), null);
 });
+
+
+test("picker aliases deduplicate recent projects while preserving native path and case", () => {
+  const projectStorage = storage();
+  rememberRecentProjectPath("C:\\Games\\Shattered\\", projectStorage);
+  rememberRecentProjectPath("C:/Games/Shattered", projectStorage);
+  rememberRecentProjectPath("C:/games/Shattered", projectStorage);
+  assert.deepEqual(getRecentProjectPaths(projectStorage), ["C:/games/Shattered", "C:/Games/Shattered"]);
+  assert.equal(getLastProjectPath(projectStorage), "C:/games/Shattered");
+});
+
+test("map selection resolves separator aliases but retains case-sensitive projects", () => {
+  const projectStorage = storage();
+  rememberLastMapId("/games/Shattered/", 12, projectStorage);
+  assert.equal(getLastMapId("/games/Shattered", projectStorage), 12);
+  rememberLastMapId("/games/Shattered", 44, projectStorage);
+  rememberLastMapId("/games/shattered", 8, projectStorage);
+  assert.equal(getLastMapId("/games/Shattered/", projectStorage), 44);
+  assert.equal(getLastMapId("/games/shattered", projectStorage), 8);
+});
+
+test("legacy stored duplicate aliases collapse without losing the most recent map", () => {
+  const projectStorage = storage({
+    "essentials-studio:recent-projects": JSON.stringify(["/games/shattered/", "/games/shattered", "/games/other"]),
+    "essentials-studio:recent-map-selections": JSON.stringify([
+      { projectPath: "/games/shattered/", mapId: 9 },
+      { projectPath: "/games/shattered", mapId: 3 },
+    ]),
+  });
+  assert.deepEqual(getRecentProjectPaths(projectStorage), ["/games/shattered/", "/games/other"]);
+  assert.equal(getLastMapId("/games/shattered", projectStorage), 9);
+});
