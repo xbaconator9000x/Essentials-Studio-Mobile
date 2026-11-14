@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneCommandBlock, cutCommandBlock, getStructuralCommandRange, moveCommandBlock } from "../src/components/EventEditor/parts/commandHelpers";
+import { cloneCommandBlock, cutCommandBlock, getStructuralCommandRange, getCommandInsertionIndex, getCommandInsertionIndent, moveCommandBlock } from "../src/components/EventEditor/parts/commandHelpers";
 
 const cmd = (code: number, indent: number) => ({ code, indent, parameters: [] });
 
@@ -25,6 +25,20 @@ describe("RMXP structural subtree validation", () => {
   it("rejects incorrectly indented Repeat and End markers", () => {
     expect(getStructuralCommandRange([cmd(112, 0), cmd(0, 1), cmd(413, 1)], 0)).toBeNull();
     expect(getStructuralCommandRange([cmd(111, 0), cmd(0, 1), cmd(412, 1)], 0)).toBeNull();
+  });
+  it("inserts after an entire balanced branch rather than inside its child list", () => {
+    const list = [cmd(111, 0), cmd(108, 1), cmd(0, 1), cmd(412, 0), cmd(108, 0), cmd(0, 0)];
+    expect(getCommandInsertionIndex(list, 0)).toBe(4);
+    expect(getCommandInsertionIndent(list, 0)).toBe(0);
+    expect(getCommandInsertionIndex(list, 4)).toBe(5);
+  });
+  it("inserts after a nested loop while retaining its sibling indentation", () => {
+    const list = [cmd(111, 0), cmd(112, 1), cmd(0, 2), cmd(413, 1), cmd(0, 1), cmd(412, 0), cmd(0, 0)];
+    expect(getCommandInsertionIndex(list, 1)).toBe(4);
+    expect(getCommandInsertionIndent(list, 1)).toBe(1);
+  });
+  it("rejects an empty child terminator at the opener depth", () => {
+    expect(getStructuralCommandRange([cmd(111, 0), cmd(0, 0), cmd(412, 0)], 0)).toBeNull();
   });
   it("rejects sibling commands masquerading as children", () => {
     expect(getStructuralCommandRange([cmd(111, 0), cmd(108, 0), cmd(412, 0)], 0)).toBeNull();
