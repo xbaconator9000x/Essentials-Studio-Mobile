@@ -303,7 +303,7 @@ body,
   cursor: pointer;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .editor-modal-overlay {
     align-items: stretch;
     justify-content: stretch;
@@ -586,5 +586,46 @@ body,
 
   .app-welcome-hint {
     margin-top: 4px;
+  }
+}
+
+/* A rotated phone must remain a canvas-first mobile editor, not fall back
+   to the desktop's three narrow panes. Keep primary actions above the map
+   without requiring an extra multirow toolbar or hidden overflow menu. */
+@media (max-width: 900px) and (orientation: landscape) {
+  .app-titlebar {
+    min-height: 34px;
+    padding: max(2px, env(safe-area-inset-top)) 8px 2px;
+  }
+  .app-preview-badge {
+    padding: 2px 5px;
+  }
+  .app-mobile-project-summary h1,
+  .app-mobile-settings h1 {
+    font-size: 17px;
+  }
+  .app-body--mobile-projects .app-mobile-project-summary {
+    max-height: 34dvh;
+    padding: 6px 10px;
+    gap: 4px;
+  }
+  .app-body--mobile-settings .app-mobile-settings {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .app-body--mobile-sprites .app-mobile-sprite-preview {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .app-mobile-nav {
+    min-height: 48px;
+    padding: 2px 5px max(2px, env(safe-area-inset-bottom));
+  }
+  .app-mobile-nav button {
+    min-height: 44px;
+    padding-block: 3px;
+  }
+  .app-mobile-tools-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
