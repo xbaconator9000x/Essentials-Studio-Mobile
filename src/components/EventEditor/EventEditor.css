@@ -1384,3 +1384,30 @@
 .event-command-search button { min-height: 34px; white-space: nowrap; }
 .event-command-search input:focus-visible,
 .event-command-search button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* Keep command search usable with an Android portrait keyboard open. */
+@media (max-width: 700px) {
+  .event-command-search {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "query query query"
+      "count previous next";
+    gap: 8px;
+    padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+  }
+  .event-command-search input {
+    grid-area: query;
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px; /* Prevent automatic zoom on mobile input focus. */
+  }
+  .event-command-search-count { grid-area: count; min-width: 0; }
+  .event-command-search button {
+    min-height: 44px;
+    padding-inline: 12px;
+    touch-action: manipulation;
+  }
+  .event-command-search button[aria-label="Find previous command"] { grid-area: previous; }
+  .event-command-search button[aria-label="Find next command"] { grid-area: next; }
+}
