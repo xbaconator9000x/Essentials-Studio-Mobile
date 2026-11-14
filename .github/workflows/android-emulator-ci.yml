@@ -11,6 +11,7 @@ on:
       - '.github/workflows/android-emulator-ci.yml'
       - 'scripts/android-emulator-ci-portrait.py'
       - 'tests/fixtures/android-synthetic-project.zip.b64'
+      - 'tests/test_android_emulator_ci.py'
 
 permissions:
   contents: read
@@ -82,9 +83,10 @@ jobs:
             exit 1
           fi
           echo "KVM device is available to the Actions runner." | tee -a android-emulator-evidence/kvm-preflight.txt
-      - name: Validate emulator UI harness Python syntax
+      - name: Validate Android harness, selectors, geometry and fixture
         run: |
           python3 -m py_compile scripts/android-emulator-ci-portrait.py scripts/android-emulator-import-smoke.py
+          python3 -m unittest discover -s tests -p test_android_emulator_ci.py -v
       - name: Decode and verify rights-cleared synthetic RMXP fixture
         run: |
           python3 - <<'PY'
