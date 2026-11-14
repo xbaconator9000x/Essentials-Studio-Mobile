@@ -461,13 +461,30 @@ body,
   }
 
   .app-mobile-safety-note {
-    padding: 12px;
+    flex: 0 0 auto;
+    padding: 5px 10px;
     border: 1px solid #d97706;
     border-radius: 8px;
     background: #4a2d19;
     color: #ffe0ad;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.45;
+  }
+  .app-mobile-safety-note summary {
+    display: list-item;
+    cursor: pointer;
+    min-height: 44px;
+    align-content: center;
+    font-weight: 600;
+    touch-action: manipulation;
+  }
+  .app-mobile-safety-note p {
+    margin: 5px 0 8px;
+    color: inherit;
+  }
+  .app-mobile-safety-note summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
 
   .app-body--mobile-sprites {
