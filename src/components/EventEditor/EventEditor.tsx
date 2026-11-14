@@ -24,7 +24,6 @@ import {
   cloneCommandBlock,
   cutCommandBlock,
   deleteEditableCommandBlock,
-  getBlockEnd,
   getCommandBlockRange,
   getCommandInsertionIndex,
   getCommandInsertionIndent,
