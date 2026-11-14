@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneCommandBlock, cutCommandBlock, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
+import { cloneCommandBlock, cutCommandBlock, createEventCommand, getCommandInsertionIndent, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("cross-event RMXP command clipboard", () => {
   const source = [
@@ -80,5 +80,35 @@ describe("cross-event RMXP command clipboard", () => {
     ];
     expect(getCommandInsertionIndex(commands, -1)).toBe(3);
     expect(getCommandInsertionIndex(commands, 2)).toBe(3);
+  });
+  it("does not share mutable command picker defaults across inserted commands", () => {
+    const defaults = [{ __class: "RPG::AudioFile", name: "battle", volume: 90, pitch: 100 }];
+    const first = createEventCommand(241, 0, defaults);
+    const second = createEventCommand(241, 0, defaults);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    (first!.parameters[0] as { name: string }).name = "edited";
+    expect((second!.parameters[0] as { name: string }).name).toBe("battle");
+    expect(defaults[0].name).toBe("battle");
+    expect(first).not.toHaveProperty("source_index");
+  });
+  it("rejects orphan continuations and invalid commands", () => {
+    for (const code of [0, 401, 408, 655, -1]) expect(createEventCommand(code, 0)).toBeNull();
+    expect(createEventCommand(108, -1)).toBeNull();
+    expect(createEventCommand(108, 0)?.parameters).toEqual([""]);
+  });
+  it("uses top-level indentation at the final page terminator", () => {
+    const list = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["nested"] },
+      { code: 401, indent: 1, parameters: ["continued"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndent(list, -1)).toBe(0);
+    expect(getCommandInsertionIndent(list, 5)).toBe(0);
+    expect(getCommandInsertionIndent(list, 2)).toBe(1);
+    expect(getCommandInsertionIndent(list, 3)).toBe(1);
   });
 });
