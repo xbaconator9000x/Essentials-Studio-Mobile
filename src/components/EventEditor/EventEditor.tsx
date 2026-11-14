@@ -240,6 +240,25 @@ export function EventEditor({
     }
   }, [page, selectedCommand, projectPath]);
 
+  const cutSelectedCommand = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const range = getCommandBlockRange(page.list, selectedCommand);
+    if (!range || page.list[range.start]?.code === 0) return;
+    const block = cloneCommandBlock(page.list, range.start);
+    if (!block.length) return;
+    // Copy first: an invalid clipboard must never cause destructive deletion.
+    setEventCommandClipboard(projectPath, block);
+    const copied = getEventCommandClipboard(projectPath);
+    if (copied.length !== block.length) return;
+    setClipboard(copied);
+    updatePage((p) => ({
+      ...p,
+      list: p.list.filter((_, index) => index < range.start || index > range.end),
+    }));
+    setEditingCommand(null);
+    setSelectedCommand(Math.max(0, range.start - 1));
+  }, [page, selectedCommand, projectPath, updatePage]);
+
   const pasteCommand = useCallback(() => {
     if (!page) return;
     const projectClipboard = getEventCommandClipboard(projectPath);
@@ -738,6 +757,14 @@ export function EventEditor({
                       aria-label="Copy selected command block"
                     >
                       Copy
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={cutSelectedCommand}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code === 0}
+                      aria-label="Cut selected command block"
+                    >
+                      Cut
                     </button>
                     <button
                       className="event-editor-btn event-command-action"
