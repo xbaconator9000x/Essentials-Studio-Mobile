@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneCommandBlock, cutCommandBlock, createEventCommand, getCommandInsertionIndent, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
+import { cloneCommandBlock, cutCommandBlock, deleteEditableCommandBlock, canMoveCommandBlock, createEventCommand, getCommandInsertionIndent, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("cross-event RMXP command clipboard", () => {
   const source = [
@@ -110,5 +110,40 @@ describe("cross-event RMXP command clipboard", () => {
     expect(getCommandInsertionIndent(list, 5)).toBe(0);
     expect(getCommandInsertionIndent(list, 2)).toBe(1);
     expect(getCommandInsertionIndent(list, 3)).toBe(1);
+  });
+  it("protects structural conditional and loop commands from destructive clipboard operations", () => {
+    const list = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 108, indent: 1, parameters: ["branch"] },
+      { code: 408, indent: 1, parameters: ["continuation"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 411, indent: 0, parameters: [] },
+      { code: 108, indent: 1, parameters: ["else"] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 112, indent: 0, parameters: [] },
+      { code: 413, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    const before = JSON.stringify(list);
+    for (const i of [0, 3, 4, 6, 7, 8, 9]) {
+      expect(cutCommandBlock(list, i)).toBeNull();
+      expect(deleteEditableCommandBlock(list, i)).toBeNull();
+      expect(cloneCommandBlock(list, i)).toEqual([]);
+      expect(canMoveCommandBlock(list, i, "up")).toBe(false);
+      expect(canMoveCommandBlock(list, i, "down")).toBe(false);
+    }
+    expect(JSON.stringify(list)).toBe(before);
+  });
+  it("deletes a selected continuation with its parent without orphaning dialogue", () => {
+    const list = [
+      { code: 101, indent: 0, parameters: ["text"] },
+      { code: 401, indent: 0, parameters: ["more"] },
+      { code: 108, indent: 0, parameters: ["next"] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    const result = deleteEditableCommandBlock(list, 1);
+    expect(result?.list.map((c) => c.code)).toEqual([108, 0]);
+    expect(result?.selectedIndex).toBe(0);
+    expect(list).toHaveLength(4);
   });
 });
