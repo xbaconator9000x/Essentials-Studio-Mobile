@@ -143,7 +143,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
   const [controlsCollapsed, setControlsCollapsed] = useState(
     () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
-      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches),
+      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches),
   );
   const [paletteVisible, setPaletteVisible] = useState(
     () => readPanelPreference(PALETTE_PREFERENCE) ?? true,
@@ -186,7 +186,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const compactViewport = window.matchMedia("(max-width: 700px)");
+    const compactViewport = window.matchMedia("(max-width: 900px)");
     const updateControls = (event: MediaQueryListEvent) => {
       if (readPanelPreference(TOOL_PANEL_PREFERENCE) === null) {
         setControlsCollapsed(event.matches);
