@@ -777,9 +777,22 @@ export function EventEditor({
                 </div>
                 <div className="event-command-search" role="search" aria-label="Find event commands">
                   <input type="search" aria-label="Find command text" placeholder="Find command or dialogue…"
-                    value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)} />
+                    value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        navigateCommandMatch(e.shiftKey ? -1 : 1);
+                      } else if (e.key === "Escape" && commandSearch) {
+                        e.preventDefault();
+                        setCommandSearch("");
+                      }
+                    }} />
                   <span role="status" aria-live="polite" className="event-command-search-count">
-                    {commandSearch.trim() ? `${commandMatches.length} matches` : "Search this page"}
+                    {commandSearch.trim()
+                      ? commandMatches.length
+                        ? `${commandMatches.indexOf(selectedCommand) + 1 || "–"} of ${commandMatches.length} matches`
+                        : "No matches"
+                      : "Search this page"}
                   </span>
                   <button type="button" className="event-editor-btn"
                     disabled={!commandMatches.length} aria-label="Find previous command"
