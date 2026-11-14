@@ -131,7 +131,11 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none -camera-front none
           disable-animations: true
-          script: python3 scripts/android-emulator-ci-portrait.py "$(cat android-emulator-apk-path.txt)" android-synthetic-fixture/original.zip
+          script: |
+            # Android API35 may report boot_completed while Pixel Launcher is
+            # still indexing and can ANR before the app's first WebView draw.
+            sleep 25
+            python3 scripts/android-emulator-ci-portrait.py "$(cat android-emulator-apk-path.txt)" android-synthetic-fixture/original.zip
       - name: Upload native emulator evidence even if a check fails
         if: always()
         uses: actions/upload-artifact@v4
