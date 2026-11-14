@@ -58,10 +58,11 @@ export function EventEditor({
   const [activePage, setActivePage] = useState(0);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [commandSearch, setCommandSearch] = useState("");
+  const commandListRef = useRef<HTMLDivElement>(null);
   // Reveal a search match without hiding unrelated RMXP commands or changing their indices.
   useEffect(() => {
     if (!commandSearch.trim() || selectedCommand < 0) return;
-    document.querySelector(".event-command-list .event-command-row.selected")
+    commandListRef.current?.querySelector(".event-command-row.selected")
       ?.scrollIntoView?.({ block: "nearest" });
   }, [commandSearch, selectedCommand]);
   const [loading, setLoading] = useState(true);
@@ -779,6 +780,7 @@ export function EventEditor({
                   <input type="search" aria-label="Find command text" placeholder="Find command or dialogue…"
                     value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === "Enter") {
                         e.preventDefault();
                         navigateCommandMatch(e.shiftKey ? -1 : 1);
@@ -801,7 +803,7 @@ export function EventEditor({
                     disabled={!commandMatches.length} aria-label="Find next command"
                     onClick={() => navigateCommandMatch(1)}>Next</button>
                 </div>
-                <div className="event-command-list">
+                <div className="event-command-list" ref={commandListRef}>
                   {toVisualBlocks(page.list).map((block) => {
                     if (block.kind === "multi") {
                       return (
