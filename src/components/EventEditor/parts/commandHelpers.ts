@@ -244,3 +244,20 @@ export function getCommandInsertionIndent(list: EventCommand[], selectedIndex: n
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) return 0;
   return list[selectedIndex].indent;
 }
+
+/** RMXP branch/loop markers are structural, not independent visual commands.
+ * Reject edits that would leave orphaned Else/End/Repeat or branch bodies.
+ * A future tree-aware editor can replace this guard with whole-structure edits.
+ */
+export const STRUCTURAL_EVENT_CODES = new Set([0, 111, 112, 411, 412, 413]);
+
+export function deleteEditableCommandBlock(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  const range = getCommandBlockRange(list, index);
+  if (!range || STRUCTURAL_EVENT_CODES.has(list[range.start].code)) return null;
+  return {
+    list: [...list.slice(0, range.start), ...list.slice(range.end + 1)],
+    selectedIndex: Math.max(0, range.start - 1),
+  };
+}
