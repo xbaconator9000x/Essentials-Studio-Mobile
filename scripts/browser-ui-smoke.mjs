@@ -507,6 +507,73 @@ try {
   await scriptModal.waitFor({ state: "hidden", timeout: 15_000 });
   assert.deepEqual(pageErrors, [], "Portrait tool navigation must not produce uncaught React errors");
 
+  // A landscape phone is ~844 CSS px wide, despite being only 390px tall.
+  // It must retain the mobile workspace, rather than switching to desktop
+  // panes and hiding the Save/Export/Maps navigation controls.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  await workspaceActions.waitFor({ state: "visible", timeout: 15_000 });
+  await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  await workspaceActions.getByRole("button", { name: "Switch map to view mode" })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  const landscapeMetrics = await page.evaluate(() => {
+    const measure = selector => document.querySelector(selector)?.getBoundingClientRect();
+    const canvas = measure(".map-editor-canvas-container");
+    const toolbar = measure(".map-editor-toolbar");
+    const strip = measure(".app-mobile-workspace-bar");
+    const nav = measure(".app-mobile-nav");
+    const actions = [...document.querySelectorAll(".app-mobile-workspace-actions > button")];
+    return {
+      viewport: [window.innerWidth, window.innerHeight],
+      canvasHeight: canvas?.height ?? 0,
+      toolbarHeight: toolbar?.height ?? 0,
+      commandStripHeight: strip?.height ?? 0,
+      navHeight: nav?.height ?? 0,
+      actionsWithinViewport: actions.every(button => {
+        const rect = button.getBoundingClientRect();
+        return rect.width >= 44 && rect.left >= -1 && rect.right <= window.innerWidth + 1;
+      }),
+    };
+  });
+  assert.ok(landscapeMetrics.canvasHeight >= 95,
+    "Landscape phone must retain usable map canvas: " + JSON.stringify(landscapeMetrics));
+  assert.ok(landscapeMetrics.toolbarHeight <= 92 &&
+    landscapeMetrics.commandStripHeight <= 58,
+    "Landscape app bars must not obstruct the canvas: " + JSON.stringify(landscapeMetrics));
+  assert.ok(landscapeMetrics.actionsWithinViewport,
+    "All landscape Save/Export/Edit/Tiles actions must fit within the phone viewport");
+  for (const label of ["Save all changes", "Export project ZIP", "Choose another map", "Hide tile palette"]) {
+    if (label === "Hide tile palette") continue;
+    assert.equal(await workspaceActions.getByRole("button", { name: label }).isVisible(), true,
+      label + " must remain visible after landscape rotation");
+  }
+  await page.screenshot({ path: join(evidence, "browser-landscape-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-landscape-map-tiles.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
+
+  await navigation.getByRole("button", { name: "Settings", exact: true }).click();
+  await projectTools.getByRole("button", { name: "PBS Data" }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-landscape-project-editors.png"), fullPage: true });
+  await projectTools.getByRole("button", { name: "PBS Data" }).click();
+  await pbsModal.waitFor({ state: "visible", timeout: 30_000 });
+  const landscapePbs = await pbsModal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    sidebarHeight: element.querySelector(".pbs-entity-sidebar")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.ok(landscapePbs.width <= 846 && landscapePbs.sidebarHeight <= 90,
+    "Landscape phone PBS editor must keep a compact category rail: " + JSON.stringify(landscapePbs));
+  await page.screenshot({ path: join(evidence, "browser-landscape-pbs-editor.png"), fullPage: true });
+  await pbsModal.locator(".pbs-entity-close").click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await navigation.waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
+    "Rotating back to portrait must preserve the mobile Save All path");
+  assert.deepEqual(pageErrors, [], "Landscape rotation and editor navigation must not produce uncaught React errors");
+  await page.screenshot({ path: join(evidence, "browser-portrait-after-rotation.png"), fullPage: true });
+
   const receipt = {
     status: "real Chromium map/event/PBS UI → Rust saves → native ZIP export → reimport passed",
     originalZipSha256: originalHash,
@@ -524,8 +591,10 @@ try {
     },
     reactAndNativeProcessRestartPassed: true,
     browserPortraitWorkspaceVerified: true,
+    browserLandscapeWorkspaceVerified: true,
     mobileProjectEditorsVerified: true,
     mobileMetrics,
+    landscapeMetrics,
     verification,
     notVerified: ["real Shattered project", "Android SAF provider", "desktop RPG Maker XP", "JoiPlay/NaviaXP"],
   };
