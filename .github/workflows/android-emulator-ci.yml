@@ -82,17 +82,9 @@ jobs:
             exit 1
           fi
           echo "KVM device is available to the Actions runner." | tee -a android-emulator-evidence/kvm-preflight.txt
-      - name: Build exact-HEAD x86_64 Android debug APK
-        env:
-          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+      - name: Validate emulator UI harness Python syntax
         run: |
-          set -euo pipefail
-          npm run tauri android build -- --ci --apk --debug --target x86_64
-          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
-          test -s "$apk"
-          printf '%s\n' "$apk" > android-emulator-apk-path.txt
-          sha256sum "$apk" | tee android-emulator-built-apk.sha256
+          python3 -m py_compile scripts/android-emulator-ci-portrait.py scripts/android-emulator-import-smoke.py
       - name: Decode and verify rights-cleared synthetic RMXP fixture
         run: |
           python3 - <<'PY'
@@ -116,6 +108,17 @@ jobs:
           target.write_bytes(data)
           print(f"Verified original synthetic RMXP ZIP: {digest} ({len(data)} bytes)")
           PY
+      - name: Build exact-HEAD x86_64 Android debug APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          npm run tauri android build -- --ci --apk --debug --target x86_64
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
+          test -s "$apk"
+          printf '%s\n' "$apk" > android-emulator-apk-path.txt
+          sha256sum "$apk" | tee android-emulator-built-apk.sha256
       - name: Boot API35 Android x86_64 and drive the actual Tauri app
         uses: reactivecircus/android-emulator-runner@v2
         with:
