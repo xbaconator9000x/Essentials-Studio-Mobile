@@ -187,7 +187,7 @@ export function moveCommandBlock(
       ...selectedCommands,
       ...list.slice(adjacent.end + 1),
     ],
-    selectedIndex: adjacent.start,
+    selectedIndex: selected.start + adjacentCommands.length,
   };
 }
 
