@@ -61,7 +61,12 @@ export function getCommandBlockRange(
 }
 
 export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: number): number {
-  const endIndex = list.findIndex((command) => command.code === 0);
+  // RMXP uses code 0 inside nested branches as well as at the end of a page.
+  // Only the final top-level terminator bounds insertion; the first code 0
+  // can occur halfway through a valid conditional/loop script.
+  const last = list.length - 1;
+  const endIndex = last >= 0 && list[last].code === 0 && list[last].indent === 0
+    ? last : -1;
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) {
     return endIndex === -1 ? list.length : endIndex;
   }
