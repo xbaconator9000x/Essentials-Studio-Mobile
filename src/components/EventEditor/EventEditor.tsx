@@ -29,6 +29,7 @@ import {
   moveCommandBlock,
   toVisualBlocks,
 } from "./parts/commandHelpers";
+import { duplicateEventPage, moveEventPage } from "./eventPageOperations";
 import "./EventEditor.css";
 
 interface Props {
@@ -439,6 +440,39 @@ export function EventEditor({
     });
   }, [activePage, commitDraftBeforeAction, setEvent]);
 
+  const handleDuplicateEventPage = useCallback(() => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      if (!current || !current.pages[activePage]) return;
+      setEvent((previous) => previous
+        ? { ...previous, pages: duplicateEventPage(previous.pages, activePage) } : previous);
+      setActivePage(activePage + 1);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforeAction, setEvent]);
+
+  const handleMoveEventPage = useCallback((direction: -1 | 1) => {
+    commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      const destination = activePage + direction;
+      if (!current || destination < 0 || destination >= current.pages.length) return;
+      setEvent((previous) => previous
+        ? { ...previous, pages: moveEventPage(previous.pages, activePage, direction) } : previous);
+      setActivePage(destination);
+      setSelectedCommand(-1);
+      setEditingCommand(null);
+      revisionRef.current += 1;
+      setSaveNotice(null);
+      setSaveError(null);
+      setDirty(true);
+    });
+  }, [activePage, commitDraftBeforeAction, setEvent]);
+
   // Do not discard/close while the native event write is still pending.
   const handleCancel = useCallback(async () => {
     if (savingRef.current) return;
@@ -585,6 +619,16 @@ export function EventEditor({
             >
               +
             </button>
+            <button className="event-page-tab" type="button"
+              onClick={handleDuplicateEventPage}
+              aria-label="Duplicate current event page"
+              title="Duplicate all commands, conditions and movement settings">Duplicate</button>
+            <button className="event-page-tab" type="button"
+              onClick={() => handleMoveEventPage(-1)} disabled={activePage === 0}
+              aria-label="Move event page earlier" title="Lower page priority">←</button>
+            <button className="event-page-tab" type="button"
+              onClick={() => handleMoveEventPage(1)} disabled={activePage >= event.pages.length - 1}
+              aria-label="Move event page later" title="Raise page priority">→</button>
             {event.pages.length > 1 && (
               <button
                 className="event-page-tab event-page-tab-remove"
