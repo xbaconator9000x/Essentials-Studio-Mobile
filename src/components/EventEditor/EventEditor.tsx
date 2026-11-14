@@ -173,6 +173,10 @@ export function EventEditor({
           resetHistory();
           setActivePage(0);
           setSelectedCommand(-1);
+          setEditingCommand(null);
+          setCommandSearch("");
+          setShowPicker(false);
+          setClipboard(null);
           revisionRef.current = 0;
           setDirty(false);
           setSaveNotice(null);
