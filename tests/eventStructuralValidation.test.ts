@@ -40,6 +40,17 @@ describe("RMXP structural subtree validation", () => {
   it("rejects an empty child terminator at the opener depth", () => {
     expect(getStructuralCommandRange([cmd(111, 0), cmd(0, 0), cmd(412, 0)], 0)).toBeNull();
   });
+  it("rejects skipped indentation in ordinary child commands", () => {
+    const list = [cmd(111, 0), cmd(108, 2), cmd(0, 1), cmd(412, 0), cmd(0, 0)];
+    expect(getStructuralCommandRange(list, 0)).toBeNull();
+    expect(cloneCommandBlock(list, 0)).toEqual([]);
+    expect(cutCommandBlock(list, 0)).toBeNull();
+    expect(moveCommandBlock(list, 0, "down")).toBeNull();
+  });
+  it("rejects skipped indentation in nested openers and terminators", () => {
+    expect(getStructuralCommandRange([cmd(112, 0), cmd(111, 2), cmd(0, 3), cmd(412, 2), cmd(413, 0)], 0)).toBeNull();
+    expect(getStructuralCommandRange([cmd(111, 0), cmd(0, 2), cmd(412, 0)], 0)).toBeNull();
+  });
   it("rejects sibling commands masquerading as children", () => {
     expect(getStructuralCommandRange([cmd(111, 0), cmd(108, 0), cmd(412, 0)], 0)).toBeNull();
   });
