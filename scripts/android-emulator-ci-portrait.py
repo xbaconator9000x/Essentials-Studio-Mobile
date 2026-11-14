@@ -167,6 +167,146 @@ def launch(package: str) -> None:
     raise AssertionError("Editor process never started after launcher intent")
 
 
+def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
+    """Exercise actual Android ZIP selection and editor workspace in BOTH modes."""
+    expected_sha = "60c78b3171a0b4fc1dc96260cd8d8240374dc214dd282779f8ff49ade2c000bb"
+    if not source.is_file():
+        raise AssertionError("Rights-cleared project fixture was not produced by CI")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if digest != expected_sha:
+        raise AssertionError(f"Synthetic project ZIP SHA mismatch: {digest}")
+    remote = "/sdcard/Download/EssentialsSynthetic.zip"
+    adb("push", str(source), remote, timeout=90)
+    actual_sha = adb("shell", "sha256sum", remote).stdout.decode().split()[0]
+    if actual_sha != digest:
+        raise AssertionError("Android ZIP transfer modified synthetic fixture bytes")
+    # ADB-created files may require media indexing before appearing in Recents.
+    adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d", f"file://{remote}", timeout=20, check=False)
+
+    nodes = wait_ui("Import Essentials Project ZIP", "synthetic-import-entry")
+    tap_button(nodes, "Choose Essentials Project ZIP")
+    deadline = time.monotonic() + 45
+    picker_nodes: list[dict[str, str]] = []
+    while time.monotonic() < deadline:
+        picker_nodes = ui_nodes("synthetic-picker-entry")
+        if any("documentsui" in node.get("package", "").casefold() for node in picker_nodes):
+            break
+        time.sleep(2)
+    else:
+        raise AssertionError("Primary ZIP File input did not open Android DocumentsUI")
+    screenshot("synthetic-picker-entry")
+
+    helper_path = Path(__file__).with_name("android-emulator-import-smoke.py")
+    spec = importlib.util.spec_from_file_location("native_picker_helpers", helper_path)
+    assert spec and spec.loader
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    # Prefer the exact DocumentsUI item and its clickable card, not an
+    # unrelated text matching part of the filename or an arbitrary coordinate.
+    selected = False
+    for attempt in range(8):
+        picker_nodes = ui_nodes(f"synthetic-picker-target-{attempt}")
+        if not any("documentsui" in node.get("package", "").casefold()
+                   for node in picker_nodes):
+            break
+        xml = (EVIDENCE / f"synthetic-picker-target-{attempt}.xml").read_text()
+        card = helper.picker_file_card(xml, "EssentialsSynthetic.zip")
+        if card:
+            tap(card)
+            time.sleep(4)
+            selected = True
+            continue
+        list_toggle = helper.picker_list_view_control(picker_nodes)
+        if list_toggle:
+            tap(list_toggle)
+            time.sleep(2)
+            continue
+        # Some document providers open in Recent, others in Downloads.
+        folder = helper.picker_folder_row(xml, "Downloads") or helper.picker_folder_row(xml, "Download")
+        if folder:
+            tap(folder)
+            time.sleep(2)
+            continue
+        download = locate(picker_nodes, "Downloads")
+        if download:
+            tap(download)
+            time.sleep(2)
+            continue
+        roots = locate(picker_nodes, "Show roots") or locate(picker_nodes, "Browse")
+        if roots:
+            tap(roots)
+            time.sleep(2)
+            continue
+        raise AssertionError("Cannot locate synthetic ZIP or Downloads in DocumentsUI: " +
+                             repr([label(n) for n in picker_nodes if label(n)][-16:]))
+
+    if not selected:
+        raise AssertionError("DocumentsUI never selected the synthetic ZIP")
+    project_nodes = wait_ui("maps available", "synthetic-project-loaded", timeout=100)
+    if not any(item.get("package", "") == package for item in project_nodes):
+        raise AssertionError("Project overview is not owned by the installed Android app")
+
+    portrait = screenshot("portrait-project-overview")
+    if portrait[0] >= portrait[1]:
+        raise AssertionError(f"Project overview is not portrait: {portrait}")
+    assert_visible_controls(project_nodes, ("Save all changes", "Export project ZIP",
+                             "Projects", "Maps", "Sprites", "Settings"), portrait)
+
+    # Select the actual rights-cleared map in the tree; inspect canvas and
+    # palette on the full Android WebView before any UI state is reported passed.
+    map_point = locate(project_nodes, "Synthetic Map")
+    if not map_point:
+        raise AssertionError("Synthetic map is missing from imported map tree")
+    tap(map_point)
+    map_nodes = wait_ui("Enable map editing", "portrait-map-editor", timeout=70)
+    portrait_map = screenshot("portrait-map-editor")
+    assert_visible_controls(map_nodes, ("Save all changes", "Export project ZIP",
+                            "Choose another map", "Enable map editing", "Open tile palette"),
+                            portrait_map)
+    tap_button(map_nodes, "Open tile palette")
+    tiles_nodes = wait_ui("Hide tile palette", "portrait-map-tiles", timeout=35)
+    screenshot("portrait-map-tiles")
+    tap_button(tiles_nodes, "Hide tile palette")
+
+    # Rotate WHILE THE MAP is open, not merely on the start screen.
+    landscape_nodes, landscape = rotate(True, "landscape-map-editor", "Enable map editing")
+    assert_visible_controls(landscape_nodes, ("Save all changes", "Export project ZIP",
+                            "Choose another map", "Enable map editing", "Open tile palette"),
+                            landscape)
+    screenshot("landscape-map-editor")
+    tap_button(landscape_nodes, "Open tile palette")
+    landscape_tiles = wait_ui("Hide tile palette", "landscape-map-tiles", timeout=35)
+    screenshot("landscape-map-tiles")
+    tap_button(landscape_tiles, "Hide tile palette")
+
+    # The landscape screen must keep mobile navigation and the existing
+    # desktop-backed database, scripts and PBS entrypoints usable.
+    current = wait_ui("Settings", "landscape-nav", timeout=20)
+    tap_button(current, "Settings")
+    settings = wait_ui("Project & export", "landscape-settings", timeout=35)
+    assert_visible_controls(settings, ("Save all changes", "Export project ZIP",
+                            "Database", "Ruby Scripts", "PBS Data", "Sprite Editor"),
+                            screenshot("landscape-settings"))
+    portrait_settings, ps = rotate(False, "portrait-settings", "Project & export")
+    assert_visible_controls(portrait_settings, ("Save all changes", "Export project ZIP",
+                            "Database", "Ruby Scripts", "PBS Data", "Sprite Editor"), ps)
+    assert_visible_controls(portrait_settings, ("Projects", "Maps", "Sprites", "Settings"), ps)
+    tap_button(portrait_settings, "Maps")
+    back_map = wait_ui("Enable map editing", "portrait-map-return", timeout=35)
+    assert_visible_controls(back_map, ("Save all changes", "Export project ZIP"), screenshot("portrait-map-return"))
+    return {
+        "fixture_sha256": digest,
+        "ui_checks": [
+            "real synthetic RMXP ZIP selected with Android DocumentsUI",
+            "project opened from original source ZIP", "portrait map canvas and tile drawer",
+            "landscape map canvas and tile drawer", "landscape project data editor actions",
+            "portrait project data editor actions", "map and toolbar survive rotation",
+        ],
+    }
+
+
 def main() -> None:
     if not APK or not APK.is_file():
         raise RuntimeError("Pass the compiled x86_64 debug APK path")
@@ -230,6 +370,10 @@ def main() -> None:
     nodes, portrait_size = rotate(False, "portrait-picker-return", "Import Essentials Project ZIP")
     assert_visible_controls(nodes, ("Choose Essentials Project ZIP", native_picker_label),
                             portrait_size)
+
+    if len(sys.argv) < 3:
+        raise AssertionError("Pass the rights-cleared synthetic RMXP fixture as the second argument")
+    project_result = synthetic_project_ui(package, Path(sys.argv[2]))
     if not adb("shell", "pidof", package, check=False).stdout.strip():
         raise AssertionError("Application process exited during navigation")
 
@@ -247,10 +391,15 @@ def main() -> None:
         "apk_sha256": digest,
         "emulator_api": int(api),
         "emulator_abi": abi,
-        "checks": ["APK installed", "foreground WebView UI", "ZIP import affordance",
+        "checks": ["APK installed", "app-owned foreground WebView UI",
+                   "portrait welcome accessibility", "landscape welcome accessibility",
                    "native SAF picker opened", "picker cancellation",
-                   "landscape relayout", "portrait return", "no detected editor ANR/crash"],
-        "not_verified": ["ARM64 runtime", "physical Android", "ZIP import/save/export/reimport",
+                   "synthetic Essentials ZIP imported through actual file picker",
+                   "portrait and landscape map/tile UI", "portrait and landscape project editors",
+                   "orientation roundtrip", "no detected editor ANR/crash"],
+        "project_ui": project_result,
+        "not_verified": ["ARM64 runtime", "physical Android",
+                         "map/event/sprite content modification", "Save All/SAF ZIP export/reimport",
                          "RPG Maker XP desktop", "JoiPlay"],
     }
     (EVIDENCE / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
