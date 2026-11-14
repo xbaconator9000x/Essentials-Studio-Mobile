@@ -310,7 +310,7 @@
 
 /* Stack script navigation above CodeMirror in portrait. Keep the native Ruby
    source buffer and existing Save All registration unchanged. */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .script-editor-wrapper, .script-editor { min-width: 0; min-height: 0; }
   .script-editor { flex-direction: column; }
   .script-list-panel {
