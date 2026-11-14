@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
+import { createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("RMXP structural command insertion", () => {
   it("creates balanced conditional and loop scaffolds with correctly nested terminators", () => {
@@ -11,6 +11,10 @@ describe("RMXP structural command insertion", () => {
       expect(createEventCommandInsertion(code, 0)).toEqual([]);
     }
     expect(createEventCommandInsertion(111, -1)).toEqual([]);
+    for (const code of [0, 411, 412, 413, 401, 408, 655]) {
+      expect(createEventCommand(code, 0)).toBeNull();
+    }
+    expect(createEventCommand(111, 0)?.code).toBe(111);
   });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
