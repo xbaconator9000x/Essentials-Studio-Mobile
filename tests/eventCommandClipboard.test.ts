@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneCommandBlock, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
+import { cloneCommandBlock, cutCommandBlock, getCommandInsertionIndex, prepareCommandBlockPaste, toVisualBlocks } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("cross-event RMXP command clipboard", () => {
   const source = [
@@ -35,5 +35,20 @@ describe("cross-event RMXP command clipboard", () => {
     expect(prepareCommandBlockPaste([], 0)).toEqual([]);
     expect(prepareCommandBlockPaste(cloneCommandBlock(source, 0), -1)).toEqual([]);
     expect(prepareCommandBlockPaste([{ code: 108, indent: 2, parameters: [] }, { code: 408, indent: 1, parameters: [] }], 0)).toEqual([]);
+  });
+  it("cuts an entire multiline command and preserves its terminator", () => {
+    const before = JSON.stringify(source);
+    const cut = cutCommandBlock(source, 1);
+    expect(cut).not.toBeNull();
+    expect(cut?.clipboard.map((c) => c.code)).toEqual([108, 408]);
+    expect(cut?.list.map((c) => c.code)).toEqual([0]);
+    expect(cut?.selectedIndex).toBe(0);
+    expect(JSON.stringify(source)).toBe(before);
+    expect(cut?.clipboard.every((c) => !("source_index" in c))).toBe(true);
+  });
+  it("refuses to cut event terminators and out-of-range selections", () => {
+    expect(cutCommandBlock(source, 2)).toBeNull();
+    expect(cutCommandBlock(source, -1)).toBeNull();
+    expect(cutCommandBlock(source, 99)).toBeNull();
   });
 });
