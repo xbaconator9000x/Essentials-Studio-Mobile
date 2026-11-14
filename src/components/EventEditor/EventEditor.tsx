@@ -193,6 +193,32 @@ export function EventEditor({
   const page: EventPage | null =
     event && event.pages[activePage] ? event.pages[activePage] : null;
 
+  // Search visual command blocks, not raw continuation lines: RMXP indices stay intact.
+  const commandMatches = page && commandSearch.trim()
+    ? toVisualBlocks(page.list).filter((block) => {
+      const cmd = block.cmd;
+      const summary = summarizeCommand(cmd.code, cmd.parameters, mapInfos, switchNames, variableNames);
+      const lines = block.kind === "multi"
+        ? page.list.slice(block.rawIndex, getBlockEnd(page.list, block.rawIndex) + 1)
+          .flatMap((item) => item.parameters.map(String)).join(" ")
+        : cmd.parameters.map(String).join(" ");
+      const query = commandSearch.trim().toLocaleLowerCase();
+      return [getCommandDef(cmd.code).name, summary, lines, String(cmd.code)]
+        .some((part) => part.toLocaleLowerCase().includes(query));
+    }).map((block) => block.rawIndex)
+    : [];
+  const navigateCommandMatch = (direction: -1 | 1) => {
+    if (!commandMatches.length) return;
+    const next = direction === 1
+      ? commandMatches.find((index) => index > selectedCommand) ?? commandMatches[0]
+      : [...commandMatches].reverse().find((index) => index < selectedCommand)
+        ?? commandMatches[commandMatches.length - 1];
+    commitDraftBeforeAction(() => {
+      setEditingCommand(null);
+      setSelectedCommand(next);
+    });
+  };
+
   // --- Editing functions ---
 
   const updatePage = useCallback(
@@ -766,26 +792,15 @@ export function EventEditor({
                 <div className="event-command-search" role="search" aria-label="Find event commands">
                   <input type="search" aria-label="Find command text" placeholder="Find command or dialogue…"
                     value={commandSearch} onChange={(e) => setCommandSearch(e.target.value)} />
-                  <button type="button" className="event-editor-btn" disabled={!commandSearch.trim()}
-                    onClick={() => {
-                      const query = commandSearch.trim().toLocaleLowerCase();
-                      const matches = toVisualBlocks(page.list).filter((block) => {
-                        const cmd = block.cmd;
-                        const summary = summarizeCommand(cmd.code, cmd.parameters, mapInfos, switchNames, variableNames);
-                        const lines = block.kind === "multi"
-                          ? page.list.slice(block.rawIndex, getBlockEnd(page.list, block.rawIndex) + 1)
-                            .flatMap((item) => item.parameters.map(String)).join(" ")
-                          : cmd.parameters.map(String).join(" ");
-                        return [getCommandDef(cmd.code).name, summary, lines, String(cmd.code)]
-                          .some((part) => part.toLocaleLowerCase().includes(query));
-                      }).map((block) => block.rawIndex);
-                      if (!matches.length) return;
-                      const next = matches.find((index) => index > selectedCommand) ?? matches[0];
-                      commitDraftBeforeAction(() => {
-                        setEditingCommand(null);
-                        setSelectedCommand(next);
-                      });
-                    }}>Find next</button>
+                  <span role="status" aria-live="polite" className="event-command-search-count">
+                    {commandSearch.trim() ? `${commandMatches.length} matches` : "Search this page"}
+                  </span>
+                  <button type="button" className="event-editor-btn"
+                    disabled={!commandMatches.length} aria-label="Find previous command"
+                    onClick={() => navigateCommandMatch(-1)}>Previous</button>
+                  <button type="button" className="event-editor-btn"
+                    disabled={!commandMatches.length} aria-label="Find next command"
+                    onClick={() => navigateCommandMatch(1)}>Next</button>
                 </div>
                 <div className="event-command-list">
                   {toVisualBlocks(page.list).map((block) => {
