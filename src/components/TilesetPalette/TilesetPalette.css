@@ -191,7 +191,7 @@
   color: var(--color-overlay0);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .tileset-palette {
     position: absolute;
     z-index: 8;
@@ -216,7 +216,7 @@
 .autotile-item { width: 100%; border: 0; background: transparent; text-align: left; color: inherit; }
 .autotile-item:disabled { opacity: .5; cursor: default; }
 .tileset-canvas:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .palette-tabs button, .autotile-item { min-height: 44px; }
 }
 
@@ -258,7 +258,7 @@
 }
 .palette-tile-navigation button:disabled { opacity: .5; }
 .palette-tile-nudge button { flex: 1; }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .palette-tile-navigation button,
   .palette-tile-navigation input { min-height: 44px; font-size: 16px; }
 }
@@ -293,7 +293,7 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .palette-recent-tiles button { min-height: 44px; min-width: 48px; }
   .tileset-palette { width: min(96vw, 400px); }
   .palette-tabs button { font-size: 13px; }
