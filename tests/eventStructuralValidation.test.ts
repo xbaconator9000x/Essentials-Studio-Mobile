@@ -51,6 +51,27 @@ describe("RMXP structural subtree validation", () => {
     expect(getStructuralCommandRange([cmd(112, 0), cmd(111, 2), cmd(0, 3), cmd(412, 2), cmd(413, 0)], 0)).toBeNull();
     expect(getStructuralCommandRange([cmd(111, 0), cmd(0, 2), cmd(412, 0)], 0)).toBeNull();
   });
+  it("refuses editing a nested loop that jumps over an indentation level", () => {
+    const list = [
+      cmd(111, 0), cmd(112, 2), cmd(101, 3), cmd(401, 3),
+      cmd(0, 3), cmd(413, 2), cmd(0, 1), cmd(412, 0), cmd(0, 0),
+    ];
+    const before = structuredClone(list);
+    expect(getStructuralCommandRange(list, 0)).toBeNull();
+    expect(cloneCommandBlock(list, 0)).toEqual([]);
+    expect(cutCommandBlock(list, 0)).toBeNull();
+    expect(moveCommandBlock(list, 0, "down")).toBeNull();
+    expect(list).toEqual(before);
+  });
+  it("accepts consecutive properly indented nested loop and branch statements", () => {
+    const list = [
+      cmd(112, 0), cmd(111, 1), cmd(101, 2), cmd(401, 2),
+      cmd(0, 2), cmd(412, 1), cmd(112, 1), cmd(0, 2),
+      cmd(413, 1), cmd(0, 1), cmd(413, 0), cmd(0, 0),
+    ];
+    expect(getStructuralCommandRange(list, 0)).toEqual({ start: 0, end: 10 });
+    expect(cloneCommandBlock(list, 0)).toHaveLength(11);
+  });
   it("rejects sibling commands masquerading as children", () => {
     expect(getStructuralCommandRange([cmd(111, 0), cmd(108, 0), cmd(412, 0)], 0)).toBeNull();
   });
