@@ -3,7 +3,7 @@
 .app-mobile-operation-feedback {
   display: none;
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .app-mobile-operation-feedback {
     display: block;
     flex: 0 0 auto;
