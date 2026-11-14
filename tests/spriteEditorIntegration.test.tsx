@@ -474,10 +474,16 @@ describe("sprite editor integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select #40a02b" }));
     expect(screen.getByRole("button", { name: "Select #40a02b" }).getAttribute("aria-pressed")).toBe("true");
 
+    // The initial 4px sprite fits the 200px viewport at the 32× zoom cap.
+    // Set a known non-saturated zoom before asserting the +/- controls.
+    fireEvent.change(screen.getByRole("slider", { name: "Exact sprite zoom" }), {
+      target: { value: "8" },
+    });
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(32));
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
-    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(128));
-    fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
     await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(64));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+    await waitFor(() => expect(context.drawImage.mock.calls.at(-1)?.[3]).toBe(32));
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
     expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
 
