@@ -27,7 +27,7 @@ import {
   getCommandBlockRange,
   getCommandInsertionIndex,
   getCommandInsertionIndent,
-  createEventCommand,
+  createEventCommandInsertion,
   moveCommandBlock,
   prepareCommandBlockPaste,
   toVisualBlocks,
@@ -298,16 +298,16 @@ export function EventEditor({
   const handleInsertCommand = useCallback(
     (def: CommandDef) => {
       if (!page) return;
-      const newCmd = createEventCommand(
+      const newCommands = createEventCommandInsertion(
         def.code, getCommandInsertionIndent(page.list, selectedCommand), def.defaultParams,
       );
-      if (!newCmd) return;
+      if (!newCommands.length) return;
 
       // Insert after the entire block (past any continuations)
       const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
       updatePage((p) => {
         const list = [...p.list];
-        list.splice(insertAt, 0, newCmd);
+        list.splice(insertAt, 0, ...newCommands);
         return { ...p, list };
       });
       setSelectedCommand(insertAt);
