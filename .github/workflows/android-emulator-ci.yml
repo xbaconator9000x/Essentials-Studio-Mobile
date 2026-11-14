@@ -10,6 +10,7 @@ on:
     paths:
       - '.github/workflows/android-emulator-ci.yml'
       - 'scripts/android-emulator-ci-portrait.py'
+      - 'tests/fixtures/android-synthetic-project.zip.b64'
 
 permissions:
   contents: read
@@ -92,6 +93,29 @@ jobs:
           test -s "$apk"
           printf '%s\n' "$apk" > android-emulator-apk-path.txt
           sha256sum "$apk" | tee android-emulator-built-apk.sha256
+      - name: Decode and verify rights-cleared synthetic RMXP fixture
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, io, pathlib, zipfile
+          source = pathlib.Path("tests/fixtures/android-synthetic-project.zip.b64")
+          data = base64.b64decode("".join(
+              line.strip() for line in source.read_text().splitlines()
+              if line.strip() and not line.startswith("#")
+          ), validate=True)
+          digest = hashlib.sha256(data).hexdigest()
+          expected = "60c78b3171a0b4fc1dc96260cd8d8240374dc214dd282779f8ff49ade2c000bb"
+          if digest != expected:
+              raise SystemExit(f"Emulator fixture SHA256 mismatch: {digest}")
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+              names = set(archive.namelist())
+              assert any(name.endswith("Game.rxproj") for name in names)
+              assert any(name.endswith("Data/Map001.rxdata") for name in names)
+              assert all(not name.startswith("/") and ".." not in name.split("/") for name in names)
+          target = pathlib.Path("android-synthetic-fixture/original.zip")
+          target.parent.mkdir(exist_ok=True)
+          target.write_bytes(data)
+          print(f"Verified original synthetic RMXP ZIP: {digest} ({len(data)} bytes)")
+          PY
       - name: Boot API35 Android x86_64 and drive the actual Tauri app
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -102,7 +126,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none -camera-front none
           disable-animations: true
-          script: python3 scripts/android-emulator-ci-portrait.py "$(cat android-emulator-apk-path.txt)"
+          script: python3 scripts/android-emulator-ci-portrait.py "$(cat android-emulator-apk-path.txt)" android-synthetic-fixture/original.zip
       - name: Upload native emulator evidence even if a check fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,5 +136,6 @@ jobs:
             android-emulator-evidence/
             android-emulator-built-apk.sha256
             android-emulator-apk-path.txt
+            android-synthetic-fixture/original.zip
           if-no-files-found: warn
           retention-days: 7
