@@ -1346,5 +1346,18 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  .event-editor-body--properties .event-page-properties-content { display: block; }
+  /* The native hidden attribute must win over the mobile layout display rule.
+     Otherwise collapsing properties still exposes interactive form fields. */
+  .event-editor-body--properties .event-page-properties-content[hidden] {
+    display: none;
+  }
+  .event-editor-body--properties .event-page-properties-content:not([hidden]) {
+    display: block;
+  }
+  .event-editor-mobile-tabs button:focus-visible,
+  .event-page-properties-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
+
