@@ -294,7 +294,7 @@ export function createEventCommand(
   code: number, indent: number, defaultParams?: unknown[],
 ): EventCommand | null {
   if (!Number.isInteger(code) || code <= 0 || !Number.isInteger(indent) || indent < 0) return null;
-  if (code === 401 || code === 408 || code === 655) return null;
+  if (STRUCTURAL_EVENT_CODES.has(code) || code === 401 || code === 408 || code === 655) return null;
   return {
     code,
     indent,
