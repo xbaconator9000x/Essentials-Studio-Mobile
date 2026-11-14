@@ -23,6 +23,7 @@ import {
   canMoveCommandBlock,
   cloneCommandBlock,
   cutCommandBlock,
+  deleteEditableCommandBlock,
   getBlockEnd,
   getCommandBlockRange,
   getCommandInsertionIndex,
@@ -319,18 +320,10 @@ export function EventEditor({
   const handleDeleteCommand = useCallback(
     (index: number) => {
       if (!page) return;
-      const cmd = page.list[index];
-      if (cmd.code === 0) return;
-
-      // Delete the entire block (parent + all continuations)
-      const blockEnd = getBlockEnd(page.list, index);
-      const deleteCount = blockEnd - index + 1;
-      updatePage((p) => {
-        const list = [...p.list];
-        list.splice(index, deleteCount);
-        return { ...p, list };
-      });
-      setSelectedCommand(Math.max(0, index - 1));
+      const result = deleteEditableCommandBlock(page.list, index);
+      if (!result) return;
+      updatePage((p) => ({ ...p, list: result.list }));
+      setSelectedCommand(result.selectedIndex);
     },
     [page, updatePage]
   );
