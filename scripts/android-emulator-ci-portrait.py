@@ -150,7 +150,7 @@ def focused_anr_owner(window_dump: str) -> str | None:
     The same dumpsys includes the editor's ResumedActivity even when a
     completely unrelated system launcher ANR is covering its window.
     """
-    match = re.search(r"mFocusedWindow=[^\\n]*Application Not Responding:\\s*([\\w.]+)",
+    match = re.search(r"mFocusedWindow=[^\n]*Application Not Responding:\s*([\w.]+)",
                       window_dump)
     return match.group(1) if match else None
 
