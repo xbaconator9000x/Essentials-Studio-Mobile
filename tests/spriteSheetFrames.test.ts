@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getWalkSpriteFrame,
+  getWalkSpriteFrameByDirection,
+  stepWalkSpritePhase,
   stepWalkSpriteFrame,
   WALK_FRAME_COUNT,
   WALK_FRAME_DIRECTIONS,
@@ -31,6 +33,25 @@ describe("opt-in RMXP character sheet frame geometry", () => {
     for (const index of [-1, 16, 1.5, Infinity, Number.NaN]) {
       expect(getWalkSpriteFrame(128, 192, index)).toBeNull();
     }
+  });
+
+  it("resolves semantic direction and phase without changing RMXP row order", () => {
+    expect(getWalkSpriteFrameByDirection(128, 192, "Right", 2)).toEqual({
+      index: 9, x: 32, y: 96, width: 32, height: 48, direction: "Right", phase: 2,
+    });
+    expect(getWalkSpriteFrameByDirection(128, 192, "Up", 4)?.index).toBe(15);
+    expect(getWalkSpriteFrameByDirection(128, 192, "Up", 0)).toBeNull();
+    expect(getWalkSpriteFrameByDirection(128, 192, "Up", 5)).toBeNull();
+    expect(getWalkSpriteFrameByDirection(129, 192, "Up", 2)).toBeNull();
+  });
+
+  it("cycles phases without crossing directional rows even for large deltas", () => {
+    expect(stepWalkSpritePhase(7, 1)).toBe(4);
+    expect(stepWalkSpritePhase(8, -1)).toBe(11);
+    expect(stepWalkSpritePhase(15, Number.MAX_SAFE_INTEGER)).toBe(14);
+    expect(stepWalkSpritePhase(12, -Number.MAX_SAFE_INTEGER)).toBe(13);
+    expect(stepWalkSpritePhase(16, 1)).toBeNull();
+    expect(stepWalkSpritePhase(1, Number.MAX_SAFE_INTEGER + 1)).toBeNull();
   });
 
   it("wraps navigation without modifying pixels or escaping the sheet", () => {
