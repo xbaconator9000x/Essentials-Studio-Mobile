@@ -53,6 +53,37 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
         nodes[0]["bounds"] = "[10,15][30,38]"
         harness.assert_visible_controls(nodes, ("Save",), (40, 40))
 
+    def test_actual_map_canvas_uses_current_app_owned_accessibility_bounds(self):
+        package = "com.xbaconator.essentialsstudiomobile"
+        nodes = [
+            {"package": "com.android.documentsui",
+             "content-desc": "Map tile editing canvas", "bounds": "[0,0][900,900]"},
+            {"package": package, "content-desc": "Map tile editing canvas",
+             "class": "android.view.View", "enabled": "true",
+             "bounds": "[20,200][420,700]"},
+        ]
+        points = harness.map_canvas_tap_points(nodes, package)
+        self.assertEqual(len(points), 5)
+        self.assertTrue(all(20 < x < 420 and 200 < y < 700
+                            for x, y in points))
+        with self.assertRaisesRegex(AssertionError, "Expected one accessible"):
+            harness.map_canvas_tap_points(nodes[:1], package)
+        with self.assertRaisesRegex(AssertionError, "Expected one accessible"):
+            harness.map_canvas_tap_points(
+                nodes + [{"package": package, "content-desc": "Map tile editing canvas",
+                          "bounds": "[20,200][420,700]"}], package)
+
+    def test_native_edit_receipt_needs_real_app_owned_unsaved_status(self):
+        package = "com.xbaconator.essentialsstudiomobile"
+        app = {"package": package, "text": "1 unsaved", "enabled": "true"}
+        self.assertTrue(harness.has_unsaved_map([app], package))
+        self.assertFalse(harness.has_unsaved_map([
+            {"package": "com.android.documentsui", "text": "1 unsaved"}], package))
+        self.assertFalse(harness.has_unsaved_map([
+            {"package": package, "text": "Saved"}], package))
+        self.assertFalse(harness.has_unsaved_map([
+            {"package": package, "text": "0 unsaved"}], package))
+
     def test_launcher_anr_cannot_be_misidentified_as_editor_anr(self):
         package = "com.xbaconator.essentialsstudiomobile"
         system_overlay = (
