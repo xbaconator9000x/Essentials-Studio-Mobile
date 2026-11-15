@@ -14,7 +14,11 @@ export function parseMapCoordinate(
       width < 1 || height < 1) return null;
   const parse = (value: string) => {
     const text = value.trim();
-    if (text.length < 1 || text.length > 16 || !/^[0-9]+$/.test(text)) return null;
+    if (!/^[0-9]+$/.test(text)) return null;
+    // Leading zeroes are harmless; bound the significant digits instead of
+    // rejecting valid pasted coordinates solely because of their padding.
+    const significant = text.replace(/^0+/, "") || "0";
+    if (significant.length > 16) return null;
     const number = Number(text);
     return Number.isSafeInteger(number) ? number : null;
   };
