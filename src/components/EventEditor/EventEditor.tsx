@@ -20,6 +20,7 @@ import { PageProperties } from "./parts/PageProperties";
 import { CommandRow, MultiLineBlock } from "./parts/CommandRow";
 import {
   PARENT_CONT,
+  addConditionalElseArm,
   canMoveCommandBlock,
   cloneCommandBlock,
   cutCommandBlock,
@@ -293,6 +294,15 @@ export function EventEditor({
     if (!moved) return;
     updatePage((p) => ({ ...p, list: moved.list }));
     setSelectedCommand(moved.selectedIndex);
+  }, [page, selectedCommand, updatePage]);
+
+  const handleAddElseArm = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const result = addConditionalElseArm(page.list, selectedCommand);
+    if (!result) return;
+    updatePage((p) => ({ ...p, list: result.list }));
+    setSelectedCommand(result.selectedIndex);
+    setEditingCommand(null);
   }, [page, selectedCommand, updatePage]);
 
   const handleInsertCommand = useCallback(
@@ -736,6 +746,15 @@ export function EventEditor({
                       title="Insert a new command (Ins)"
                     >
                       + Insert
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={handleAddElseArm}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code !== 111 || !addConditionalElseArm(page.list, selectedCommand)}
+                      aria-label="Add Else branch to selected conditional"
+                      title="Add Else branch to selected conditional"
+                    >
+                      + Else
                     </button>
                     <button
                       className="event-editor-btn event-command-action"
