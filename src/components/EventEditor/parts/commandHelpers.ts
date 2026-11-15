@@ -117,6 +117,11 @@ export function addConditionalElseArm(
     else if (code === 411 && nestedDepth === 0) return null;
   }
   const close = range.end;
+  // RMXP conditional branches terminate their Then child list with a code-zero
+  // command at exactly one deeper indentation. Without that marker, adding an
+  // Else would serialize an invalid branch even if its 412 marker is balanced.
+  const thenTerminator = list[close - 1];
+  if (thenTerminator?.code !== 0 || thenTerminator.indent !== depth + 1) return null;
   const insertion: EventCommand[] = [
     { code: 411, indent: depth, parameters: [] },
     { code: 0, indent: depth + 1, parameters: [] },
