@@ -263,6 +263,7 @@ export function EventEditor({
     const projectClipboard = getEventCommandClipboard(projectPath);
     if (!projectClipboard.length) return;
     const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
+    if (insertAt < 0) return;
     const destinationIndent = getCommandInsertionIndent(page.list, selectedCommand);
     const pasted = prepareCommandBlockPaste(projectClipboard, destinationIndent);
     if (!pasted.length) return;
@@ -281,6 +282,7 @@ export function EventEditor({
     const range = getEditableCommandRange(page.list, selectedCommand);
     if (!range) return;
     const insertAt = getCommandInsertionIndex(page.list, range.end);
+    if (insertAt < 0) return;
     updatePage((p) => {
       const list = [...p.list];
       list.splice(insertAt, 0, ...block);
@@ -325,6 +327,7 @@ export function EventEditor({
 
       // Insert after the entire block (past any continuations)
       const insertAt = getCommandInsertionIndex(page.list, selectedCommand);
+      if (insertAt < 0) return;
       updatePage((p) => {
         const list = [...p.list];
         list.splice(insertAt, 0, ...newCommands);
