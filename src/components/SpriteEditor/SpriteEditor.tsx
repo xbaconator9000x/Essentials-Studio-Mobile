@@ -669,7 +669,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   /** Frame-scoped flip: never depends on the manual selection, so adjacent
    * RMXP animation cells cannot be changed by a stale selection. */
-  const flipWalkFrame = useCallback((axis: "horizontal" | "vertical") => {
+  const flipWalkFrame = useCallback((axis: "horizontal" | "vertical" | "rotate180") => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
@@ -683,7 +683,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (!action) return;
     if (!historyRef.current.push(action)) {
       applySpritePixelAction(image.data, action, "before");
-      setError("This frame flip exceeds the sprite undo limit");
+      setError("This frame transform exceeds the sprite undo limit");
       return;
     }
     spriteEditRevision.current += 1;
@@ -1757,6 +1757,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" disabled={!clipboard || loading || saving} onClick={pasteWalkFrame}>Paste frame</button>
               <button type="button" aria-label="Flip selected walking sprite frame horizontally" disabled={loading || saving} onClick={() => flipWalkFrame("horizontal")}>Flip frame ↔</button>
               <button type="button" aria-label="Flip selected walking sprite frame vertically" disabled={loading || saving} onClick={() => flipWalkFrame("vertical")}>Flip frame ↕</button>
+              <button type="button" aria-label="Rotate selected walking sprite frame 180 degrees" disabled={loading || saving} onClick={() => flipWalkFrame("rotate180")}>Rotate frame 180°</button>
               <button type="button" aria-label="Clear selected walking sprite frame" disabled={loading || saving} onClick={clearWalkFrame}>Clear frame</button>
             </>
           )}
