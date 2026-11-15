@@ -82,6 +82,30 @@ describe("RMXP structural command insertion", () => {
     expect(addConditionalElseArm(misplaced, 0)).toBeNull();
     expect(missing.map((cmd) => cmd.code)).toEqual([111, 101, 412, 0]);
   });
+  it("rejects balanced but unterminated nested RMXP branches without mutating source", () => {
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 112, indent: 1, parameters: [] },
+      { code: 101, indent: 2, parameters: ["inside loop"] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 413, indent: 1, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 411, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["else"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getStructuralCommandRange(valid, 0)).toEqual({ start: 0, end: 9 });
+    for (const omitted of [3, 5, 8]) {
+      const malformed = valid.filter((_, i) => i !== omitted);
+      const snapshot = structuredClone(malformed);
+      expect(getStructuralCommandRange(malformed, 0)).toBeNull();
+      expect(addConditionalElseArm(malformed, 0)).toBeNull();
+      expect(malformed).toEqual(snapshot);
+    }
+    expect(getStructuralCommandRange(valid, 1)).toEqual({ start: 1, end: 4 });
+  });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
     const first = createEventCommandInsertion(111, 0, defaults);
