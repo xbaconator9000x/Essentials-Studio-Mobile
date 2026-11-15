@@ -38,6 +38,12 @@ describe("opt-in RMXP character sheet frame geometry", () => {
     expect(stepWalkSpriteFrame(15, 1)).toBe(0);
     expect(stepWalkSpriteFrame(3, 1)).toBe(4);
     expect(stepWalkSpriteFrame(0, 33)).toBe(1);
+    // Large deltas must be reduced before adding to the current frame.
+    expect(stepWalkSpriteFrame(15, Number.MAX_SAFE_INTEGER)).toBe(14);
+    expect(stepWalkSpriteFrame(15, -Number.MAX_SAFE_INTEGER)).toBe(0);
+    expect(stepWalkSpriteFrame(15, Number.MAX_SAFE_INTEGER - 1)).toBe(13);
+    expect(stepWalkSpriteFrame(0, Number.MAX_SAFE_INTEGER + 1)).toBeNull();
+    expect(stepWalkSpriteFrame(0, -(Number.MAX_SAFE_INTEGER + 1))).toBeNull();
     expect(stepWalkSpriteFrame(0, 0.2)).toBeNull();
     expect(stepWalkSpriteFrame(16, 1)).toBeNull();
   });
