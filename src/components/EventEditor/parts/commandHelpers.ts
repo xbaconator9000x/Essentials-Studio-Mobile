@@ -369,6 +369,12 @@ export function prepareCommandBlockPaste(block: EventCommand[], destinationInden
   const baseIndent = block[0].indent;
   if (!Number.isInteger(baseIndent) || baseIndent < 0) return [];
   if (block.some((cmd) => !Number.isInteger(cmd.indent) || cmd.indent < baseIndent)) return [];
+  // A clipboard must represent exactly one complete RMXP statement. Never
+  // reintroduce orphan continuations, child terminators or partial control-flow
+  // trees through paste, even if a caller supplies a malformed clipboard.
+  if ([0, 401, 408, 655, 411, 412, 413].includes(block[0].code)) return [];
+  const range = getEditableCommandRange(block, 0);
+  if (!range || range.start !== 0 || range.end !== block.length - 1) return [];
   return block.map((cmd) => {
     const copy = { ...cmd, indent: destinationIndent + cmd.indent - baseIndent, parameters: structuredClone(cmd.parameters) };
     delete copy.source_index;
