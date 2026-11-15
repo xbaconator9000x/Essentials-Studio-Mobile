@@ -209,6 +209,40 @@ describe("RMXP structural command insertion", () => {
     expect(getCommandInsertionIndex(nested, 2)).toBe(3);
     expect(getCommandInsertionIndex(nested.filter((_, i) => i !== 5), 2)).toBe(-1);
   });
+  it("rejects commands after a child-list terminator, including nested and Else arms", () => {
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["then"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 411, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["else"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getStructuralCommandRange(valid, 0)).toEqual({ start: 0, end: 6 });
+    for (const insertionAt of [3, 6]) {
+      const malformed = structuredClone(valid);
+      malformed.splice(insertionAt, 0, { code: 101, indent: 1, parameters: ["after terminator"] });
+      expect(getStructuralCommandRange(malformed, 0)).toBeNull();
+      expect(addConditionalElseArm(malformed, 0)).toBeNull();
+      expect(getCommandInsertionIndex(malformed, 1)).toBe(-1);
+    }
+    const duplicate = structuredClone(valid);
+    duplicate.splice(3, 0, { code: 0, indent: 1, parameters: [] });
+    expect(getStructuralCommandRange(duplicate, 0)).toBeNull();
+    const nested = [
+      { code: 112, indent: 0, parameters: [] },
+      { code: 111, indent: 1, parameters: [] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 101, indent: 2, parameters: ["after nested terminator"] },
+      { code: 412, indent: 1, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 413, indent: 0, parameters: [] },
+    ];
+    expect(getStructuralCommandRange(nested, 0)).toBeNull();
+    expect(getStructuralCommandRange(nested, 1)).toBeNull();
+  });
   it("inserts complete structure before the page terminator at top level", () => {
     const list = [{ code: 101, indent: 0, parameters: ["hello"] }, { code: 0, indent: 0, parameters: [] }];
     const index = getCommandInsertionIndex(list, 1);
