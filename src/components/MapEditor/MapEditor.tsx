@@ -1438,6 +1438,9 @@ export function MapEditor({
         <canvas
           ref={canvasRef}
           className="map-editor-canvas"
+          role="application"
+          aria-label="Map tile editing canvas"
+          aria-readonly={readOnly}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
