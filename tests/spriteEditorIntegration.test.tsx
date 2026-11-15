@@ -133,6 +133,55 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("copies a 4x4 RMXP walk frame, pastes into the next cell, undoes/redoes, then saves the edited project sprite", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 8, height: 8 });
+    spritePixelFixture = new Uint8ClampedArray(8 * 8 * 4);
+    spritePixelFixture.set([242, 58, 18, 255], 0);
+    renderEditor();
+    const walkToggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((walkToggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(walkToggle);
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("0");
+    expect(screen.getByRole("status", { name: "Selected sprite pixels" }).textContent).toBe("Selected 2 × 2 pixels");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next walk frame" }));
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Paste frame" }));
+    let pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(2 * 4, 3 * 4)]).toEqual([242, 58, 18, 255]);
+    expect([...pixels.slice(0, 4)]).toEqual([242, 58, 18, 255]);
+    expect(screen.getByText("Unsaved pixel edits")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(2 * 4, 3 * 4)]).toEqual([0, 0, 0, 0]);
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(2 * 4, 3 * 4)]).toEqual([242, 58, 18, 255]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledWith(
+      "/synthetic-project", "Guide", "Guide_copy", "copy", "data:image/png;base64,cGl4ZWxz",
+    ));
+  });
+
+  it("refuses mismatched clipboard dimensions instead of painting into neighboring walk frames", async () => {
+    renderEditor();
+    const walkToggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((walkToggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy selection" }));
+    fireEvent.click(walkToggle);
+    fireEvent.click(screen.getByRole("button", { name: "Next walk frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Paste frame" }));
+
+    expect(screen.getByRole("alert").textContent).toContain("Clipboard dimensions must match the selected walk frame");
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+
   it("reconciles sprite selection and copy target when switching projects", async () => {
     editorApi.listAssetFiles.mockImplementation(async (path: string) =>
       path === "/project-a" ? ["Guide", "Hero"] : ["NewHero"]);
