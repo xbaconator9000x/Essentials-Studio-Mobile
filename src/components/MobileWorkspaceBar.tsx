@@ -36,7 +36,7 @@ export function MobileWorkspaceBar({
         <span className="app-mobile-workspace-name" title={onMap ? mapName || projectName : projectName}>
           {onMap ? (mapName || "Select a map") : projectName}
         </span>
-        <span className={dirtyCount ? "app-mobile-workspace-dirty" : "app-mobile-workspace-clean"} role="status">
+        <span className={dirtyCount ? "app-mobile-workspace-dirty" : "app-mobile-workspace-clean"} role="status" aria-live="polite" aria-atomic="true">
           {dirtyCount ? `${dirtyCount} unsaved` : "Saved"}
         </span>
       </div>
