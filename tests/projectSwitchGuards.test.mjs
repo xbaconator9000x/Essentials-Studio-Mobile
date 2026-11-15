@@ -72,3 +72,27 @@ test("an absent active project does not prompt even if stale editor state is dir
   }), true);
   assert.equal(prompts, 0);
 });
+
+test("autosave completing during switch confirmation skips redundant Save All", async () => {
+  let dirty = true;
+  let saves = 0;
+  assert.equal(await confirmProjectSwitch({
+    hasActiveProject: true,
+    hasUnsavedEdits: () => dirty,
+    confirm: async () => { dirty = false; return true; },
+    saveAll: async () => { saves++; },
+  }), true);
+  assert.equal(saves, 0);
+});
+
+test("edits still pending after confirmation require Save All before switching", async () => {
+  let dirty = true;
+  let saves = 0;
+  assert.equal(await confirmProjectSwitch({
+    hasActiveProject: true,
+    hasUnsavedEdits: () => dirty,
+    confirm: async () => true,
+    saveAll: async () => { saves++; dirty = false; },
+  }), true);
+  assert.equal(saves, 1);
+});
