@@ -67,6 +67,21 @@ describe("RMXP structural command insertion", () => {
     expect(addConditionalElseArm(nested.slice(0, -1), 0)).toBeNull();
     expect(nested).toHaveLength(8);
   });
+  it("refuses to add Else when the Then child-list terminator is absent or misplaced", () => {
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["then"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(addConditionalElseArm(valid, 0)).not.toBeNull();
+    const missing = valid.filter((_, i) => i !== 2);
+    const misplaced = valid.map((cmd, i) => i === 2 ? { ...cmd, code: 108 } : cmd);
+    expect(addConditionalElseArm(missing, 0)).toBeNull();
+    expect(addConditionalElseArm(misplaced, 0)).toBeNull();
+    expect(missing.map((cmd) => cmd.code)).toEqual([111, 101, 412, 0]);
+  });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
     const first = createEventCommandInsertion(111, 0, defaults);
