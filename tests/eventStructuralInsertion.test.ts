@@ -181,6 +181,34 @@ describe("RMXP structural command insertion", () => {
     expect(getCommandInsertionIndex(wrongDepth, 2)).toBe(-1);
     expect(valid[2].code).toBe(0);
   });
+  it("refuses ordinary child insertion in malformed or orphaned RMXP branches", () => {
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["then"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(valid, 1)).toBe(2);
+    const missingTerminator = valid.filter((_, i) => i !== 2);
+    expect(getCommandInsertionIndex(missingTerminator, 1)).toBe(-1);
+    const missingEnd = valid.filter((_, i) => i !== 3);
+    expect(getCommandInsertionIndex(missingEnd, 1)).toBe(-1);
+    const orphan = valid.slice(1);
+    expect(getCommandInsertionIndex(orphan, 0)).toBe(-1);
+    const nested = [
+      { code: 112, indent: 0, parameters: [] },
+      { code: 111, indent: 1, parameters: [] },
+      { code: 101, indent: 2, parameters: ["deep"] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 412, indent: 1, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 413, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(nested, 2)).toBe(3);
+    expect(getCommandInsertionIndex(nested.filter((_, i) => i !== 5), 2)).toBe(-1);
+  });
   it("inserts complete structure before the page terminator at top level", () => {
     const list = [{ code: 101, indent: 0, parameters: ["hello"] }, { code: 0, indent: 0, parameters: [] }];
     const index = getCommandInsertionIndex(list, 1);
