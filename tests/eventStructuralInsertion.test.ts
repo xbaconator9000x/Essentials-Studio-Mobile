@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addConditionalElseArm, removeEmptyConditionalElseArm, getStructuralCommandRange, createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
+import { addConditionalElseArm, removeEmptyConditionalElseArm, getStructuralCommandRange, createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent, prepareCommandBlockPaste } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("RMXP structural command insertion", () => {
   it("creates balanced conditional and loop scaffolds with correctly nested terminators", () => {
@@ -242,6 +242,28 @@ describe("RMXP structural command insertion", () => {
     ];
     expect(getStructuralCommandRange(nested, 0)).toBeNull();
     expect(getStructuralCommandRange(nested, 1)).toBeNull();
+  });
+  it("rejects incomplete clipboard control-flow trees and orphan continuations", () => {
+    const conditional = createEventCommandInsertion(111, 0);
+    const original = structuredClone(conditional);
+    expect(prepareCommandBlockPaste(conditional, 2).map(({ code, indent }) => [code, indent]))
+      .toEqual([[111, 2], [0, 3], [412, 2]]);
+    expect(prepareCommandBlockPaste(conditional.slice(0, -1), 1)).toEqual([]);
+    expect(prepareCommandBlockPaste([{ code: 401, indent: 0, parameters: ["orphan"] }], 0)).toEqual([]);
+    expect(prepareCommandBlockPaste([{ code: 0, indent: 0, parameters: [] }], 0)).toEqual([]);
+    expect(prepareCommandBlockPaste([
+      { code: 101, indent: 0, parameters: ["hello"] },
+      { code: 101, indent: 0, parameters: ["unrelated"] },
+    ], 0)).toEqual([]);
+    const multiline = [
+      { code: 101, indent: 1, parameters: ["first"], source_index: 5 },
+      { code: 401, indent: 1, parameters: ["second"], source_index: 6 },
+    ];
+    expect(prepareCommandBlockPaste(multiline, 3)).toEqual([
+      { code: 101, indent: 3, parameters: ["first"] },
+      { code: 401, indent: 3, parameters: ["second"] },
+    ]);
+    expect(conditional).toEqual(original);
   });
   it("inserts complete structure before the page terminator at top level", () => {
     const list = [{ code: 101, indent: 0, parameters: ["hello"] }, { code: 0, indent: 0, parameters: [] }];
