@@ -30,6 +30,25 @@ function renderActions(overrides: Partial<Parameters<typeof MobileWorkspaceBar>[
 }
 
 describe("mobile portrait workspace commands", () => {
+  it("announces dirty-state changes without losing workspace context or controls", () => {
+    const { view, actions } = renderActions({ dirtyCount: 3 });
+    const workspace = screen.getByLabelText("Mobile workspace actions");
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.getAttribute("aria-atomic")).toBe("true");
+    expect(status.textContent).toBe("3 unsaved");
+    expect(workspace.getAttribute("aria-busy")).toBe("false");
+
+    view.rerender(<MobileWorkspaceBar section="maps" projectName="Shattered"
+      mapName="Viridian City" dirtyCount={0} busy={true}
+      editingEnabled={true} paletteVisible={true} {...actions} />);
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status.textContent).toBe("Saved");
+    expect(workspace.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Save all changes" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Viridian City")).toBeTruthy();
+  });
+
   it("keeps Save All and ZIP export reachable alongside map editing controls", () => {
     const { actions } = renderActions();
     expect(screen.getByText("Viridian City")).toBeTruthy();
