@@ -769,7 +769,7 @@ describe("sprite editor integration", () => {
       target: { value: "missing" },
     });
 
-    expect(screen.getByRole("status").textContent).toContain("No project sprites match");
+    expect(screen.getByText("No project sprites match “missing”.", { selector: '[role="status"]' })).toBeTruthy();
     expect((screen.getByRole("combobox", { name: "Select project character sprite" }) as HTMLSelectElement).value).toBe("Guide");
     expect(screen.getByRole("option", { name: "Guide (current)" })).toBeTruthy();
   });
