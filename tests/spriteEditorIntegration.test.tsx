@@ -211,6 +211,31 @@ describe("sprite editor integration", () => {
     ));
   });
 
+  it("flips only the chosen walking frame with reversible edits and Save All", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 8, height: 8 });
+    spritePixelFixture = new Uint8ClampedArray(8 * 8 * 4);
+    spritePixelFixture.set([242, 58, 18, 255], 0);
+    spritePixelFixture.set([12, 160, 80, 255], 2 * 4);
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Next walk frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Flip selected walking sprite frame horizontally" }));
+    let pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(2 * 4, 3 * 4)]).toEqual([0, 0, 0, 0]);
+    expect([...pixels.slice(3 * 4, 4 * 4)]).toEqual([12, 160, 80, 255]);
+    expect([...pixels.slice(0, 4)]).toEqual([242, 58, 18, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(2 * 4, 3 * 4)]).toEqual([12, 160, 80, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice(3 * 4, 4 * 4)]).toEqual([12, 160, 80, 255]);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalled());
+  });
+
   it("refuses mismatched clipboard dimensions instead of painting into neighboring walk frames", async () => {
     renderEditor();
     const walkToggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
