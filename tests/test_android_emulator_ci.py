@@ -53,25 +53,40 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
         nodes[0]["bounds"] = "[10,15][30,38]"
         harness.assert_visible_controls(nodes, ("Save",), (40, 40))
 
-    def test_actual_map_canvas_uses_current_app_owned_accessibility_bounds(self):
+    def test_actual_map_taps_target_source_tiles_not_the_blank_canvas(self):
         package = "com.xbaconator.essentialsstudiomobile"
         nodes = [
             {"package": "com.android.documentsui",
              "content-desc": "Map tile editing canvas", "bounds": "[0,0][900,900]"},
             {"package": package, "content-desc": "Map tile editing canvas",
              "class": "android.view.View", "enabled": "true",
-             "bounds": "[20,200][420,700]"},
+             "bounds": "[0,709][1080,2120]"},
+            # The actual WebView combines 2x2 and Layer in one text node.
+            {"package": package, "text": "Map [001] 2x2Layer 1/3Tile: 393"},
         ]
-        points = harness.map_canvas_tap_points(nodes, package)
-        self.assertEqual(len(points), 5)
-        self.assertTrue(all(20 < x < 420 and 200 < y < 700
-                            for x, y in points))
+        points = harness.map_canvas_tap_points(nodes, package, 440)
+        self.assertEqual(points, [(132, 841), (132, 753), (44, 841), (44, 753)])
+        self.assertTrue(all(0 < x < 176 and 709 < y < 885 for x, y in points))
+        # The previous algorithm picked 18%-60% of a 1080x1411 canvas.
+        # Every such point missed this real 2x2 map.
         with self.assertRaisesRegex(AssertionError, "Expected one accessible"):
-            harness.map_canvas_tap_points(nodes[:1], package)
+            harness.map_canvas_tap_points(nodes[:1], package, 440)
         with self.assertRaisesRegex(AssertionError, "Expected one accessible"):
-            harness.map_canvas_tap_points(
-                nodes + [{"package": package, "content-desc": "Map tile editing canvas",
-                          "bounds": "[20,200][420,700]"}], package)
+            harness.map_canvas_tap_points(nodes + [nodes[1]], package, 440)
+        with self.assertRaisesRegex(AssertionError, "Could not identify one map size"):
+            harness.map_canvas_tap_points(nodes[:2], package, 440)
+        with self.assertRaisesRegex(AssertionError, "Invalid Android screen density"):
+            harness.map_canvas_tap_points(nodes, package, 0)
+
+    def test_small_native_map_tile_centres_use_live_density_and_map_size(self):
+        package = "com.xbaconator.essentialsstudiomobile"
+        nodes = [
+            {"package": package, "text": "Map [042] 1x3Layer 2/3Tile: 385"},
+            {"package": package, "content-desc": "Map tile editing canvas",
+             "bounds": "[12,400][400,1100]"},
+        ]
+        self.assertEqual(harness.map_canvas_tap_points(nodes, package, 320),
+                         [(44, 560), (44, 432)])
 
     def test_native_edit_receipt_needs_real_app_owned_unsaved_status(self):
         package = "com.xbaconator.essentialsstudiomobile"
