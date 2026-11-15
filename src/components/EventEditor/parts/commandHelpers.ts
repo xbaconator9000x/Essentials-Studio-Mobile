@@ -83,10 +83,16 @@ export function getStructuralCommandRange(
       if (cmd.indent !== current.indent + 1) return null;
       stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false });
     } else if (cmd.code === 411) {
-      if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent) return null;
+      // Each Then child list must end in its own code-zero terminator.
+      // A balanced 412 alone does not make an RMXP branch serializable.
+      const previous = list[i - 1];
+      if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent
+        || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
       current.elseSeen = true;
     } else if (cmd.code === 412 || cmd.code === 413) {
-      if (current.close !== cmd.code || current.indent !== cmd.indent) return null;
+      const previous = list[i - 1];
+      if (current.close !== cmd.code || current.indent !== cmd.indent
+        || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
       stack.pop();
       if (!stack.length) return { start: index, end: i };
     } else if (cmd.indent !== current.indent + 1) {
