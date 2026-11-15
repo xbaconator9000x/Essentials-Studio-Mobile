@@ -218,7 +218,7 @@ def owned_labels(nodes: list[dict[str, str]], package: str) -> list[str]:
 
 
 def has_unsaved_map(nodes: list[dict[str, str]], package: str) -> bool:
-    return any(re.search(r"\\b[1-9]\\d* unsaved\\b", text, re.IGNORECASE)
+    return any(re.search(r"\b[1-9]\d* unsaved\b", text, re.IGNORECASE)
                for text in owned_labels(nodes, package))
 
 
@@ -236,7 +236,7 @@ def map_canvas_tap_points(
         if (node.get("package") != package or node.get("enabled") == "false"
                 or "Map tile editing canvas" not in label(node)):
             continue
-        m = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
                          node.get("bounds", ""))
         if not m:
             continue
