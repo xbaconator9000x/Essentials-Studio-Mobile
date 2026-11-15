@@ -188,6 +188,10 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
     return endIndex === -1 ? list.length : endIndex;
   }
   if (list[selectedIndex].code === 0) return selectedIndex;
+  // Never fall back to a single-command range for an incomplete control-flow
+  // opener or an isolated branch marker: that would splice into an invalid tree.
+  if (STRUCTURAL_EVENT_CODES.has(list[selectedIndex].code)
+    && !getStructuralCommandRange(list, selectedIndex)) return -1;
   // Insert after the entire balanced subtree, never between its opener and
   // child list. A malformed opener remains non-editable until repaired.
   const range = getStructuralCommandRange(list, selectedIndex) ?? getCommandBlockRange(list, selectedIndex);
