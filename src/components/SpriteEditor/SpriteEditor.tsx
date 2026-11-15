@@ -50,7 +50,7 @@ import {
 } from "../../services/spriteEditorPreferences";
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
 import { exportSpritePng } from "../../services/spriteExport";
-import { getWalkSpriteFrame, stepWalkSpriteFrame, WALK_FRAME_COUNT, WALK_FRAME_DIRECTIONS } from "../../services/spriteSheetFrames";
+import { getWalkSpriteFrame, getWalkSpriteFrameByDirection, stepWalkSpriteFrame, stepWalkSpritePhase, WALK_FRAME_COUNT, WALK_FRAME_DIRECTIONS } from "../../services/spriteSheetFrames";
 import "./SpriteEditor.css";
 
 interface Props {
@@ -1659,6 +1659,24 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               </select>
               <button type="button" aria-label="Next walk frame" disabled={loading || saving}
                 onClick={() => { const index = stepWalkSpriteFrame(walkFrameIndex, 1); if (index !== null) selectWalkFrame(index); }}>›</button>
+              <label>Facing
+                <select aria-label="Walking sprite facing direction" value={WALK_FRAME_DIRECTIONS[Math.floor(walkFrameIndex / 4)]}
+                  disabled={loading || saving}
+                  onChange={(event) => {
+                    const source = imageCanvasRef.current;
+                    if (!source) return;
+                    const direction = WALK_FRAME_DIRECTIONS.find(value => value === event.currentTarget.value);
+                    if (!direction) return;
+                    const frame = getWalkSpriteFrameByDirection(source.width, source.height, direction, walkFrameIndex % 4 + 1);
+                    if (frame) selectWalkFrame(frame.index);
+                  }}>
+                  {WALK_FRAME_DIRECTIONS.map(direction => <option key={direction} value={direction}>{direction}</option>)}
+                </select>
+              </label>
+              <button type="button" aria-label="Previous walking animation phase" disabled={loading || saving}
+                onClick={() => { const index = stepWalkSpritePhase(walkFrameIndex, -1); if (index !== null) selectWalkFrame(index); }}>Phase ‹</button>
+              <button type="button" aria-label="Next walking animation phase" disabled={loading || saving}
+                onClick={() => { const index = stepWalkSpritePhase(walkFrameIndex, 1); if (index !== null) selectWalkFrame(index); }}>Phase ›</button>
               <button type="button" disabled={loading || saving} onClick={copyWalkFrame}>Copy frame</button>
               <button type="button" disabled={!clipboard || loading || saving} onClick={pasteWalkFrame}>Paste frame</button>
             </>
