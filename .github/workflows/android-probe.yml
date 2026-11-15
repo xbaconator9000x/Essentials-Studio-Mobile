@@ -27,6 +27,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Verify fail-closed physical ARM64 direct APK harness (offline)
+        run: |
+          python3 -m py_compile scripts/android-physical-arm64-smoke.py
+          python3 -m unittest discover -s tests -p test_android_physical_arm64_smoke.py -v
       - run: npm run build
       - name: Verify sprite pixel operations and rendered editor integration
         run: |
