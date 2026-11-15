@@ -65,6 +65,58 @@
   cursor: not-allowed;
 }
 
+/* Touch-friendly RMXP walking-frame controls, without covering sprite pixels. */
+.sprite-editor-walk-frames {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--color-surface0);
+  background: var(--color-mantle);
+}
+.sprite-editor-walk-frames label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.sprite-editor-walk-frames label input {
+  width: 18px;
+  height: 18px;
+}
+.sprite-editor-walk-frames button,
+.sprite-editor-walk-frames select {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 5px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+  flex: 0 0 auto;
+}
+.sprite-editor-walk-frames button:disabled,
+.sprite-editor-walk-frames select:disabled {
+  opacity: 0.55;
+}
+.sprite-editor-walk-frames button:focus-visible,
+.sprite-editor-walk-frames select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+@media (max-width: 900px) {
+  .sprite-editor-walk-frames button,
+  .sprite-editor-walk-frames select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 .sprite-editor-workspace {
   min-height: 0;
   flex: 1;
