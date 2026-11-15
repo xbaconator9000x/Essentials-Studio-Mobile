@@ -187,7 +187,22 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) {
     return endIndex === -1 ? list.length : endIndex;
   }
-  if (list[selectedIndex].code === 0) return selectedIndex;
+  if (list[selectedIndex].code === 0) {
+    // The final page sentinel is always a legal insertion boundary. A nested
+    // child-list terminator is only legal when it belongs to a fully balanced
+    // enclosing conditional/loop. Otherwise a paste can silently extend a
+    // malformed RMXP branch and make its corruption harder to repair.
+    if (selectedIndex === endIndex) return selectedIndex;
+    if (list[selectedIndex].indent === 0) return -1;
+    for (let start = selectedIndex - 1; start >= 0; start--) {
+      const candidate = list[start];
+      if (candidate.indent >= list[selectedIndex].indent) continue;
+      if (candidate.code !== 111 && candidate.code !== 112) return -1;
+      const range = getStructuralCommandRange(list, start);
+      return range && range.end > selectedIndex ? selectedIndex : -1;
+    }
+    return -1;
+  }
   // Never fall back to a single-command range for an incomplete control-flow
   // opener or an isolated branch marker: that would splice into an invalid tree.
   if (STRUCTURAL_EVENT_CODES.has(list[selectedIndex].code)
