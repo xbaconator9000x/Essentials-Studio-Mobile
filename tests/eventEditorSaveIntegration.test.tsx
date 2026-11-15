@@ -159,6 +159,42 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("persists a balanced Else arm through Save All and reopening without changing original Marshal identities", async () => {
+    diskEvent.pages[0].list = [
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
+      { code: 401, indent: 0, parameters: ["Original dialogue"], source_index: 1 },
+      { code: 111, indent: 0, parameters: [0, 1, 0], source_index: 2 },
+      { code: 118, indent: 1, parameters: ["then_label"], source_index: 3 },
+      { code: 0, indent: 1, parameters: [], source_index: 4 },
+      { code: 412, indent: 0, parameters: [], source_index: 5 },
+      { code: 0, indent: 0, parameters: [], source_index: 6 },
+    ];
+    renderProject();
+    const conditionalRow = (await screen.findAllByText("Conditional Branch"))
+      .map((element) => element.closest(".event-command-row"))
+      .find((row) => row !== null);
+    expect(conditionalRow).toBeTruthy();
+    fireEvent.click(conditionalRow as HTMLElement);
+    const addElse = screen.getByRole("button", { name: "Add Else branch to selected conditional" });
+    expect((addElse as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(addElse);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+
+    expect(diskEvent.pages[0].list.map((command) => [command.code, command.indent])).toEqual([
+      [101, 0], [401, 0], [111, 0], [118, 1], [0, 1],
+      [411, 0], [0, 1], [412, 0], [0, 0],
+    ]);
+    expect(diskEvent.pages[0].list.map((command) => command.source_index)).toEqual([
+      0, 1, 2, 3, 4, undefined, undefined, 5, 6,
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    await screen.findByText("Conditional Branch");
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+    expect(diskEvent.pages[0].list[5].code).toBe(411);
+  });
+
   it("saves edited dialogue through the event dialog's reachable Save All action", async () => {
     renderProject();
     const eventEditor = document.querySelector(".event-editor");
