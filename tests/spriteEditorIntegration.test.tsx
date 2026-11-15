@@ -144,6 +144,15 @@ describe("sprite editor integration", () => {
     expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("0");
     expect(screen.getByRole("status", { name: "Selected sprite pixels" }).textContent).toBe("Selected 2 × 2 pixels");
 
+    // Facing changes retain the animation phase; phase steps stay in the same row.
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite facing direction" }), { target: { value: "Left" } });
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("4");
+    fireEvent.click(screen.getByRole("button", { name: "Previous walking animation phase" }));
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("7");
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite facing direction" }), { target: { value: "Down" } });
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("3");
+    fireEvent.click(screen.getByRole("button", { name: "Next walking animation phase" }));
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("0");
     fireEvent.click(screen.getByRole("button", { name: "Copy frame" }));
     fireEvent.click(screen.getByRole("button", { name: "Next walk frame" }));
     expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("1");
