@@ -667,6 +667,37 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setImageRevision(value => value + 1);
   }, [loading, saving, updateDirty, walkFrameIndex]);
 
+  /** Frame-scoped flip: never depends on the manual selection, so adjacent
+   * RMXP animation cells cannot be changed by a stale selection. */
+  const flipWalkFrame = useCallback((axis: "horizontal" | "vertical") => {
+    const source = imageCanvasRef.current;
+    const image = imageDataRef.current;
+    if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
+    const frame = getWalkSpriteFrame(source.width, source.height, walkFrameIndex);
+    if (!frame) return;
+    if (frame.width * frame.height > 1_000_000) {
+      setError("This frame exceeds the one-million-pixel edit limit");
+      return;
+    }
+    const action = flipSpritePixels(image.data, source.width, source.height, axis, frame);
+    if (!action) return;
+    if (!historyRef.current.push(action)) {
+      applySpritePixelAction(image.data, action, "before");
+      setError("This frame flip exceeds the sprite undo limit");
+      return;
+    }
+    spriteEditRevision.current += 1;
+    source.getContext("2d")?.putImageData(image, 0, 0);
+    setSelection({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+    setMoveSelectedPixels(false);
+    setTool("select");
+    setSpritePalette([]);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setError(null);
+    setImageRevision(value => value + 1);
+  }, [loading, saving, updateDirty, walkFrameIndex]);
+
   const refreshSpritePalette = useCallback(() => {
     const image = imageDataRef.current;
     if (!image) return;
@@ -1724,6 +1755,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 onClick={() => { const index = stepWalkSpritePhase(walkFrameIndex, 1); if (index !== null) selectWalkFrame(index); }}>Phase ›</button>
               <button type="button" disabled={loading || saving} onClick={copyWalkFrame}>Copy frame</button>
               <button type="button" disabled={!clipboard || loading || saving} onClick={pasteWalkFrame}>Paste frame</button>
+              <button type="button" aria-label="Flip selected walking sprite frame horizontally" disabled={loading || saving} onClick={() => flipWalkFrame("horizontal")}>Flip frame ↔</button>
+              <button type="button" aria-label="Flip selected walking sprite frame vertically" disabled={loading || saving} onClick={() => flipWalkFrame("vertical")}>Flip frame ↕</button>
               <button type="button" aria-label="Clear selected walking sprite frame" disabled={loading || saving} onClick={clearWalkFrame}>Clear frame</button>
             </>
           )}
