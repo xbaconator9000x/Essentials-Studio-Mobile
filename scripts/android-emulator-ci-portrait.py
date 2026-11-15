@@ -286,6 +286,43 @@ def device_screen_density() -> int:
 
 
 
+def private_imported_map_path(find_output: str) -> str:
+    """Accept only a single app-private imported synthetic RMXP map file."""
+    paths = [item.strip() for item in find_output.splitlines() if item.strip()]
+    matches = []
+    for value in paths:
+        components = Path(value).parts
+        if not value.startswith("./") or len(components) < 4:
+            continue
+        if components[-2:] != ("Data", "Map001.rxdata"):
+            continue
+        for index, component in enumerate(components[:-1]):
+            if (component == "projects" and index + 1 < len(components)
+                    and components[index + 1].startswith("import-")):
+                matches.append(value)
+                break
+    if len(paths) != 1 or len(matches) != 1:
+        raise AssertionError(
+            f"Expected one app-private imported Map001.rxdata, found {len(paths)} path(s)"
+        )
+    return matches[0]
+
+
+def private_imported_map_sha256(package: str) -> str:
+    """Independent native Flash/data persistence witness through debug run-as.
+
+    Reads only the rights-cleared Map001.rxdata from the running synthetic
+    project, not the app UI or the original ZIP. Never uploads its bytes.
+    """
+    listing = adb("shell", "run-as", package, "find", ".", "-type", "f",
+                  "-name", "Map001.rxdata", timeout=40).stdout.decode(errors="replace")
+    path = private_imported_map_path(listing)
+    payload = adb("exec-out", "run-as", package, "cat", path, timeout=40).stdout
+    if not payload or len(payload) > 4 * 1024 * 1024:
+        raise AssertionError("Imported Map001.rxdata readback was empty or oversized")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def native_map_edit_and_save(package: str) -> dict[str, object]:
     """Paint one actual synthetic map tile through Android touch then Save All.
 
@@ -295,6 +332,7 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
     original = wait_ui("Enable map editing", "native-edit-before", timeout=30)
     if has_unsaved_map(original, package):
         raise AssertionError("Synthetic map was already dirty before native edit")
+    before_map_sha256 = private_imported_map_sha256(package)
     tap_button(original, "Enable map editing")
     enabled = wait_ui("Switch map to view mode", "native-edit-enabled", timeout=30)
     tap_button(enabled, "Open tile palette")
@@ -349,6 +387,13 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
         screenshot("native-map-save-unconfirmed")
         raise AssertionError("Save All lacked a verified changed-project success receipt")
     screenshot("native-map-saved")
+    after_map_sha256 = private_imported_map_sha256(package)
+    (EVIDENCE / "native-map-private-file-hashes.json").write_text(
+        json.dumps({"before": before_map_sha256, "after": after_map_sha256},
+                   indent=2) + "\n", encoding="utf-8"
+    )
+    if before_map_sha256 == after_map_sha256:
+        raise AssertionError("Save All reported success but private Map001.rxdata bytes did not change")
 
     # Reopen via the real mobile map tree; never assume a status badge alone
     # establishes that the editor remained reachable after save.
@@ -363,16 +408,23 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
     if has_unsaved_map(reopened, package):
         raise AssertionError("Reopened map is unexpectedly dirty")
     screenshot("native-map-reopened")
+    reopened_map_sha256 = private_imported_map_sha256(package)
+    if reopened_map_sha256 != after_map_sha256:
+        raise AssertionError("Map001.rxdata changed after reopening the saved map")
     return {
+        "map_before_sha256": before_map_sha256,
+        "map_after_sha256": after_map_sha256,
         "verified": [
             "real Android touch enabled map editing",
             "real Android UI selected a different tileset tile",
             "touching source map canvas produced an unsaved editor mutation",
             "Save All acknowledged an actual pending edit and cleared dirty state",
             "saved map reopened through Android mobile navigation",
+            "independent app-private Map001.rxdata hash changed after native Save All",
+            "saved Map001.rxdata hash remained stable on map reopen",
         ],
         "not_verified": [
-            "independent source Map001.rxdata value comparison",
+            "semantic Marshal tile-value comparison with the original ZIP",
             "native SAF ZIP export and reimport",
         ],
     }
@@ -629,7 +681,7 @@ def main() -> None:
                    "orientation roundtrip", "no detected editor ANR/crash"],
         "project_ui": project_result,
         "not_verified": ["ARM64 runtime", "physical Android",
-                         "event/sprite content modification", "independent Map001.rxdata persisted-byte verification",
+                         "event/sprite content modification", "semantic Marshal map-value comparison",
                          "SAF ZIP export/reimport", "RPG Maker XP desktop", "JoiPlay"],
     }
     (EVIDENCE / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
