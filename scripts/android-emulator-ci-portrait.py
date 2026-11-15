@@ -223,33 +223,67 @@ def has_unsaved_map(nodes: list[dict[str, str]], package: str) -> bool:
 
 
 def map_canvas_tap_points(
-    nodes: list[dict[str, str]], package: str,
+    nodes: list[dict[str, str]], package: str, physical_density: int,
 ) -> list[tuple[int, int]]:
-    """Select points from the current native a11y bounds, never hardcoded pixels.
+    """Tap actual source tiles, not arbitrary fractions of the entire canvas.
 
-    The canvas must be owned by Essentials Studio and expose the accessible
-    label from the real React MapEditor. Do not tap a screenshot, overlay,
-    another application's WebView or an offscreen phantom element.
+    The rights-cleared synthetic map is only 2x2 tiles; its entire rendered
+    surface occupies the upper-left ~176x176 physical pixels on the API35
+    Pixel AVD, despite a 1080x1411 physical-pixel canvas. Prior taps all
+    landed outside the map. Derive the tile centres using the live Android
+    density, XP's 32 CSS-pixel tile geometry, and the UI's map dimensions.
+    Never hardcode an emulator resolution or claim a tap hit a real tile
+    without the app's subsequent dirty-state confirmation.
     """
-    bounds = []
+    if not isinstance(physical_density, int) or not 120 <= physical_density <= 1000:
+        raise AssertionError(f"Invalid Android screen density: {physical_density!r}")
+    bounds: list[tuple[int, int, int, int]] = []
     for node in nodes:
         if (node.get("package") != package or node.get("enabled") == "false"
                 or "Map tile editing canvas" not in label(node)):
             continue
-        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
-                         node.get("bounds", ""))
-        if not m:
-            continue
-        x1, y1, x2, y2 = map(int, m.groups())
-        if x2 - x1 >= 96 and y2 - y1 >= 96:
-            bounds.append((x1, y1, x2, y2))
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                             node.get("bounds", ""))
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            if x2 - x1 >= 96 and y2 - y1 >= 96:
+                bounds.append((x1, y1, x2, y2))
     if len(bounds) != 1:
         raise AssertionError(f"Expected one accessible app-owned map canvas; found {bounds!r}")
+
+    dimensions = []
+    for text in owned_labels(nodes, package):
+        match = re.search(r"Map\s*\[\d+\]\s*(\d+)x(\d+)\b", text)
+        if match:
+            dimensions.append(tuple(map(int, match.groups())))
+    if len(dimensions) != 1 or not (1 <= dimensions[0][0] <= 999
+                                    and 1 <= dimensions[0][1] <= 999):
+        raise AssertionError(f"Could not identify one map size in app-owned UI: {dimensions!r}")
+
+    width, height = dimensions[0]
     x1, y1, x2, y2 = bounds[0]
-    # Avoid a fixed corner which may be empty outside a small source map.
-    return [(x1 + round((x2-x1)*fx), y1 + round((y2-y1)*fy))
-            for fx, fy in ((0.18, 0.19), (0.32, 0.32), (0.46, 0.46),
-                           (0.60, 0.32), (0.18, 0.58))]
+    tile_px = 32.0 * physical_density / 160.0  # CSS dp to actual screen pixels
+    # Start with the lower right tile to avoid the player/start marker often
+    # covering (0,0), then sample other genuine map cells if needed.
+    locations = [(width-1, height-1), (width-1, 0), (0, height-1), (0, 0)]
+    points: list[tuple[int, int]] = []
+    for tile_x, tile_y in dict.fromkeys(locations):
+        px = x1 + round((tile_x + 0.5) * tile_px)
+        py = y1 + round((tile_y + 0.5) * tile_px)
+        if x1 < px < x2 and y1 < py < y2:
+            points.append((px, py))
+    if not points:
+        raise AssertionError("No visible RMXP tile centre fits in the native canvas")
+    return points
+
+
+def device_screen_density() -> int:
+    output = adb("shell", "wm", "density", timeout=25).stdout.decode(errors="replace")
+    match = re.findall(r"(?:Physical|Override) density:\s*(\d+)", output)
+    if not match:
+        raise AssertionError(f"Android did not report display density: {output[:120]!r}")
+    return int(match[-1])
+
 
 
 def native_map_edit_and_save(package: str) -> dict[str, object]:
@@ -273,7 +307,10 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
     current = wait_ui("Hide tile palette", "native-edit-close-palette", timeout=25)
     tap_button(current, "Hide tile palette")
     canvas = wait_ui("Map tile editing canvas", "native-edit-canvas", timeout=35)
-    points = map_canvas_tap_points(canvas, package)
+    density = device_screen_density()
+    points = map_canvas_tap_points(canvas, package, density)
+    (EVIDENCE / "native-map-tap-targets.json").write_text(
+        json.dumps({"density": density, "tile_center_points": points}, indent=2) + "\n")
     screenshot("native-map-before-edit")
 
     painted = False
