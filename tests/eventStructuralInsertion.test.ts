@@ -135,6 +135,30 @@ describe("RMXP structural command insertion", () => {
     expect((second[0].parameters[0] as { nested: number[] }).nested[0]).toBe(1);
     expect(defaults[0].nested[0]).toBe(1);
   });
+  it("rejects insertion on malformed control-flow openers and orphan branch markers", () => {
+    const malformed = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["unterminated"] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    const snapshot = structuredClone(malformed);
+    expect(getCommandInsertionIndex(malformed, 0)).toBe(-1);
+    expect(getCommandInsertionIndex(malformed, 2)).toBe(-1);
+    expect(malformed).toEqual(snapshot);
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 411, indent: 0, parameters: [] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(valid, 0)).toBe(5);
+    expect(getCommandInsertionIndex(valid, 2)).toBe(-1);
+    expect(getCommandInsertionIndex(valid, 4)).toBe(-1);
+    expect(getCommandInsertionIndex(valid, 3)).toBe(3);
+  });
   it("inserts complete structure before the page terminator at top level", () => {
     const list = [{ code: 101, indent: 0, parameters: ["hello"] }, { code: 0, indent: 0, parameters: [] }];
     const index = getCommandInsertionIndex(list, 1);
