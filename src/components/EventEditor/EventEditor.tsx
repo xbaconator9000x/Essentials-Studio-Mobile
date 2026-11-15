@@ -21,6 +21,7 @@ import { CommandRow, MultiLineBlock } from "./parts/CommandRow";
 import {
   PARENT_CONT,
   addConditionalElseArm,
+  removeEmptyConditionalElseArm,
   canMoveCommandBlock,
   cloneCommandBlock,
   cutCommandBlock,
@@ -299,6 +300,15 @@ export function EventEditor({
   const handleAddElseArm = useCallback(() => {
     if (!page || selectedCommand < 0) return;
     const result = addConditionalElseArm(page.list, selectedCommand);
+    if (!result) return;
+    updatePage((p) => ({ ...p, list: result.list }));
+    setSelectedCommand(result.selectedIndex);
+    setEditingCommand(null);
+  }, [page, selectedCommand, updatePage]);
+
+  const handleRemoveEmptyElseArm = useCallback(() => {
+    if (!page || selectedCommand < 0) return;
+    const result = removeEmptyConditionalElseArm(page.list, selectedCommand);
     if (!result) return;
     updatePage((p) => ({ ...p, list: result.list }));
     setSelectedCommand(result.selectedIndex);
@@ -755,6 +765,15 @@ export function EventEditor({
                       title="Add Else branch to selected conditional"
                     >
                       + Else
+                    </button>
+                    <button
+                      className="event-editor-btn event-command-action"
+                      onClick={handleRemoveEmptyElseArm}
+                      disabled={selectedCommand < 0 || page.list[selectedCommand]?.code !== 111 || !removeEmptyConditionalElseArm(page.list, selectedCommand)}
+                      aria-label="Remove empty Else branch from selected conditional"
+                      title="Remove empty Else branch (nonempty branches are protected)"
+                    >
+                      − Else
                     </button>
                     <button
                       className="event-editor-btn event-command-action"

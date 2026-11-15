@@ -138,6 +138,35 @@ export function addConditionalElseArm(
   };
 }
 
+/** Remove only an empty Else arm. Nonempty Else bodies must be edited
+ * explicitly so a toolbar action cannot silently discard event commands.
+ * Preserve all original Then commands and their Marshal source identities.
+ */
+export function removeEmptyConditionalElseArm(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  if (list[index]?.code !== 111) return null;
+  const range = getStructuralCommandRange(list, index);
+  if (!range) return null;
+  const depth = list[index].indent;
+  let nested = 0;
+  for (let i = index + 1; i < range.end; i++) {
+    const cmd = list[i];
+    if (cmd.code === 111 || cmd.code === 112) nested++;
+    else if (cmd.code === 412 || cmd.code === 413) nested--;
+    else if (cmd.code === 411 && nested === 0) {
+      // Only an immediately adjacent child-list terminator is an empty arm.
+      const empty = list[i + 1];
+      if (empty?.code !== 0 || empty.indent !== depth + 1 || i + 2 !== range.end) return null;
+      return {
+        list: [...list.slice(0, i), ...list.slice(i + 2)],
+        selectedIndex: index,
+      };
+    }
+  }
+  return null;
+}
+
 export function getEditableCommandRange(
   list: EventCommand[], index: number,
 ): { start: number; end: number } | null {

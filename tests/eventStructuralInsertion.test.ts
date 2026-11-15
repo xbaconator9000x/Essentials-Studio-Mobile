@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addConditionalElseArm, getStructuralCommandRange, createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
+import { addConditionalElseArm, removeEmptyConditionalElseArm, getStructuralCommandRange, createEventCommand, createEventCommandInsertion, getCommandInsertionIndex, getCommandInsertionIndent } from "../src/components/EventEditor/parts/commandHelpers";
 
 describe("RMXP structural command insertion", () => {
   it("creates balanced conditional and loop scaffolds with correctly nested terminators", () => {
@@ -105,6 +105,27 @@ describe("RMXP structural command insertion", () => {
       expect(malformed).toEqual(snapshot);
     }
     expect(getStructuralCommandRange(valid, 1)).toEqual({ start: 1, end: 4 });
+  });
+  it("removes only an empty Else arm while preserving Then commands and source indices", () => {
+    const original = [
+      { code: 111, indent: 0, parameters: [], source_index: 10 },
+      { code: 101, indent: 1, parameters: ["then"], source_index: 11 },
+      { code: 0, indent: 1, parameters: [], source_index: 12 },
+      { code: 412, indent: 0, parameters: [], source_index: 13 },
+      { code: 0, indent: 0, parameters: [], source_index: 14 },
+    ];
+    const added = addConditionalElseArm(original, 0);
+    expect(added).not.toBeNull();
+    const removed = removeEmptyConditionalElseArm(added!.list, 0);
+    expect(removed?.list).toEqual(original);
+    expect(removed?.selectedIndex).toBe(0);
+    expect(removeEmptyConditionalElseArm(original, 0)).toBeNull();
+    const populated = added!.list.map((cmd, i) => i === 4
+      ? { code: 101, indent: 1, parameters: ["important"] } : cmd);
+    populated.splice(5, 0, { code: 0, indent: 1, parameters: [] });
+    const snapshot = structuredClone(populated);
+    expect(removeEmptyConditionalElseArm(populated, 0)).toBeNull();
+    expect(populated).toEqual(snapshot);
   });
   it("preserves source templates and generates independent nested parameters", () => {
     const defaults = [{ name: "shared", nested: [1, 2] }];
