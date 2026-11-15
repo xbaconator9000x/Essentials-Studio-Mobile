@@ -30,8 +30,9 @@ export function MobileWorkspaceBar({
   const onMap = section === "maps";
   const onMapList = section === "projects";
   const canNavigateToMaps = !onMapList;
+  const dirtyLabel = dirtyCount > 0 ? `${dirtyCount} unsaved` : "Saved";
   return (
-    <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions">
+    <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions" aria-busy={busy}>
       <div className="app-mobile-workspace-context">
         <span className="app-mobile-workspace-name" title={onMap ? mapName || projectName : projectName}>
           {onMap ? (mapName || "Select a map") : projectName}
