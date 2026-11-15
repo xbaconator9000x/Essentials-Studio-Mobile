@@ -253,7 +253,7 @@ def map_canvas_tap_points(
 
     dimensions = []
     for text in owned_labels(nodes, package):
-        match = re.search(r"Map\s*\[\d+\]\s*(\d+)x(\d+)\b", text)
+        match = re.search(r"Map\s*\[\d+\]\s*(\d+)x(\d+)", text)
         if match:
             dimensions.append(tuple(map(int, match.groups())))
     if len(dimensions) != 1 or not (1 <= dimensions[0][0] <= 999
