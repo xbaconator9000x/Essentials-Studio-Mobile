@@ -212,6 +212,135 @@ def launch(package: str) -> None:
 
 
 
+def owned_labels(nodes: list[dict[str, str]], package: str) -> list[str]:
+    """Use only visible app-owned accessibility text, never unrelated Android UI."""
+    return [label(node) for node in nodes if node.get("package") == package and label(node)]
+
+
+def has_unsaved_map(nodes: list[dict[str, str]], package: str) -> bool:
+    return any(re.search(r"\\b[1-9]\\d* unsaved\\b", text, re.IGNORECASE)
+               for text in owned_labels(nodes, package))
+
+
+def map_canvas_tap_points(
+    nodes: list[dict[str, str]], package: str,
+) -> list[tuple[int, int]]:
+    """Select points from the current native a11y bounds, never hardcoded pixels.
+
+    The canvas must be owned by Essentials Studio and expose the accessible
+    label from the real React MapEditor. Do not tap a screenshot, overlay,
+    another application's WebView or an offscreen phantom element.
+    """
+    bounds = []
+    for node in nodes:
+        if (node.get("package") != package or node.get("enabled") == "false"
+                or "Map tile editing canvas" not in label(node)):
+            continue
+        m = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+                         node.get("bounds", ""))
+        if not m:
+            continue
+        x1, y1, x2, y2 = map(int, m.groups())
+        if x2 - x1 >= 96 and y2 - y1 >= 96:
+            bounds.append((x1, y1, x2, y2))
+    if len(bounds) != 1:
+        raise AssertionError(f"Expected one accessible app-owned map canvas; found {bounds!r}")
+    x1, y1, x2, y2 = bounds[0]
+    # Avoid a fixed corner which may be empty outside a small source map.
+    return [(x1 + round((x2-x1)*fx), y1 + round((y2-y1)*fy))
+            for fx, fy in ((0.18, 0.19), (0.32, 0.32), (0.46, 0.46),
+                           (0.60, 0.32), (0.18, 0.58))]
+
+
+def native_map_edit_and_save(package: str) -> dict[str, object]:
+    """Paint one actual synthetic map tile through Android touch then Save All.
+
+    This checks UI mutation and Save All acknowledgement, NOT yet the bytes in
+    a SAF-exported ZIP. The receipt explicitly keeps export/reimport unverified.
+    """
+    original = wait_ui("Enable map editing", "native-edit-before", timeout=30)
+    if has_unsaved_map(original, package):
+        raise AssertionError("Synthetic map was already dirty before native edit")
+    tap_button(original, "Enable map editing")
+    enabled = wait_ui("Switch map to view mode", "native-edit-enabled", timeout=30)
+    tap_button(enabled, "Open tile palette")
+    palette = wait_ui("Tile right", "native-edit-tile-picker", timeout=35)
+    # Select a regular source tile different from the default; no hand-written
+    # map mutation or private file edit bypasses the app's actual React UI.
+    tap_button(palette, "Tile right")
+    palette = wait_ui("Tile down", "native-edit-tile-selected", timeout=25)
+    tap_button(palette, "Tile down")
+    current = wait_ui("Hide tile palette", "native-edit-close-palette", timeout=25)
+    tap_button(current, "Hide tile palette")
+    canvas = wait_ui("Map tile editing canvas", "native-edit-canvas", timeout=35)
+    points = map_canvas_tap_points(canvas, package)
+    screenshot("native-map-before-edit")
+
+    painted = False
+    for index, point in enumerate(points):
+        tap(point)
+        for attempt in range(4):
+            current = ui_nodes(f"native-edit-after-tap-{index}-{attempt}")
+            if has_unsaved_map(current, package):
+                painted = True
+                break
+            time.sleep(1)
+        if painted:
+            break
+    if not painted:
+        screenshot("native-map-no-edit")
+        raise AssertionError("Touching the actual map canvas did not mark the project dirty")
+    screenshot("native-map-dirty")
+    current = ui_nodes("native-map-before-save")
+    if not has_unsaved_map(current, package):
+        raise AssertionError("Dirty marker disappeared before Save All")
+    tap_button(current, "Save all changes")
+
+    saved = False
+    for attempt in range(20):
+        nodes = ui_nodes(f"native-map-save-result-{attempt}")
+        texts = owned_labels(nodes, package)
+        if any("Save all failed" in value for value in texts):
+            raise AssertionError(f"Native Save All failed: {texts[-12:]!r}")
+        if (not has_unsaved_map(nodes, package)
+                and any("All registered editor changes were saved" in value
+                        for value in texts)):
+            saved = True
+            break
+        time.sleep(2)
+    if not saved:
+        screenshot("native-map-save-unconfirmed")
+        raise AssertionError("Save All lacked a verified changed-project success receipt")
+    screenshot("native-map-saved")
+
+    # Reopen via the real mobile map tree; never assume a status badge alone
+    # establishes that the editor remained reachable after save.
+    current = ui_nodes("native-map-before-reopen")
+    tap_button(current, "Choose another map")
+    project_nodes = wait_ui("Synthetic Map", "native-map-reopen-list", timeout=40)
+    position = locate(project_nodes, "Synthetic Map")
+    if not position:
+        raise AssertionError("Saved synthetic map was absent from the map list")
+    tap(position)
+    reopened = wait_ui("Map tile editing canvas", "native-map-reopened", timeout=35)
+    if has_unsaved_map(reopened, package):
+        raise AssertionError("Reopened map is unexpectedly dirty")
+    screenshot("native-map-reopened")
+    return {
+        "verified": [
+            "real Android touch enabled map editing",
+            "real Android UI selected a different tileset tile",
+            "touching source map canvas produced an unsaved editor mutation",
+            "Save All acknowledged an actual pending edit and cleared dirty state",
+            "saved map reopened through Android mobile navigation",
+        ],
+        "not_verified": [
+            "independent source Map001.rxdata value comparison",
+            "native SAF ZIP export and reimport",
+        ],
+    }
+
+
 def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     """Exercise actual Android ZIP selection and editor workspace in BOTH modes."""
     expected_sha = "60c78b3171a0b4fc1dc96260cd8d8240374dc214dd282779f8ff49ade2c000bb"
@@ -357,9 +486,11 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     assert_visible_controls(back_map, ("Save all changes", "Export project ZIP",
                             "Enable map editing", "Open tile palette"),
                             screenshot("portrait-map-return"))
+    native_edit = native_map_edit_and_save(package)
     return {
         "fixture_sha256": digest,
         "portrait_map_return_mode": navigation_mode,
+        "native_map_edit": native_edit,
         "ui_checks": [
             "real synthetic RMXP ZIP selected with Android DocumentsUI",
             "project opened from original source ZIP", "portrait map canvas and tile drawer",
@@ -461,8 +592,8 @@ def main() -> None:
                    "orientation roundtrip", "no detected editor ANR/crash"],
         "project_ui": project_result,
         "not_verified": ["ARM64 runtime", "physical Android",
-                         "map/event/sprite content modification", "Save All/SAF ZIP export/reimport",
-                         "RPG Maker XP desktop", "JoiPlay"],
+                         "event/sprite content modification", "independent Map001.rxdata persisted-byte verification",
+                         "SAF ZIP export/reimport", "RPG Maker XP desktop", "JoiPlay"],
     }
     (EVIDENCE / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt, indent=2), flush=True)
