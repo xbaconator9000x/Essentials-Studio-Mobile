@@ -281,8 +281,11 @@ export function EventEditor({
     if (block.length === 0) return;
     const range = getEditableCommandRange(page.list, selectedCommand);
     if (!range) return;
-    const insertAt = getCommandInsertionIndex(page.list, range.end);
-    if (insertAt < 0) return;
+    // A structural opener owns its complete subtree. Using range.end here
+    // selects its 412/413 closing marker, which is intentionally non-editable
+    // and makes Duplicate silently fail for otherwise valid branches/loops.
+    const insertAt = getCommandInsertionIndex(page.list, range.start);
+    if (insertAt < 0 || insertAt <= range.end) return;
     updatePage((p) => {
       const list = [...p.list];
       list.splice(insertAt, 0, ...block);
