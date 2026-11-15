@@ -1673,6 +1673,20 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   {WALK_FRAME_DIRECTIONS.map(direction => <option key={direction} value={direction}>{direction}</option>)}
                 </select>
               </label>
+              <label>Phase
+                <select aria-label="Walking sprite animation phase" value={walkFrameIndex % 4 + 1}
+                  disabled={loading || saving}
+                  onChange={(event) => {
+                    const source = imageCanvasRef.current;
+                    if (!source) return;
+                    const phase = Number(event.currentTarget.value);
+                    const direction = WALK_FRAME_DIRECTIONS[Math.floor(walkFrameIndex / 4)];
+                    const frame = getWalkSpriteFrameByDirection(source.width, source.height, direction, phase);
+                    if (frame) selectWalkFrame(frame.index);
+                  }}>
+                  {[1, 2, 3, 4].map(phase => <option key={phase} value={phase}>{phase}/4</option>)}
+                </select>
+              </label>
               <button type="button" aria-label="Previous walking animation phase" disabled={loading || saving}
                 onClick={() => { const index = stepWalkSpritePhase(walkFrameIndex, -1); if (index !== null) selectWalkFrame(index); }}>Phase ‹</button>
               <button type="button" aria-label="Next walking animation phase" disabled={loading || saving}
