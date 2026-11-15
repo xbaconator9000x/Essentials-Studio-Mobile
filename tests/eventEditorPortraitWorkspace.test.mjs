@@ -22,3 +22,13 @@ test("portrait event panels hide inactive content without affecting desktop layo
   assert.match(styles, /\.event-editor-body--properties > \.event-command-panel \{ display: none; \}/);
   assert.match(styles, /\.event-editor-body--properties > \.event-page-properties/);
 });
+
+
+test("mobile event toolbar exposes balanced Else insertion with disabled invalid selections", () => {
+  assert.match(source, /import[\s\S]*addConditionalElseArm[\s\S]*from "\.\/parts\/commandHelpers"/);
+  assert.match(source, /const handleAddElseArm = useCallback\(/);
+  assert.match(source, /const result = addConditionalElseArm\(page\.list, selectedCommand\)/);
+  assert.match(source, /updatePage\(\(p\) => \(\{ \.\.\.p, list: result\.list \}\)\)/);
+  assert.match(source, /aria-label="Add Else branch to selected conditional"/);
+  assert.match(source, /disabled=\{selectedCommand < 0 \|\| page\.list\[selectedCommand\]\?\.code !== 111 \|\| !addConditionalElseArm\(page\.list, selectedCommand\)\}/);
+});
