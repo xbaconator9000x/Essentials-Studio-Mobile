@@ -19,3 +19,10 @@ test("map dimensions must be positive safe integers", () => {
   assert.equal(parseMapCoordinate("0", "0", 1.2, 2), null);
   assert.equal(parseMapCoordinate("0", "0", Number.MAX_SAFE_INTEGER + 1, 2), null);
 });
+
+test("long zero padding is accepted but unsafe significant digits remain rejected", () => {
+  assert.deepEqual(parseMapCoordinate("0".repeat(64) + "12", "0".repeat(64) + "3", 20, 10), { x: 12, y: 3 });
+  assert.deepEqual(parseMapCoordinate("0".repeat(64), "0".repeat(64), 1, 1), { x: 0, y: 0 });
+  assert.equal(parseMapCoordinate("0".repeat(64) + "9007199254740992", "0", 20, 10), null);
+  assert.equal(parseMapCoordinate("0".repeat(64) + "1e1", "0", 20, 10), null);
+});
