@@ -153,6 +153,15 @@ describe("sprite editor integration", () => {
     expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "Next walking animation phase" }));
     expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("0");
+    // Direct phase selection is usable on touch screens and retains facing.
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite animation phase" }), { target: { value: "3" } });
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("2");
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite facing direction" }), { target: { value: "Left" } });
+    expect((screen.getByRole("combobox", { name: "Walking sprite animation phase" }) as HTMLSelectElement).value).toBe("3");
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("6");
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite facing direction" }), { target: { value: "Down" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite animation phase" }), { target: { value: "1" } });
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("0");
     fireEvent.click(screen.getByRole("button", { name: "Copy frame" }));
     fireEvent.click(screen.getByRole("button", { name: "Next walk frame" }));
     expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("1");
