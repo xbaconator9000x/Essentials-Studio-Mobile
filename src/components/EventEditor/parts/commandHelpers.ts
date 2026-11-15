@@ -203,6 +203,21 @@ export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: nu
     }
     return -1;
   }
+  // Nested ordinary commands also require a valid enclosing control-flow tree.
+  // Previously selecting a child (rather than its opener or terminator) could
+  // bypass structural validation and splice into an incomplete Then/Else/loop.
+  if (list[selectedIndex].indent > 0) {
+    let enclosing = false;
+    for (let start = selectedIndex - 1; start >= 0; start--) {
+      if (list[start].indent >= list[selectedIndex].indent) continue;
+      if (list[start].code !== 111 && list[start].code !== 112) return -1;
+      const parentRange = getStructuralCommandRange(list, start);
+      if (!parentRange || parentRange.end < selectedIndex) return -1;
+      enclosing = true;
+      break;
+    }
+    if (!enclosing) return -1;
+  }
   // Never fall back to a single-command range for an incomplete control-flow
   // opener or an isolated branch marker: that would splice into an invalid tree.
   if (STRUCTURAL_EVENT_CODES.has(list[selectedIndex].code)
