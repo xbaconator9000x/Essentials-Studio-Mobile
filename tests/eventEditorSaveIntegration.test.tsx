@@ -159,6 +159,39 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("duplicates a complete conditional subtree with fresh source identities and persists it", async () => {
+    diskEvent.pages[0].list = [
+      { code: 111, indent: 0, parameters: [0, 1, 0], source_index: 0 },
+      { code: 118, indent: 1, parameters: ["then_label"], source_index: 1 },
+      { code: 0, indent: 1, parameters: [], source_index: 2 },
+      { code: 412, indent: 0, parameters: [], source_index: 3 },
+      { code: 0, indent: 0, parameters: [], source_index: 4 },
+    ];
+    renderProject();
+    const row = (await screen.findAllByText("Conditional Branch"))
+      .map((element) => element.closest(".event-command-row"))
+      .find(Boolean);
+    expect(row).toBeTruthy();
+    fireEvent.click(row as HTMLElement);
+    const duplicate = screen.getByRole("button", { name: "Duplicate selected command block" });
+    expect((duplicate as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(duplicate);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await screen.findByText("Save All succeeded");
+
+    expect(diskEvent.pages[0].list.map(({ code, indent }) => [code, indent])).toEqual([
+      [111, 0], [118, 1], [0, 1], [412, 0],
+      [111, 0], [118, 1], [0, 1], [412, 0], [0, 0],
+    ]);
+    expect(diskEvent.pages[0].list.map((command) => command.source_index)).toEqual([
+      0, 1, 2, 3, undefined, undefined, undefined, undefined, 4,
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open event" }));
+    expect((await screen.findAllByText("Conditional Branch")).length).toBe(2);
+    expect(native.loadEvent).toHaveBeenCalledTimes(2);
+  });
+
   it("persists a balanced Else arm through Save All and reopening without changing original Marshal identities", async () => {
     diskEvent.pages[0].list = [
       { code: 101, indent: 0, parameters: ["", 0, 0, 2], source_index: 0 },
