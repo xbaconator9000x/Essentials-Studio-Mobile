@@ -159,6 +159,28 @@ describe("RMXP structural command insertion", () => {
     expect(getCommandInsertionIndex(valid, 4)).toBe(-1);
     expect(getCommandInsertionIndex(valid, 3)).toBe(3);
   });
+  it("rejects nested terminator insertion unless the enclosing branch is balanced", () => {
+    const valid = [
+      { code: 111, indent: 0, parameters: [] },
+      { code: 101, indent: 1, parameters: ["then"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 412, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(valid, 2)).toBe(2);
+    const missingEnd = valid.filter((_, index) => index !== 3);
+    expect(getCommandInsertionIndex(missingEnd, 2)).toBe(-1);
+    const orphan = [
+      { code: 101, indent: 1, parameters: ["orphan"] },
+      { code: 0, indent: 1, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    expect(getCommandInsertionIndex(orphan, 1)).toBe(-1);
+    const wrongDepth = valid.map((cmd, index) => index === 3
+      ? { ...cmd, indent: 1 } : cmd);
+    expect(getCommandInsertionIndex(wrongDepth, 2)).toBe(-1);
+    expect(valid[2].code).toBe(0);
+  });
   it("inserts complete structure before the page terminator at top level", () => {
     const list = [{ code: 101, indent: 0, parameters: ["hello"] }, { code: 0, indent: 0, parameters: [] }];
     const index = getCommandInsertionIndex(list, 1);
