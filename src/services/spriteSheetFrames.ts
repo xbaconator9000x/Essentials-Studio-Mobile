@@ -19,7 +19,7 @@ export function getWalkSpriteFrame(
     || imageWidth <= 0 || imageHeight <= 0
     || imageWidth % 4 !== 0 || imageHeight % 4 !== 0
     || imageWidth * imageHeight > 16_777_216
-    || !Number.isInteger(index) || index < 0 || index >= WALK_FRAME_COUNT) return null;
+    || !Number.isSafeInteger(index) || index < 0 || index >= WALK_FRAME_COUNT) return null;
 
   const width = imageWidth / 4;
   const height = imageHeight / 4;
@@ -40,6 +40,9 @@ export function getWalkSpriteFrame(
  * the source sheet. All coordinate operations are performed on source pixels. */
 export function stepWalkSpriteFrame(index: number, delta: number): number | null {
   if (!Number.isInteger(index) || index < 0 || index >= WALK_FRAME_COUNT
-    || !Number.isInteger(delta)) return null;
-  return ((index + delta) % WALK_FRAME_COUNT + WALK_FRAME_COUNT) % WALK_FRAME_COUNT;
+    || !Number.isSafeInteger(delta)) return null;
+  // Reduce the delta before addition: a large safe integer added to the
+  // current frame can exceed JS's exact integer range and mis-wrap.
+  const offset = ((delta % WALK_FRAME_COUNT) + WALK_FRAME_COUNT) % WALK_FRAME_COUNT;
+  return (index + offset) % WALK_FRAME_COUNT;
 }
