@@ -72,16 +72,16 @@ export function getStructuralCommandRange(
   // Track the exact opener depth and type. RMXP branch markers have their
   // own indentation; accepting merely matching code numbers can silently
   // transplant an incorrectly nested Else/End/Repeat into another event.
-  const stack: { close: number; indent: number; elseSeen: boolean }[] = [
-    { close: parent.code === 111 ? 412 : 413, indent: parent.indent, elseSeen: false },
+  const stack: { close: number; indent: number; elseSeen: boolean; terminated: boolean }[] = [
+    { close: parent.code === 111 ? 412 : 413, indent: parent.indent, elseSeen: false, terminated: false },
   ];
   for (let i = index + 1; i < list.length; i++) {
     const cmd = list[i];
     const current = stack[stack.length - 1];
     if (cmd.indent < parent.indent) return null;
     if (cmd.code === 111 || cmd.code === 112) {
-      if (cmd.indent !== current.indent + 1) return null;
-      stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false });
+      if (cmd.indent !== current.indent + 1 || current.terminated) return null;
+      stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false, terminated: false });
     } else if (cmd.code === 411) {
       // Each Then child list must end in its own code-zero terminator.
       // A balanced 412 alone does not make an RMXP branch serializable.
@@ -89,16 +89,20 @@ export function getStructuralCommandRange(
       if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent
         || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
       current.elseSeen = true;
+      current.terminated = false;
     } else if (cmd.code === 412 || cmd.code === 413) {
       const previous = list[i - 1];
       if (current.close !== cmd.code || current.indent !== cmd.indent
         || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
       stack.pop();
       if (!stack.length) return { start: index, end: i };
-    } else if (cmd.indent !== current.indent + 1) {
+    } else if (cmd.indent !== current.indent + 1 || current.terminated) {
+      // A code-zero child-list terminator must be the final command of its arm.
       // Every ordinary command and child-list terminator belongs exactly one
       // level below its current opener. Deeper jumps are malformed RMXP trees.
       return null;
+    } else if (cmd.code === 0) {
+      current.terminated = true;
     }
   }
   return null;
