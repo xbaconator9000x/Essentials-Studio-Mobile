@@ -88,6 +88,24 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
         self.assertEqual(harness.map_canvas_tap_points(nodes, package, 320),
                          [(44, 560), (44, 432)])
 
+    def test_native_private_map_witness_refuses_unrelated_or_multiple_files(self):
+        valid = "./files/projects/import-1234/Data/Map001.rxdata"
+        self.assertEqual(harness.private_imported_map_path(valid + "\n"), valid)
+        with self.assertRaisesRegex(AssertionError, "Expected one app-private"):
+            harness.private_imported_map_path(
+                valid + "\n./files/projects/import-5678/Data/Map001.rxdata\n"
+            )
+        for invalid in (
+            "", "./files/projects/other/Data/Map001.rxdata",
+            "./files/import-123/Data/Map001.rxdata",
+            "/sdcard/Download/Data/Map001.rxdata",
+            "../private/projects/import-1/Data/Map001.rxdata",
+            "./files/projects/import-1/Data/Map002.rxdata",
+        ):
+            with self.subTest(path=invalid):
+                with self.assertRaisesRegex(AssertionError, "Expected one app-private"):
+                    harness.private_imported_map_path(invalid)
+
     def test_native_edit_receipt_needs_real_app_owned_unsaved_status(self):
         package = "com.xbaconator.essentialsstudiomobile"
         app = {"package": package, "text": "1 unsaved", "enabled": "true"}
