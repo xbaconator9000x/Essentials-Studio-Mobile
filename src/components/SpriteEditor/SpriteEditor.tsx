@@ -50,6 +50,7 @@ import {
 } from "../../services/spriteEditorPreferences";
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
 import { exportSpritePng } from "../../services/spriteExport";
+import { getWalkSpriteFrame, stepWalkSpriteFrame, WALK_FRAME_COUNT, WALK_FRAME_DIRECTIONS } from "../../services/spriteSheetFrames";
 import "./SpriteEditor.css";
 
 interface Props {
@@ -141,6 +142,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
+  const [walkSheetMode, setWalkSheetMode] = useState(false);
+  const [walkFrameIndex, setWalkFrameIndex] = useState(0);
   const [controlsCollapsed, setControlsCollapsed] = useState(
     () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches),
@@ -207,6 +210,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     imageDataRef.current = null;
     historyRef.current.clear();
     setImportedSpriteName(null);
+    setWalkSheetMode(false);
+    setWalkFrameIndex(0);
     setDirty(false);
     updateDirty("sprite-editor", false);
     setSelection(null);
@@ -498,6 +503,34 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setTool("select");
   }, [loading, saving]);
 
+  /** Opt-in RMXP walk-sheet navigation; changing frame never changes pixels. */
+  const selectWalkFrame = useCallback((index: number) => {
+    const source = imageCanvasRef.current;
+    if (!source || loading || saving || activePaintPointer.current !== null) return;
+    const frame = getWalkSpriteFrame(source.width, source.height, index);
+    if (!frame) return;
+    setWalkFrameIndex(index);
+    setSelection({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+    setMoveSelectedPixels(false);
+    setTool("select");
+    setError(null);
+  }, [loading, saving]);
+
+  const copyWalkFrame = useCallback(() => {
+    const source = imageCanvasRef.current;
+    const image = imageDataRef.current;
+    if (!source || !image || loading || saving) return;
+    const frame = getWalkSpriteFrame(source.width, source.height, walkFrameIndex);
+    if (!frame) return;
+    const copied = copySpriteSelection(image.data, source.width, source.height, frame);
+    if (!copied) {
+      setError("This frame exceeds the one-million-pixel clipboard limit");
+      return;
+    }
+    setClipboard(copied);
+    selectWalkFrame(walkFrameIndex);
+  }, [loading, saving, selectWalkFrame, walkFrameIndex]);
+
   const nudgeSelection = useCallback((dx: number, dy: number) => {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
@@ -553,16 +586,19 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     return true;
   }, [selection, updateDirty]);
 
-  const pasteSelection = useCallback(() => {
+  const pasteSelection = useCallback((targetSelection?: SpriteSelection, requireExactSize = false) => {
     const source = imageCanvasRef.current;
     const imageData = imageDataRef.current;
-    if (!source || !imageData || !clipboard || !selection) return false;
+    const destination = targetSelection ?? selection;
+    if (!source || !imageData || !clipboard || !destination) return false;
+    // Whole-frame paste must not overflow into an adjacent animation frame.
+    if (requireExactSize && (clipboard.width !== destination.width || clipboard.height !== destination.height)) {
+      setError("Clipboard dimensions must match the selected walk frame");
+      return false;
+    }
     const action = pasteSpriteSelection(
-      imageData.data,
-      source.width,
-      source.height,
-      clipboard,
-      { x: selection.x, y: selection.y },
+      imageData.data, source.width, source.height, clipboard,
+      { x: destination.x, y: destination.y },
       preserveTransparentPaste ? "preserve" : "replace",
     );
     if (!action) return true;
@@ -574,19 +610,31 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     spriteEditRevision.current += 1;
     source.getContext("2d")?.putImageData(imageData, 0, 0);
     setSelection(normalizeSpriteSelection(
-      { x: selection.x, y: selection.y },
+      { x: destination.x, y: destination.y },
       {
-        x: selection.x + Math.min(clipboard.width, source.width - selection.x) - 1,
-        y: selection.y + Math.min(clipboard.height, source.height - selection.y) - 1,
+        x: destination.x + Math.min(clipboard.width, source.width - destination.x) - 1,
+        y: destination.y + Math.min(clipboard.height, source.height - destination.y) - 1,
       },
-      source.width,
-      source.height,
+      source.width, source.height,
     ));
     setDirty(true);
     updateDirty("sprite-editor", true);
+    setSpritePalette([]);
+    setError(null);
     setImageRevision((value) => value + 1);
     return true;
   }, [clipboard, preserveTransparentPaste, selection, updateDirty]);
+
+  const pasteWalkFrame = useCallback(() => {
+    const source = imageCanvasRef.current;
+    if (!source || loading || saving || activePaintPointer.current !== null) return;
+    const frame = getWalkSpriteFrame(source.width, source.height, walkFrameIndex);
+    if (!frame) return;
+    setSelection({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+    setMoveSelectedPixels(false);
+    setTool("select");
+    pasteSelection(frame, true);
+  }, [loading, pasteSelection, saving, walkFrameIndex]);
 
   const refreshSpritePalette = useCallback(() => {
     const image = imageDataRef.current;
@@ -1223,6 +1271,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setSpritePalette([]);
       setExportStatus(null);
       setImportedSpriteName(file.name);
+      setWalkSheetMode(false);
+      setWalkFrameIndex(0);
       setTargetName(importedSpriteCopyName(file.name));
       setSaveMode("copy");
       setDirty(true);
@@ -1256,6 +1306,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       spriteImportUrl.current = null;
     }
     setImportedSpriteName(null);
+    setWalkSheetMode(false);
+    setWalkFrameIndex(0);
     setLoading(true);
     imageCanvasRef.current = null;
     imageDataRef.current = null;
@@ -1580,6 +1632,38 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </div>
           </div>
         )}
+        <div className="sprite-editor-walk-frames" role="group" aria-label="RMXP walking sprite sheet frames">
+          <label>
+            <input type="checkbox" aria-label="Navigate 4 by 4 walking sprite frames"
+              disabled={loading || saving || !imageCanvasRef.current
+                || !getWalkSpriteFrame(imageCanvasRef.current.width, imageCanvasRef.current.height, 0)}
+              checked={walkSheetMode}
+              onChange={(event) => {
+                const enabled = event.currentTarget.checked;
+                setWalkSheetMode(enabled);
+                if (enabled) selectWalkFrame(walkFrameIndex);
+              }} />
+            4×4 walk frames
+          </label>
+          {walkSheetMode && (
+            <>
+              <button type="button" aria-label="Previous walk frame" disabled={loading || saving}
+                onClick={() => { const index = stepWalkSpriteFrame(walkFrameIndex, -1); if (index !== null) selectWalkFrame(index); }}>‹</button>
+              <select aria-label="Select walking sprite frame" value={walkFrameIndex} disabled={loading || saving}
+                onChange={(event) => selectWalkFrame(Number(event.currentTarget.value))}>
+                {Array.from({ length: WALK_FRAME_COUNT }, (_, index) => (
+                  <option key={index} value={index}>
+                    {WALK_FRAME_DIRECTIONS[Math.floor(index / 4)]} · {index % 4 + 1}/4
+                  </option>
+                ))}
+              </select>
+              <button type="button" aria-label="Next walk frame" disabled={loading || saving}
+                onClick={() => { const index = stepWalkSpriteFrame(walkFrameIndex, 1); if (index !== null) selectWalkFrame(index); }}>›</button>
+              <button type="button" disabled={loading || saving} onClick={copyWalkFrame}>Copy frame</button>
+              <button type="button" disabled={!clipboard || loading || saving} onClick={pasteWalkFrame}>Paste frame</button>
+            </>
+          )}
+        </div>
         <div className="sprite-editor-workspace">
           <aside
             id="sprite-editor-controls"
