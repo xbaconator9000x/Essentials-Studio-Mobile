@@ -698,6 +698,41 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setImageRevision(value => value + 1);
   }, [loading, saving, updateDirty, walkFrameIndex]);
 
+  /** A quarter-turn is lossless only for square frames. Reject rectangular
+   * RMXP frames instead of resizing or writing into neighbouring cells. */
+  const rotateWalkFrameQuarter = useCallback((direction: "clockwise" | "counterclockwise") => {
+    const source = imageCanvasRef.current;
+    const image = imageDataRef.current;
+    if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
+    const frame = getWalkSpriteFrame(source.width, source.height, walkFrameIndex);
+    if (!frame) return;
+    if (frame.width !== frame.height) {
+      setError("90-degree rotation requires a square walking frame");
+      return;
+    }
+    if (frame.width * frame.height > 1_000_000) {
+      setError("This frame exceeds the one-million-pixel edit limit");
+      return;
+    }
+    const action = rotateSquareSpritePixels(image.data, source.width, source.height, direction, frame);
+    if (!action) return;
+    if (!historyRef.current.push(action)) {
+      applySpritePixelAction(image.data, action, "before");
+      setError("This frame rotation exceeds the sprite undo limit");
+      return;
+    }
+    spriteEditRevision.current += 1;
+    source.getContext("2d")?.putImageData(image, 0, 0);
+    setSelection({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+    setMoveSelectedPixels(false);
+    setTool("select");
+    setSpritePalette([]);
+    setDirty(true);
+    updateDirty("sprite-editor", true);
+    setError(null);
+    setImageRevision(value => value + 1);
+  }, [loading, saving, updateDirty, walkFrameIndex]);
+
   const refreshSpritePalette = useCallback(() => {
     const image = imageDataRef.current;
     if (!image) return;
@@ -1758,6 +1793,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" aria-label="Flip selected walking sprite frame horizontally" disabled={loading || saving} onClick={() => flipWalkFrame("horizontal")}>Flip frame ↔</button>
               <button type="button" aria-label="Flip selected walking sprite frame vertically" disabled={loading || saving} onClick={() => flipWalkFrame("vertical")}>Flip frame ↕</button>
               <button type="button" aria-label="Rotate selected walking sprite frame 180 degrees" disabled={loading || saving} onClick={() => flipWalkFrame("rotate180")}>Rotate frame 180°</button>
+              <button type="button" aria-label="Rotate selected walking sprite frame clockwise 90 degrees" disabled={loading || saving} onClick={() => rotateWalkFrameQuarter("clockwise")}>Rotate frame 90° ↻</button>
+              <button type="button" aria-label="Rotate selected walking sprite frame counterclockwise 90 degrees" disabled={loading || saving} onClick={() => rotateWalkFrameQuarter("counterclockwise")}>Rotate frame 90° ↺</button>
               <button type="button" aria-label="Clear selected walking sprite frame" disabled={loading || saving} onClick={clearWalkFrame}>Clear frame</button>
             </>
           )}
