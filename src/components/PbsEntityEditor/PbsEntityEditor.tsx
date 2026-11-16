@@ -52,6 +52,14 @@ const NAV_ITEMS: NavItem[] = [
 
 export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
   const [activeSection, setActiveSection] = useState<SectionId>("pokemon");
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  // Shared PBS lists become an on-demand drawer on phones; specialist
+  // sections without EntityListPanel retain their native record controls.
+  const hasRecordList = (["pokemon", "moves", "abilities", "items", "encounters", "world"] as SectionId[]).includes(activeSection);
+  const switchSection = (id: SectionId) => {
+    setRecordsOpen(false);
+    setActiveSection(id);
+  };
   const [pbsIndex, setPbsIndex] = useState<PbsIndex>(new Map());
   const [saving, setSaving] = useState(false);
   const { dirtyIds, saveAll, discardAll } = useProjectSave();
@@ -92,12 +100,26 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
 
   return (
     <PbsEntityContext.Provider value={{ pbsIndex, projectPath, mapNames }}>
-      <div className="pbs-entity-editor">
+      <div className={`pbs-entity-editor${recordsOpen ? " records-open" : ""}`}>
         {/* Header */}
         <div className="pbs-entity-header">
           <span className="pbs-entity-title">PBS Data Editor</span>
           {hasDirty && <span className="pbs-entity-dirty-badge">Unsaved changes</span>}
-          <button className="pbs-entity-close" onClick={requestClose} disabled={saving}>×</button>
+          <div className="pbs-mobile-workspace-controls" role="group" aria-label="Mobile PBS navigation">
+            <select className="pbs-mobile-category-picker" aria-label="PBS category"
+              value={activeSection} onChange={(event) => switchSection(event.target.value as SectionId)}>
+              {NAV_ITEMS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+            {hasRecordList && (
+              <button type="button" className="pbs-mobile-records-toggle"
+                aria-label={recordsOpen ? "Close record picker" : "Browse PBS records"}
+                aria-expanded={recordsOpen} aria-controls="pbs-mobile-record-list"
+                onClick={() => setRecordsOpen(open => !open)}>
+                {recordsOpen ? "Close list" : "Records"}
+              </button>
+            )}
+          </div>
+          <button className="pbs-entity-close" aria-label="Close PBS editor" onClick={requestClose} disabled={saving}>×</button>
         </div>
 
         <div className="pbs-entity-body">
@@ -110,7 +132,7 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
                 <button
                   key={item.id}
                   className={`pbs-entity-nav-item${isActive ? " active" : ""}`}
-                  onClick={() => setActiveSection(item.id)}
+                  onClick={() => switchSection(item.id)}
                 >
                   <span className="pbs-entity-nav-icon">{item.icon}</span>
                   <span className="pbs-entity-nav-label">{item.label}</span>
@@ -121,7 +143,18 @@ export function PbsEntityEditor({ projectPath, mapNames, onClose }: Props) {
           </nav>
 
           {/* Section panels — all always mounted, toggled via display:none */}
-          <div className="pbs-entity-panels">
+          <div className="pbs-entity-panels" id="pbs-mobile-record-list"
+            onClickCapture={(event) => {
+              const target = event.target as HTMLElement;
+              if (recordsOpen && target.closest(".pbs-entity-list [role='option']") &&
+                  !target.closest("button")) setRecordsOpen(false);
+            }}
+            onKeyDownCapture={(event) => {
+              if (recordsOpen && (event.key === "Enter" || event.key === " ") &&
+                  (event.target as HTMLElement).closest(".pbs-entity-list [role='option']")) {
+                setRecordsOpen(false);
+              }
+            }}>
             <div style={{ display: activeSection === "pokemon"    ? "contents" : "none" }}><PokemonPanel /></div>
             <div style={{ display: activeSection === "moves"      ? "contents" : "none" }}><MovesPanel /></div>
             <div style={{ display: activeSection === "abilities"  ? "contents" : "none" }}><AbilitiesPanel /></div>
