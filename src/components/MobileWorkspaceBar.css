@@ -122,4 +122,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .app-mobile-workspace-actions > button { min-height: 44px; }
+  /* Explicit order guarantees the write actions remain together even if
+     contextual controls are expanded or the DOM evolves. */
+  .app-mobile-workspace-actions > button[aria-label="Save all changes"] { order: -2; }
+  .app-mobile-workspace-actions > button[aria-label="Export project ZIP"] { order: -1; }
 }
