@@ -7,7 +7,7 @@ const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
 test("compact phone UI stylesheet loads after the existing responsive app styles", () => {
   assert.match(app, /import "\.\/App\.css";\s*import "\.\/mobileCompact\.css";/);
-  assert.match(compact, /^\/\*[\s\S]+?\*\/@media \(max-width: 900px\) \{/);
+  assert.match(compact, /^\/\*[\s\S]+?\*\/\s*@media \(max-width: 900px\) \{/);
   assert.doesNotMatch(compact, /transform:\s*scale\(/, "Never shrink or distort map/sprite pixels");
 });
 
