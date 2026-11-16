@@ -55,7 +55,7 @@ export function TilesetPalette({
     onSelectTile(id);
     setRecentTileIds(previous => [id, ...previous.filter(tile => tile !== id)].slice(0, 8));
   }, [onSelectTile]);
-  useEffect(() => { setRecentTileIds([]); }, [tilesetInfo]);
+  // A different image can replace a tileset while the metadata object is reused.\n  // Do not offer shortcuts into the previous image after project/map switching.\n  useEffect(() => { setRecentTileIds([]); }, [tilesetInfo, tilesetImage]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverTileId, setHoverTileId] = useState<number | null>(null);
   const [tileIdInput, setTileIdInput] = useState(String(selectedTileId));
@@ -237,7 +237,7 @@ export function TilesetPalette({
 
       <div className="palette-recent-tiles" role="group" aria-label="Recently selected tiles">
         <span className="palette-recent-label">Recent</span>
-        {recentTileIds.length ? recentTileIds.map(id => (
+        {recentTileIds.filter(id => id < FIRST_REGULAR_TILE\n          ? id >= 48 && id < 48 * (tilesetInfo.autotile_names.length + 1)\n            && Boolean(tilesetInfo.autotile_names[Math.floor(id / 48) - 1])\n          : tileIdIsValid(id)).length ? recentTileIds.filter(id => id < FIRST_REGULAR_TILE\n          ? id >= 48 && id < 48 * (tilesetInfo.autotile_names.length + 1)\n            && Boolean(tilesetInfo.autotile_names[Math.floor(id / 48) - 1])\n          : tileIdIsValid(id)).map(id => (
           <button key={id} type="button" className={selectedTileId === id ? "active" : ""}
             aria-label={`Select recent tile ${id}`} aria-pressed={selectedTileId === id}
             onClick={() => { selectTile(id); setActiveTab(id < FIRST_REGULAR_TILE ? "autotiles" : "tiles"); }}>
