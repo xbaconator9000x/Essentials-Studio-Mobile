@@ -1952,7 +1952,12 @@ describe("sprite editor integration", () => {
       target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] },
     });
     await screen.findByText("Trace opacity: 35%");
-    expect(context.drawImage.mock.calls.some((call) => call[0] instanceof TestImage)).toBe(true);
+    // The opacity control appears during React render; the canvas composition
+    // happens in a subsequent effect. Wait for the actual trace draw before
+    // asserting that saving still serializes only the pixel backing canvas.
+    await waitFor(() => expect(context.drawImage.mock.calls.some(
+      (call) => call[0] instanceof TestImage,
+    )).toBe(true));
 
     fireEvent.pointerDown(editorCanvas!, {
       pointerId: 1,
