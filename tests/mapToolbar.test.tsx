@@ -50,6 +50,40 @@ describe("collapsed XP layer visibility", () => {
     expect(props.onRedo).not.toHaveBeenCalled();
   });
 
+  it("changes visible layers directly from the portrait drawing panel without tile writes", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onToggleLayerVisibility = vi.fn();
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 0, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo, onRedo, ...noTileClipboardActions,
+      showLayers: [true, true, false] as [boolean, boolean, boolean],
+      onToggleLayerVisibility,
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    const active = screen.getByRole("checkbox", { name: "Show tile layer 1 while editing" }) as HTMLInputElement;
+    expect(active.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show tile layer 2 while editing" }));
+    expect(onToggleLayerVisibility).toHaveBeenCalledWith(1, false);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show tile layer 3 while editing" }));
+    expect(onToggleLayerVisibility).toHaveBeenCalledWith(2, true);
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(onRedo).not.toHaveBeenCalled();
+    view.rerender(<MapToolbar {...props} showLayers={[true, false, true]} />);
+    expect((screen.getByRole("checkbox", { name: "Show tile layer 2 while editing" }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    expect(screen.queryByRole("checkbox", { name: "Show tile layer 2 while editing" })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Show tile layer 2" })).toBeTruthy();
+  });
+
   it("allows hiding other layers while keeping the active layer visible", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
