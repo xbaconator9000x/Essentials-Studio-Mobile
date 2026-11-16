@@ -221,8 +221,12 @@ describe("tileset metadata refresh and RMXP tile-ID limits", () => {
 });
 
 describe("scroll-safe tileset touch and return to painting", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   it("ignores synthetic clicks after dragging and cancellation, but accepts next tap", () => {
+    // JSDOM lacks PointerEvent; its fallback Event drops clientX/clientY.
+    // Browser pointer events carry MouseEvent coordinates, so model those
+    // faithfully instead of turning a swipe into (undefined, undefined).
+    vi.stubGlobal("PointerEvent", MouseEvent);
     const image = new Image(); image.width = 256; image.height = 96;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
