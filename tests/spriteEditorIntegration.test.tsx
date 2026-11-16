@@ -554,7 +554,10 @@ describe("sprite editor integration", () => {
     await screen.findByText("Unsaved imported sprite");
     const copyName = screen.getByRole("textbox", { name: "Quick imported sprite copy name" });
     fireEvent.change(copyName, { target: { value: "Visitor_safe" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    const save = screen.getByRole("button", { name: "Save sprite" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect((copyName as HTMLInputElement).value).toBe("Visitor_safe");
+    fireEvent.click(save);
     await waitFor(() => expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledTimes(1));
     expect(editorApi.importPrivateProjectSprite).toHaveBeenCalledWith(
       "/synthetic-project",
