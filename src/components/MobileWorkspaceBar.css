@@ -111,9 +111,9 @@
   }
 }
 
-/* At narrow portrait widths, keep Save and Export in a dedicated first row.
+/* On portrait phones, keep Save and Export in a dedicated first row.
    The remaining commands get full-width targets instead of cramped labels. */
-@media (max-width: 380px) and (orientation: portrait) {
+@media (max-width: 600px) and (orientation: portrait) {
   .app-mobile-workspace-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
