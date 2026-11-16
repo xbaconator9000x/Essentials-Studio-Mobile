@@ -48,3 +48,14 @@
 
 ## Next concrete work
 Reverify newest exact-HEAD workflow evidence after the Chromium disclosure-journey and JSDOM pointer-coordinate fixes. Continue map gesture/tool/palette integration, keyboard-safe panels, then sprite editor.
+
+## Structural redesign verified checkpoint — 17 November 2026
+
+- [x] Eliminate redundant loaded-project/title chrome and permanent receipt-height tax on narrow viewports.
+- [x] Browser-verify full-width mobile PBS entity form, category switching and searchable record drawer, retaining pending edits.
+- [x] Make Database and Ruby records/script lists on-demand, with desktop editors unchanged.
+- [x] Compress project list navigation and sprite tools; make bottom Sprites tab open actual editor in one tap.
+- [x] CI real Chromium UI/Rust ZIP roundtrip success at `790caaff`, evidence artifact `14256540030`.
+- [ ] Verify exact *newer* HEAD CI and download corresponding ARM64 APK only from GitHub Actions.
+- [ ] Improve map brush/palette discoverability and frame/zoom interaction on real large project layouts.
+- [ ] Physical Android touch/SAF install/rotation acceptance remains deferred by user. Never represent emulator status as physical acceptance.
