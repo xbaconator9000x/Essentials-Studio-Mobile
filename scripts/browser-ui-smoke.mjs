@@ -420,6 +420,16 @@ try {
   await page.locator(".tileset-palette").waitFor({ state: "hidden" });
   assert.equal(await workspaceActions.getByRole("button", { name: "Show map tools" }).isVisible(), true,
     "Map contextual commands must collapse after actions");
+  // The loaded-project title and success receipt must not permanently
+  // consume screen height. Its identity and save handlers live in one strip.
+  const mobileTop = await page.evaluate(() => ({
+    titleDisplay: getComputedStyle(document.querySelector(".app--workspace > .app-titlebar")).display,
+    toastPosition: document.querySelector(".app-mobile-operation-feedback")
+      ? getComputedStyle(document.querySelector(".app-mobile-operation-feedback")).position : "dismissed",
+  }));
+  assert.equal(mobileTop.titleDisplay, "none", "Phone project title must not be duplicated above Save/Export");
+  assert.ok(["fixed", "dismissed"].includes(mobileTop.toastPosition),
+    "Successful ZIP receipts must float over the screen instead of consuming editor height");
   const mobileMetrics = await page.evaluate(() => ({
     canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
     compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
@@ -482,13 +492,27 @@ try {
   await projectTools.getByRole("button", { name: "PBS Data" }).click();
   const pbsModal = page.locator(".pbs-entity-editor");
   await pbsModal.waitFor({ state: "visible", timeout: 30_000 });
-  const pbsMetrics = await pbsModal.evaluate(element => ({
-    width: element.getBoundingClientRect().width,
-    sidebarHeight: element.querySelector(".pbs-entity-sidebar")?.getBoundingClientRect().height ?? 0,
-  }));
-  assert.ok(pbsMetrics.width <= 392 && pbsMetrics.sidebarHeight <= 90,
-    "PBS mobile category rail must not consume desktop-width space: " + JSON.stringify(pbsMetrics));
+  const pbsMetrics = await pbsModal.evaluate(element => {
+    const box = selector => element.querySelector(selector)?.getBoundingClientRect();
+    return {
+      width: element.getBoundingClientRect().width,
+      sidebarDisplay: getComputedStyle(element.querySelector(".pbs-entity-sidebar")).display,
+      detailWidth: box(".pbs-pokemon-detail")?.width ?? 0,
+      listDisplay: getComputedStyle(element.querySelector(".pbs-entity-list")).display,
+      headerHeight: box(".pbs-entity-header")?.height ?? 0,
+    };
+  });
+  assert.ok(pbsMetrics.width <= 392 && pbsMetrics.detailWidth >= 370 &&
+      pbsMetrics.sidebarDisplay === "none" && pbsMetrics.listDisplay === "none" &&
+      pbsMetrics.headerHeight <= 45,
+    "Portrait PBS must render full-width editable fields, not cramped desktop panes: " +
+    JSON.stringify(pbsMetrics));
   await page.screenshot({ path: join(evidence, "browser-mobile-pbs-editor.png"), fullPage: true });
+  await pbsModal.getByRole("button", { name: "Browse PBS records" }).click();
+  await pbsModal.locator(".pbs-entity-list").waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-pbs-record-picker.png"), fullPage: true });
+  await pbsModal.locator(".pbs-entity-list [role='option']").first().click();
+  await pbsModal.locator(".pbs-entity-list").waitFor({ state: "hidden" });
   await pbsModal.locator(".pbs-entity-close").click();
   await pbsModal.waitFor({ state: "hidden", timeout: 15_000 });
 
