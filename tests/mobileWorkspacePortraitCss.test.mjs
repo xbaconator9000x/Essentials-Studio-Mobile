@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../src/components/MobileWorkspaceBar.css", import.meta.url), "utf8");
 
-test("narrow portrait workspace retains two-column, full-height command targets", () => {
-  const portrait = css.match(/@media \(max-width: 380px\) and \(orientation: portrait\) \{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(portrait, "narrow portrait layout must be explicit");
+test("portrait phone workspace retains two-column, full-height command targets", () => {
+  const portrait = css.match(/@media \(max-width: 600px\) and \(orientation: portrait\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(portrait, "portrait phone layout must be explicit");
   assert.match(portrait, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(portrait, /min-height:\s*44px/);
   assert.match(portrait, /Save all changes/);
