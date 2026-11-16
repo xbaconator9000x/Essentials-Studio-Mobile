@@ -114,6 +114,21 @@ describe("canvas-first mobile workspace commands", () => {
     for (const fn of Object.values(actions)) expect(fn).not.toHaveBeenCalled();
   });
 
+  it("does not reopen stale map tools after navigating away and back", () => {
+    const { view, actions } = renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    expect(screen.getByRole("button", { name: "Choose another map" })).toBeTruthy();
+    const props = { projectName: "Shattered", mapName: "Viridian City",
+      dirtyCount: 2, busy: false, editingEnabled: false, paletteVisible: false, ...actions };
+    view.rerender(<MobileWorkspaceBar section="sprites" {...props} />);
+    expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    view.rerender(<MobileWorkspaceBar section="maps" {...props} />);
+    expect(screen.getByRole("button", { name: "Show map tools" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    expect(screen.getByRole("button", { name: "Choose another map" })).toBeTruthy();
+  });
+
   it("offers map organisation only on Projects and keeps ZIP commands on every section", () => {
     const { view, actions } = renderActions({ section: "projects", editingEnabled: false });
     expect(screen.queryByRole("button", { name: "Show map tools" })).toBeNull();
