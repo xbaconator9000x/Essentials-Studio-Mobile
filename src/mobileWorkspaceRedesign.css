@@ -64,3 +64,153 @@
   }
   .app-mobile-safety-note summary { min-height: 30px; font-size: 11px; }
 }
+
+/* Full-width PBS data form / overlay record picker instead of a permanently
+ * split 220px/remaining desktop form. Buttons and category selection retain
+ * their existing handlers and all panels stay mounted while switching. */
+@media (max-width: 900px) {
+  .pbs-entity-editor { min-width: 0; min-height: 0; }
+  .pbs-entity-header {
+    min-height: 38px;
+    max-height: 42px;
+    padding: 3px 5px;
+    gap: 4px;
+  }
+  .pbs-entity-title {
+    flex: 0 0 auto;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .pbs-entity-dirty-badge {
+    font-size: 9px;
+    padding: 2px 4px;
+    white-space: nowrap;
+  }
+  .pbs-entity-close {
+    min-width: 30px;
+    min-height: 30px;
+    flex: 0 0 auto;
+    padding: 0;
+    font-size: 18px;
+  }
+  .pbs-mobile-workspace-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .pbs-mobile-category-picker {
+    flex: 1 1 0;
+    min-width: 70px;
+    max-width: 148px;
+    min-height: 30px;
+    padding: 3px 4px;
+    font-size: 12px;
+    color: var(--color-text);
+    background: var(--color-base);
+    border: 1px solid var(--color-surface1);
+    border-radius: 5px;
+  }
+  .pbs-mobile-records-toggle {
+    flex: 0 0 auto;
+    min-height: 30px;
+    min-width: 62px;
+    padding: 3px 6px;
+    border: 1px solid var(--color-accent);
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: var(--color-base);
+  }
+  .pbs-entity-sidebar { display: none; }
+  .pbs-entity-body { display: flex; flex-direction: column; min-height: 0; }
+  .pbs-entity-panels {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .pbs-entity-panels > div > div {
+    width: 100%;
+    min-width: 0;
+  }
+  .pbs-entity-panels .pbs-entity-list { display: none !important; }
+  .pbs-entity-editor.records-open .pbs-entity-panels .pbs-entity-list {
+    display: flex !important;
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    width: 100% !important;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    background: var(--color-mantle) !important;
+    border-right: 0 !important;
+    box-shadow: none;
+  }
+  .pbs-entity-editor.records-open .pbs-entity-list input {
+    min-height: 34px;
+    font-size: 16px;
+  }
+  .pbs-entity-list [role="option"] { min-height: 34px; }
+  .pbs-pokemon-panel, .pbs-pokemon-detail { width: 100%; min-width: 0; }
+  .pbs-entity-panels .pbs-pokemon-sprite-header {
+    gap: 7px !important;
+    padding: 4px 7px !important;
+  }
+  .pbs-pokemon-sprite-header img {
+    width: 42px !important;
+    height: 42px !important;
+  }
+  .pbs-pokemon-sprite-header > div:nth-child(2) { min-width: 0; }
+  .pbs-pokemon-sprite-header > div:nth-child(2) > div:first-child {
+    font-size: 14px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pbs-pokemon-tabs {
+    gap: 3px;
+    padding: 0 5px !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pbs-pokemon-tabs > button {
+    flex: 0 0 auto;
+    min-height: 30px;
+    padding: 4px 7px !important;
+    font-size: 11px !important;
+  }
+  .pbs-entity-panels .pbs-pokemon-fields {
+    padding: 7px 9px !important;
+    min-width: 0;
+  }
+  .pbs-field-row {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px !important;
+  }
+  .pbs-field-row > .pbs-field { min-width: 0; max-width: 100%; }
+  .pbs-field input, .pbs-field select, .pbs-field textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .pbs-entity-bottom-bar {
+    min-height: 38px;
+    padding: 3px 5px max(3px, env(safe-area-inset-bottom));
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .pbs-entity-bottom-bar .pbs-btn {
+    min-width: 62px;
+    min-height: 30px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+}
+@media (max-width: 355px) {
+  .pbs-entity-title { display: none; }
+  .pbs-mobile-category-picker { max-width: none; }
+}

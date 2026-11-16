@@ -77,7 +77,7 @@ export function PokemonPanel() {
   const EGG_GROUPS = ["Monster", "Water1", "Bug", "Flying", "Field", "Fairy", "Grass", "HumanLike", "Water3", "Mineral", "Amorphous", "Water2", "Ditto", "Dragon", "Undiscovered"];
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div className="pbs-pokemon-panel" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
       {/* Left list */}
       <EntityListPanel
         items={items}
@@ -95,13 +95,13 @@ export function PokemonPanel() {
       />
 
       {/* Right panel */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="pbs-pokemon-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {error && <div style={{ color: "#d20f39", fontSize: 12, padding: "4px 12px" }}>{error}</div>}
 
         {selected && (
           <>
             {/* Sprite header */}
-            <div style={{
+            <div className="pbs-pokemon-sprite-header" style={{
               display: "flex", alignItems: "center", gap: 16, padding: "12px 16px",
               borderBottom: "1px solid #ccd0da", background: "#f0f2f5", flexShrink: 0,
             }}>
@@ -139,7 +139,7 @@ export function PokemonPanel() {
             </div>
 
             {/* Tab bar */}
-            <div style={{ display: "flex", borderBottom: "1px solid #ccd0da", padding: "4px 12px 0", background: "#e6e9ef", flexShrink: 0 }}>
+            <div className="pbs-pokemon-tabs" style={{ display: "flex", borderBottom: "1px solid #ccd0da", padding: "4px 12px 0", background: "#e6e9ef", flexShrink: 0 }}>
               {TABS.map((t) => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{
                   padding: "4px 12px", fontSize: 11,
@@ -155,7 +155,7 @@ export function PokemonPanel() {
             </div>
 
             {/* Tab content */}
-            <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+            <div className="pbs-pokemon-fields" style={{ flex: 1, overflow: "auto", padding: 16 }}>
               <datalist id={typesDlId}>{typeNames.map((n) => <option key={n} value={n} />)}</datalist>
               <datalist id={abilitiesDlId}>{abilityNames.map((n) => <option key={n} value={n} />)}</datalist>
 
