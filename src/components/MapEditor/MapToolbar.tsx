@@ -127,6 +127,14 @@ export function MapToolbar({
     if (paintTool !== "pan") previousPaintTool.current = paintTool;
   }, [paintTool]);
   const togglePan = () => setPaintTool(paintTool === "pan" ? previousPaintTool.current : "pan");
+  // A hidden active layer cannot be re-enabled through its disabled visibility
+  // checkbox. Reveal the target before selecting it, without editing map data.
+  const selectLayer = (layer: number) => {
+    if (layer >= 0 && layer < 3 && !showLayers[layer]) {
+      onToggleLayerVisibility(layer, true);
+    }
+    setSelectedLayer(layer);
+  };
   const [compactPanel, setCompactPanel] = useState<"edit" | "events" | "view">("edit");
   // Event placement is a modal map interaction. Keep its cancel button and
   // instructions visible even when the user selected another mobile panel.
@@ -251,7 +259,7 @@ export function MapToolbar({
           <button
             key={layer}
             className={`toolbar-btn ${selectedLayer === layer ? "active" : ""}`}
-            onClick={() => setSelectedLayer(layer)}
+            onClick={() => selectLayer(layer)}
             aria-label={name}
             aria-pressed={selectedLayer === layer}
             style={layer === 3 && selectedLayer === 3 ? { borderColor: "#fe640b", color: "#fe640b" } : {}}
@@ -265,7 +273,7 @@ export function MapToolbar({
           <label className="map-toolbar-native-layer-select">
             <span>Active layer</span>
             <select aria-label="Select active map layer" value={selectedLayer}
-              onChange={event => setSelectedLayer(Number(event.currentTarget.value))}>
+              onChange={event => selectLayer(Number(event.currentTarget.value))}>
               {MAP_LAYERS.map(({ layer, name }) => (
                 <option key={layer} value={layer}>{name}</option>
               ))}
@@ -277,7 +285,7 @@ export function MapToolbar({
             <button
               key={layer}
               className={`toolbar-btn ${selectedLayer === layer ? "active" : ""}`}
-              onClick={() => setSelectedLayer(layer)}
+              onClick={() => selectLayer(layer)}
               title={name}
               aria-label={name}
               aria-pressed={selectedLayer === layer}
