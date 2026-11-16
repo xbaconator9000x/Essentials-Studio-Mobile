@@ -358,15 +358,31 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
     nodes = ui_nodes(name + "-initial")
     if action(nodes, "Enable map editing") or action(nodes, "Switch map to view mode"):
         return nodes
-    nodes = wait_ui("Show map tools", name + "-collapsed", timeout=timeout)
-    tap_button(nodes, "Show map tools")
     deadline = time.monotonic() + timeout
+    attempts = 0
+    last_labels: list[str] = []
     while time.monotonic() < deadline:
-        expanded = ui_nodes(name + "-expanded")
-        if action(expanded, "Enable map editing") or action(expanded, "Switch map to view mode"):
-            return expanded
+        # Android WebView accessibility can publish the previous frame after
+        # navigation or disclosure. Re-read the *current* hierarchy rather than
+        # tapping a coordinate captured before the map workspace settled.
+        current = ui_nodes(name + "-disclosure")
+        if action(current, "Enable map editing") or action(current, "Switch map to view mode"):
+            return current
+        last_labels = [label(node) for node in current if label(node)][-24:]
+        toggle = action(current, "Show map tools")
+        if toggle and attempts < 3:
+            tap(toggle)
+            attempts += 1
+            time.sleep(2)
+            continue
+        if action(current, "Hide map tools"):
+            # The disclosure is already open: do not toggle it shut.
+            time.sleep(2)
+            continue
         time.sleep(2)
-    raise AssertionError("Map contextual tools did not expand to an accessible editing state")
+    raise AssertionError(
+        f"Map contextual tools did not expand to an accessible editing state "
+        f"after {attempts} disclosure attempts; visible labels={last_labels!r}")
 
 def native_map_edit_and_save(package: str) -> dict[str, object]:
     """Paint one actual synthetic map tile through Android touch then Save All.
