@@ -417,7 +417,7 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
 
     # Reopen via the real mobile map tree; never assume a status badge alone
     # establishes that the editor remained reachable after save.
-    current = ui_nodes("native-map-before-reopen")
+    current = open_map_tools("native-map-before-reopen", timeout=35)
     tap_button(current, "Choose another map")
     project_nodes = wait_ui("Synthetic Map", "native-map-reopen-list", timeout=40)
     position = locate(project_nodes, "Synthetic Map")
