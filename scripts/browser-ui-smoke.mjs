@@ -582,7 +582,12 @@ try {
   await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
   await page.locator(".tileset-palette").waitFor({ state: "visible" });
   await page.screenshot({ path: join(evidence, "browser-landscape-map-tiles.png"), fullPage: true });
+  // Opening Tiles is a contextual command and deliberately closes the menu.
+  // Reopen it before requesting Hide; this exercises the actual one-tap
+  // disclosure path, rather than waiting for a button that is not mounted.
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
+  await page.locator(".tileset-palette").waitFor({ state: "hidden" });
 
   await navigation.getByRole("button", { name: "Settings", exact: true }).click();
   await projectTools.getByRole("button", { name: "PBS Data" }).waitFor({ state: "visible" });
