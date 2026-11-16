@@ -549,11 +549,25 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
 
     # Select the actual rights-cleared map in the tree; inspect canvas and
     # palette on the full Android WebView before any UI state is reported passed.
-    map_point = locate(project_nodes, "Synthetic Map")
-    if not map_point:
-        raise AssertionError("Synthetic map is missing from imported map tree")
-    tap(map_point)
-    map_nodes = open_map_tools("portrait-map-editor", timeout=70)
+    # The map name may appear in a static project heading as well as the
+    # actionable tree entry. Never tap the first matching text node blindly.
+    candidates = [node for node in project_nodes
+                  if node.get("package") == package
+                  and "Synthetic Map" in label(node)
+                  and node.get("clickable") == "true"
+                  and locate([node], "Synthetic Map")]
+    if len(candidates) != 1:
+        raise AssertionError(f"Expected one clickable imported map tree entry, found {len(candidates)}; "
+                             f"matching nodes={[(n.get('class'), n.get('clickable'), label(n)) for n in project_nodes if 'Synthetic Map' in label(n)]!r}")
+    tap(locate(candidates, "Synthetic Map"))
+    # Prove the canvas was actually opened before testing its contextual tools.
+    # A project overview also contains Save/Export and can otherwise masquerade
+    # as a map editor in a permissive accessibility smoke test.
+    map_canvas = wait_ui("Map tile editing canvas", "portrait-map-canvas", timeout=70)
+    if not any(n.get("package") == package and "Map tile editing canvas" in label(n)
+               for n in map_canvas):
+        raise AssertionError("Imported map canvas was not owned by the editor app")
+    map_nodes = open_map_tools("portrait-map-editor", timeout=35)
     portrait_map = screenshot("portrait-map-editor")
     assert_visible_controls(map_nodes, ("Save all changes", "Export project ZIP",
                             "Choose another map", "Enable map editing", "Open tile palette"),
