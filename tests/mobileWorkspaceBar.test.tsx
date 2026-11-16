@@ -80,8 +80,9 @@ describe("canvas-first mobile workspace commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
     view.rerender(<MobileWorkspaceBar section="maps" projectName="Shattered" mapName="Viridian City"
       dirtyCount={2} busy={true} editingEnabled={false} paletteVisible={false} {...actions} />);
-    for (const name of ["Choose another map", "Enable map editing", "Open tile palette",
-      "Save all changes", "Export project ZIP", "Hide map tools"]) {
+    expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show map tools" }).getAttribute("aria-expanded")).toBe("false");
+    for (const name of ["Save all changes", "Export project ZIP", "Show map tools"]) {
       const button = screen.getByRole("button", { name }) as HTMLButtonElement;
       expect(button.disabled).toBe(true);
       fireEvent.click(button);
