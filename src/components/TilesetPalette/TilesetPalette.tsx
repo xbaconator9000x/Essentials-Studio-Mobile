@@ -158,10 +158,34 @@ export function TilesetPalette({
     }
   }, [tilesetImage, selectedTileId, hoverTileId, activeTab]);
 
+  // Finger dragging the scrollable palette must not synthesize a tile tap.
+  const tilePointerStart = useRef<{ x: number; y: number } | null>(null);
+  const blockPointerClick = useRef(false);
+  const beginTilePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    tilePointerStart.current = { x: e.clientX, y: e.clientY };
+    blockPointerClick.current = false;
+  }, []);
+  const moveTilePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const start = tilePointerStart.current;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8)
+      blockPointerClick.current = true;
+  }, []);
+  const endTilePointer = useCallback(() => { tilePointerStart.current = null; }, []);
+  const cancelTilePointer = useCallback(() => {
+    tilePointerStart.current = null;
+    blockPointerClick.current = true;
+  }, []);
+
   // Use one bounds-checked hit test for mouse, touch-generated click and hover.
   const handleTilesetClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
+      // Keyboard-generated clicks use detail=0 and remain usable after scroll.
+      if (e.detail !== 0 && blockPointerClick.current) {
+        blockPointerClick.current = false;
+        return;
+      }
+      blockPointerClick.current = false;
       if (!canvas || !tilesetImage) return;
       const tileId = regularTileIdAt(canvas, tilesetImage, e.clientX, e.clientY);
       if (tileId !== null) selectTile(tileId);
@@ -309,6 +333,10 @@ export function TilesetPalette({
               tabIndex={0}
               aria-label="Tileset tile picker; use arrow keys to select a tile"
               onKeyDown={handleTilesetKey}
+              onPointerDown={beginTilePointer}
+              onPointerMove={moveTilePointer}
+              onPointerUp={endTilePointer}
+              onPointerCancel={cancelTilePointer}
               onClick={handleTilesetClick}
               onMouseMove={handleTilesetMove}
               onMouseLeave={() => setHoverTileId(null)}
@@ -396,6 +424,9 @@ export function TilesetPalette({
         <span>ID: {displayTileId}</span>
         <span>P: {priority}</span>
       </div>
+      <button className="palette-use-tile" type="button" onClick={onClose}>
+        Paint with selected tile
+      </button>
     </div>
   );
 }

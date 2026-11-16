@@ -219,3 +219,47 @@ describe("tileset metadata refresh and RMXP tile-ID limits", () => {
     expect(onSelectTile).toHaveBeenNthCalledWith(2, 32767);
   });
 });
+
+describe("scroll-safe tileset touch and return to painting", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  it("ignores synthetic clicks after dragging and cancellation, but accepts next tap", () => {
+    const image = new Image(); image.width = 256; image.height = 96;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(), strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const select = vi.fn();
+    const view = render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Forest", tileset_name: "Forest", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={384} onSelectTile={select} onClose={vi.fn()} />);
+    const canvas = view.container.querySelector("canvas")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 256, bottom: 96, width: 256, height: 96, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(canvas, { clientX: 10, clientY: 45 });
+    fireEvent.pointerUp(canvas);
+    fireEvent.click(canvas, { clientX: 10, clientY: 45, detail: 1 });
+    expect(select).not.toHaveBeenCalled();
+    fireEvent.pointerDown(canvas, { clientX: 33, clientY: 10 });
+    fireEvent.pointerUp(canvas);
+    fireEvent.click(canvas, { clientX: 33, clientY: 10, detail: 1 });
+    expect(select).toHaveBeenCalledWith(385);
+    expect(select).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40 });
+    fireEvent.pointerCancel(canvas);
+    fireEvent.click(canvas, { clientX: 40, clientY: 40, detail: 1 });
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+  it("returns to map with selected autotile unchanged", () => {
+    const select = vi.fn(), close = vi.fn();
+    render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Forest", tileset_name: "Forest", autotile_names: ["Water"], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={null} autotileImages={[]} selectedTileId={384} onSelectTile={select} onClose={close} />);
+    fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Autotile 1: Water" }));
+    fireEvent.click(screen.getByRole("button", { name: "Paint with selected tile" }));
+    expect(select).toHaveBeenCalledExactlyOnceWith(48);
+    expect(close).toHaveBeenCalledOnce();
+  });
+});
