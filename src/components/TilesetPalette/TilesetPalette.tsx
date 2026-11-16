@@ -55,7 +55,9 @@ export function TilesetPalette({
     onSelectTile(id);
     setRecentTileIds(previous => [id, ...previous.filter(tile => tile !== id)].slice(0, 8));
   }, [onSelectTile]);
-  // A different image can replace a tileset while the metadata object is reused.\n  // Do not offer shortcuts into the previous image after project/map switching.\n  useEffect(() => { setRecentTileIds([]); }, [tilesetInfo, tilesetImage]);
+  // A different image can replace a tileset while the metadata object is reused.
+  // Do not offer shortcuts into the previous image after project/map switching.
+  useEffect(() => { setRecentTileIds([]); }, [tilesetInfo, tilesetImage]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverTileId, setHoverTileId] = useState<number | null>(null);
   const [tileIdInput, setTileIdInput] = useState(String(selectedTileId));
