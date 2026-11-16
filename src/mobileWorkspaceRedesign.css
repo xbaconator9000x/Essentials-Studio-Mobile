@@ -370,3 +370,30 @@
   .map-tree-search button { min-height: 30px; padding: 3px 6px; }
   .map-tree-item { min-height: 32px; margin: 1px 3px; padding: 4px 6px; }
 }
+
+/* Clear pictograms + labels remain on one small row, not a second tabbar.
+   Active status uses a quiet tinted surface instead of a thick oversized box. */
+@media (max-width: 900px) {
+  .app-mobile-nav { gap: 3px; background: var(--color-mantle); }
+  .app-mobile-nav button {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 3px 4px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+  .app-mobile-nav button svg {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+  }
+  .app-mobile-nav button[aria-current="page"] {
+    box-shadow: inset 0 -2px var(--color-accent);
+    background: var(--color-base);
+    color: var(--color-accent);
+  }
+}

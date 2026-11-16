@@ -308,7 +308,8 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileNavigation = page.getByRole("navigation", { name: "Main navigation" });
   await mobileNavigation.getByRole("button", { name: "Sprites", exact: true }).click();
-  await page.getByRole("button", { name: "Open Sprite Editor" }).click();
+  // The primary Sprites tab opens the real workspace, not a second welcome
+  // screen requiring another tap before the canvas becomes available.
   const spriteEditor = page.getByRole("dialog", { name: "Sprite editor" });
   await spriteEditor.waitFor({ timeout: 15_000 });
   await spriteEditor.getByRole("button", { name: "Tools ▸" }).click();
