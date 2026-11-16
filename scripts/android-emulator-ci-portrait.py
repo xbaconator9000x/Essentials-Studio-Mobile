@@ -527,9 +527,15 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
 
     if not selected:
         raise AssertionError("DocumentsUI never selected the synthetic ZIP")
-    project_nodes = wait_ui("maps available", "synthetic-project-loaded", timeout=100)
-    if not any(item.get("package", "") == package for item in project_nodes):
-        raise AssertionError("Project overview is not owned by the installed Android app")
+    # The portrait project overview now renders the real map tree rather than
+    # the former summary phrase "maps available". Require app-owned project
+    # identity AND its concrete imported map; a stale toast is not acceptance.
+    project_nodes = wait_ui("Synthetic Map", "synthetic-project-loaded", timeout=100)
+    project_labels = owned_labels(project_nodes, package)
+    if not any("Synthetic RMXP" in item for item in project_labels):
+        raise AssertionError("Imported synthetic project identity is absent from the Android app")
+    if not any("Synthetic Map" in item for item in project_labels):
+        raise AssertionError("Imported synthetic map is absent from the Android project tree")
 
     portrait = screenshot("portrait-project-overview")
     if portrait[0] >= portrait[1]:
