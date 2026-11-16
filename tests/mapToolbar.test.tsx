@@ -719,3 +719,61 @@ describe("mirror selection mobile controls", () => {
     expect((screen.getByRole("button", { name: "Mirror selected tiles horizontally" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+
+describe("hidden RMXP layer selection safety", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("reveals a hidden target before selecting it in the compact native picker", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const calls: string[] = [];
+    render(<MapToolbar
+      paintTool="pencil" setPaintTool={vi.fn()}
+      tileClipboard={null} selectedLayer={0}
+      setSelectedLayer={layer => calls.push(`select:${layer}`)}
+      showGrid setShowGrid={vi.fn()} zoom={1} setZoom={vi.fn()}
+      onUndo={vi.fn()} onRedo={vi.fn()}
+      {...noTileClipboardActions}
+      showLayers={[true, false, true]}
+      onToggleLayerVisibility={(layer, visible) => calls.push(`visible:${layer}:${visible}`)}
+      showEventPins setShowEventPins={vi.fn()}
+      paletteVisible onTogglePalette={vi.fn()}
+      eventCount={0} eventListVisible={false} onToggleEventList={vi.fn()}
+    />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Select active map layer" }), {
+      target: { value: "1" },
+    });
+    expect(calls).toEqual(["visible:1:true", "select:1"]);
+  });
+
+  it("does not modify visibility for already-visible layers or Events", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onToggleLayerVisibility = vi.fn();
+    const setSelectedLayer = vi.fn();
+    render(<MapToolbar
+      paintTool="pencil" setPaintTool={vi.fn()}
+      tileClipboard={null} selectedLayer={0} setSelectedLayer={setSelectedLayer}
+      showGrid setShowGrid={vi.fn()} zoom={1} setZoom={vi.fn()}
+      onUndo={vi.fn()} onRedo={vi.fn()}
+      {...noTileClipboardActions}
+      showLayers={[true, false, true]} onToggleLayerVisibility={onToggleLayerVisibility}
+      showEventPins setShowEventPins={vi.fn()}
+      paletteVisible onTogglePalette={vi.fn()}
+      eventCount={0} eventListVisible={false} onToggleEventList={vi.fn()}
+    />);
+    const picker = screen.getByRole("combobox", { name: "Select active map layer" });
+    fireEvent.change(picker, { target: { value: "2" } });
+    fireEvent.change(picker, { target: { value: "3" } });
+    fireEvent.change(picker, { target: { value: "-1" } });
+    expect(onToggleLayerVisibility).not.toHaveBeenCalled();
+    expect(setSelectedLayer.mock.calls).toEqual([[2], [3], [-1]]);
+  });
+});
