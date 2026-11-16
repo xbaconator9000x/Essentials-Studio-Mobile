@@ -331,11 +331,17 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
     command instead of assuming a permanently expanded desktop toolbar.
     """
     nodes = ui_nodes(name + "-initial")
-    if action(nodes, "Enable map editing"):
+    if action(nodes, "Enable map editing") or action(nodes, "Switch map to view mode"):
         return nodes
     nodes = wait_ui("Show map tools", name + "-collapsed", timeout=timeout)
     tap_button(nodes, "Show map tools")
-    return wait_ui("Enable map editing", name + "-expanded", timeout=timeout)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        expanded = ui_nodes(name + "-expanded")
+        if action(expanded, "Enable map editing") or action(expanded, "Switch map to view mode"):
+            return expanded
+        time.sleep(2)
+    raise AssertionError("Map contextual tools did not expand to an accessible editing state")
 
 def native_map_edit_and_save(package: str) -> dict[str, object]:
     """Paint one actual synthetic map tile through Android touch then Save All.
