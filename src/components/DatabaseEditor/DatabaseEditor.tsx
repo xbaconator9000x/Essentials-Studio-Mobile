@@ -62,6 +62,7 @@ export function DatabaseEditor({ projectPath, onClose }: Props) {
   const [activeTab, setActiveTab] = useState<TabName>("Actors");
   const { dirtyIds, saveAll, discardAll } = useProjectSave();
   const [saving, setSaving] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
 
   // Check if any database editor is dirty
   const hasAnyDirty = Array.from(dirtyIds).some(id => id.startsWith("db-"));
@@ -87,7 +88,30 @@ export function DatabaseEditor({ projectPath, onClose }: Props) {
 
   return (
     <DatabaseNamesProvider projectPath={projectPath}>
-      <div className="db-editor">
+      <div className={`db-editor${recordsOpen ? " records-open" : ""}`}
+        onClickCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (recordsOpen && target.closest(".db-list-item") && !target.closest("button")) setRecordsOpen(false);
+        }}
+        onKeyDownCapture={(event) => {
+          if (recordsOpen && (event.key === "Enter" || event.key === " ") &&
+              (event.target as HTMLElement).closest(".db-list-item")) setRecordsOpen(false);
+        }}>
+        <div className="db-mobile-header" role="group" aria-label="Mobile database navigation">
+          <select className="db-mobile-category" aria-label="Database category" value={activeTab}
+            onChange={(event) => {
+              setActiveTab(event.target.value as TabName);
+              setRecordsOpen(false);
+            }}>
+            {TABS.map(tab => <option key={tab} value={tab}>{tab}</option>)}
+          </select>
+          <button type="button" className="db-mobile-records-toggle"
+            aria-label={recordsOpen ? "Close database record picker" : "Browse database records"}
+            aria-expanded={recordsOpen}
+            onClick={() => setRecordsOpen(open => !open)}>
+            {recordsOpen ? "Close list" : "Records"}
+          </button>
+        </div>
         <div className="db-tabs">
           {TABS.map((tab) => {
             const editorId = TAB_EDITOR_IDS[tab];
@@ -96,7 +120,7 @@ export function DatabaseEditor({ projectPath, onClose }: Props) {
               <button
                 key={tab}
                 className={`db-tab${activeTab === tab ? " active" : ""}`}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => { setActiveTab(tab); setRecordsOpen(false); }}
               >
                 {tab}
                 {isDirty && <span className="db-tab-dirty">●</span>}

@@ -28,6 +28,7 @@ export function ScriptEditor({ projectPath, onClose }: Props) {
   const [loadingSource, setLoadingSource] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [scriptListOpen, setScriptListOpen] = useState(false);
 
   // Cache: scriptId → source (both loaded originals and edits)
   const cacheRef = useRef<Map<number, string>>(new Map());
@@ -361,8 +362,28 @@ export function ScriptEditor({ projectPath, onClose }: Props) {
   }
 
   return (
-    <div className="script-editor-wrapper">
-      <div className="script-editor">
+    <div className={`script-editor-wrapper${scriptListOpen ? " scripts-open" : ""}`}>
+      <div className="script-editor"
+        onClickCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (scriptListOpen && target.closest(".script-list-item") && !target.closest("button")) {
+            setScriptListOpen(false);
+          }
+        }}
+        onKeyDownCapture={(event) => {
+          if (scriptListOpen && (event.key === "Enter" || event.key === " ") &&
+              (event.target as HTMLElement).closest(".script-list-item")) setScriptListOpen(false);
+        }}>
+        <div className="script-mobile-header">
+          <span className="script-mobile-current">
+            {selectedId === null ? "Choose a Ruby script" : (scripts.find(item => item.id === selectedId)?.title ?? "Ruby script")}
+          </span>
+          <button type="button" aria-label={scriptListOpen ? "Close Ruby script picker" : "Browse Ruby scripts"}
+            aria-expanded={scriptListOpen}
+            onClick={() => setScriptListOpen(open => !open)}>
+            {scriptListOpen ? "Close list" : "Scripts"}
+          </button>
+        </div>
         {searchActive ? (
           <GlobalSearchPanel
             query={searchQuery}
