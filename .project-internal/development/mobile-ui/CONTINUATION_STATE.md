@@ -36,3 +36,7 @@ A verified *earlier-head* debug ARM64 APK from docs-only commit `28e61a1`: [run 
 **Primary acceptance blocker:** physical Android touchscreen/portrait/landscape verification is still deferred, and passing an APK build or Chromium test must not be called physical acceptance. Emulator/KVM status is separately reported and never assumed passed.
 
 Read [DEVELOPMENT_DIRECTIVE.md](DEVELOPMENT_DIRECTIVE.md), [UI_IMPLEMENTATION_PLAN.md](UI_IMPLEMENTATION_PLAN.md), this file and [TESTING_AND_RELEASE_POLICY.md](TESTING_AND_RELEASE_POLICY.md) on handover. Live source and CI supersede dated snapshots.
+
+## 17 November 2026 — explicit miniature-control design direction
+
+User provided a 390×844 phone proof-of-concept screenshot accepting *much smaller* tool and navigation controls than the preceding 44–52 CSS-px design. Implemented a separate scoped `src/mobileCompact.css` loaded after the existing responsive rules. The layout keeps map identity/context/Save/ZIP in one ~30px command row at ordinary phone widths, tightens the top bar and receipt, bottom navigation, compact map tools, sprite quick tools and tileset drawer, and falls back to two write-control rows below 355px. Actual RMXP tile scale, map/sprite canvas pixels, data flow and desktop remain untouched. Added `tests/mobileCompactDensity.test.mjs` and strict Chromium runtime measurements for portrait canvas height, map rail, command row, Save and nav. Commit SHA and exact-head CI need fresh verification; do not claim physical Android validation.

@@ -1,0 +1,230 @@
+/* Compact mobile density, derived from the 390px proof-of-concept reference.
+ * Native map/sprite canvas pixels are unchanged. These sizes are deliberate:
+ * compact, clearly separated visible controls rather than 44-52px padded rails.
+ * Desktop (>900px) and dialogs requiring lengthy text are untouched. */
+@media (max-width: 900px) {
+  :root {
+    --mobile-compact-control: 30px;
+    --mobile-compact-gap: 3px;
+  }
+
+  .app-titlebar {
+    min-height: 32px;
+    gap: 4px;
+    padding: max(3px, env(safe-area-inset-top)) 7px 3px;
+  }
+  .app-title { font-size: 12px; }
+  .app-preview-badge {
+    padding: 3px 5px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+
+  /* One 30px command row: selected map / status / contextual tools / Save / ZIP.
+     Below 355px we allow the two write actions to occupy their own row,
+     rather than clipping them or compromising export. */
+  .app-mobile-workspace-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--mobile-compact-gap) 5px;
+    padding: 3px max(6px, env(safe-area-inset-right)) 3px max(6px, env(safe-area-inset-left));
+  }
+  .app-mobile-workspace-context { min-height: var(--mobile-compact-control); gap: 4px; }
+  .app-mobile-workspace-identity { line-height: 1.05; }
+  .app-mobile-workspace-name { font-size: 11px; }
+  .app-mobile-workspace-clean, .app-mobile-workspace-dirty { font-size: 9px; }
+  .app-mobile-workspace-tools-toggle {
+    min-height: var(--mobile-compact-control);
+    min-width: 70px;
+    gap: 3px;
+    padding: 2px 5px;
+    font-size: 10px;
+    border-radius: 5px;
+  }
+  .app-mobile-workspace-actions {
+    grid-template-columns: 64px 80px;
+    gap: 3px;
+  }
+  .app-mobile-workspace-actions > button,
+  .app-mobile-workspace-secondary > button {
+    min-height: var(--mobile-compact-control);
+    padding: 2px 4px;
+    font-size: 11px;
+    border-radius: 5px;
+  }
+  .app-mobile-workspace-secondary {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .app-mobile-workspace-bar button { touch-action: manipulation; }
+
+  /* A success receipt is a 30px row until Details is explicitly expanded. */
+  .app-mobile-operation-line { min-height: 30px; padding: 2px 6px; font-size: 11px; }
+  .app-mobile-operation-line button {
+    min-height: 28px;
+    min-width: 30px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    font-size: 10px;
+  }
+
+  /* The tab bar is navigation, not a full-width toolbar of giant buttons. */
+  .app-mobile-nav {
+    min-height: 38px;
+    gap: 3px;
+    padding: 2px 4px max(2px, env(safe-area-inset-bottom));
+  }
+  .app-mobile-nav button {
+    min-height: 32px;
+    padding: 2px 3px;
+    border-radius: 5px;
+    font-size: 11px;
+  }
+
+  .app-body--mobile-projects .app-mobile-project-summary {
+    gap: 5px;
+    padding: 7px 8px;
+    max-height: min(30dvh, 240px);
+  }
+  .app-mobile-project-summary h1 { font-size: 15px; }
+  .app-mobile-project-summary p { font-size: 11px; }
+  .app-mobile-project-options > summary {
+    min-height: 32px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  /* Map tools stay in one horizontally scrollable line, never over the map.
+     All real painting gestures and the 32px RMXP tile lattice stay untouched. */
+  .map-editor-toolbar.map-editor-toolbar--compact {
+    max-height: 44px;
+    gap: 3px;
+    padding: 2px 4px;
+  }
+  .map-editor-toolbar--compact .toolbar-group,
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs { gap: 3px; }
+  .map-editor-toolbar--compact .toolbar-btn,
+  .map-editor-toolbar--compact > button:first-child,
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs .toolbar-btn,
+  .map-editor-toolbar--compact .map-toolbar-event-actions .toolbar-btn {
+    min-height: 28px;
+    min-width: 27px;
+    padding: 3px 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 1.15;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    gap: 3px;
+    font-size: 10px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    height: 28px;
+    min-height: 28px;
+    min-width: 68px;
+    max-width: 88px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .map-editor-toolbar--compact .toolbar-pin-toggle,
+  .map-editor-toolbar--compact .toolbar-collision-toggle,
+  .map-editor-toolbar--compact .map-toolbar-quick-grid { min-height: 28px; }
+  .map-editor-toolbar--compact .map-toolbar-quick-grid input {
+    min-width: 16px;
+    min-height: 16px;
+  }
+  .map-editor-status {
+    gap: 6px;
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  .map-editor-toolbar:not(.map-editor-toolbar--compact) {
+    max-height: min(30dvh, 200px);
+    gap: 4px;
+    padding: 4px;
+  }
+  .map-editor-toolbar:not(.map-editor-toolbar--compact) .toolbar-btn {
+    min-height: 32px;
+    min-width: 30px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+
+  /* Sprite tools: compact palettes and frame navigation free the editing
+     surface without changing sprite pixel scaling or output PNG dimensions. */
+  .sprite-editor-header { gap: 4px; padding: 4px 6px; }
+  .sprite-editor-header-actions,
+  .sprite-editor-tool-row { gap: 4px; }
+  .sprite-editor-header button { min-height: 32px; padding: 3px 6px; font-size: 11px; }
+  .sprite-editor-walk-frames { gap: 4px; padding: 2px 6px; }
+  .sprite-editor-walk-frames label { gap: 3px; font-size: 11px; }
+  .sprite-editor-walk-frames button,
+  .sprite-editor-walk-frames select {
+    min-height: 30px;
+    min-width: 30px;
+    padding: 2px 5px;
+    font-size: 11px;
+  }
+  .sprite-editor-quick-tools {
+    gap: 4px;
+    padding: 3px 6px;
+  }
+  .sprite-editor-quick-group { gap: 3px; }
+  .sprite-editor-quick-tools button,
+  .sprite-editor-quick-tools select,
+  .sprite-editor-quick-import {
+    min-height: 30px;
+    min-width: 30px;
+    padding: 3px 5px;
+    font-size: 11px;
+  }
+  .sprite-editor-quick-copy-name input { min-height: 30px; font-size: 12px; }
+  .sprite-editor-quick-range input[type="range"],
+  .sprite-editor-quick-size input[type="range"] { min-height: 30px; }
+  .sprite-editor-quick-color input[type="color"] { width: 30px; height: 30px; }
+  .sprite-editor-quick-swatches > button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+  }
+  .sprite-editor-tools { gap: 6px; padding: 6px; }
+  .sprite-editor-tools button,
+  .sprite-editor-tools select { min-height: 32px; }
+
+  /* Palette drawers retain normal scrolling. Keep 'Paint with selected tile'
+     unambiguous and reachable as a single compact persistent button. */
+  .palette-header { min-height: 36px; padding: 3px 7px; font-size: 11px; }
+  .palette-close { min-height: 30px; min-width: 30px; font-size: 19px; }
+  .palette-tabs button,
+  .autotile-item { min-height: 32px; padding: 4px 6px; font-size: 11px; }
+  .palette-tile-navigation { gap: 3px; padding: 4px; }
+  .palette-tile-navigation button,
+  .palette-tile-navigation input {
+    min-height: 32px;
+    min-width: 28px;
+    font-size: 14px;
+  }
+  .palette-recent-tiles { gap: 3px; padding: 3px 5px; }
+  .palette-recent-tiles button { min-height: 30px; min-width: 35px; }
+  .palette-use-tile {
+    min-height: 34px;
+    margin: 3px max(6px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    border-radius: 5px;
+    font-size: 11px;
+  }
+}
+@media (max-width: 355px) {
+  .app-mobile-workspace-bar { grid-template-columns: minmax(0, 1fr); }
+  .app-mobile-workspace-actions {
+    grid-column: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) and (orientation: landscape) {
+  /* Retain a narrow status-bar safe area on devices reporting zero WebView
+     landscape insets; only the controls *below* that strip shrink. */
+  .app-titlebar { padding-top: max(24px, env(safe-area-inset-top)); }
+}

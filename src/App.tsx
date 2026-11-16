@@ -71,6 +71,7 @@ import {
   useEditorRegistration,
 } from "./context/ProjectSaveContext";
 import "./App.css";
+import "./mobileCompact.css";
 
 // Android's SAF save picker can expose a ZIP as generic octet-stream.
 const PROJECT_ARCHIVE_ACCEPT =

@@ -424,11 +424,20 @@ try {
     canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
     compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
     commandStripHeight: document.querySelector(".app-mobile-workspace-bar")?.getBoundingClientRect().height ?? 0,
+    navHeight: document.querySelector(".app-mobile-nav")?.getBoundingClientRect().height ?? 0,
+    saveButtonHeight: document.querySelector('.app-mobile-workspace-actions button[aria-label="Save all changes"]')?.getBoundingClientRect().height ?? 0,
+    titleHeight: document.querySelector(".app-titlebar")?.getBoundingClientRect().height ?? 0,
   }));
-  assert.ok(mobileMetrics.canvasHeight >= 120,
-    "Portrait editor must preserve a usable canvas after toolbars: " + JSON.stringify(mobileMetrics));
-  assert.ok(mobileMetrics.compactToolbarHeight <= 92,
-    "Compact portrait toolbar should not expand into multiple obstructing rows: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.canvasHeight >= 460,
+    "390x844 portrait editor must retain the majority of the screen as canvas: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.compactToolbarHeight <= 44,
+    "Compact toolbar must remain one small command line: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.commandStripHeight <= 48,
+    "Save/ZIP and map context should share a compact row: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.navHeight <= 43,
+    "Bottom navigation must not consume a giant touch bar: " + JSON.stringify(mobileMetrics));
+  assert.ok(mobileMetrics.saveButtonHeight >= 28 && mobileMetrics.saveButtonHeight <= 36,
+    "Compact Save All must remain visible and actionable: " + JSON.stringify(mobileMetrics));
   await page.screenshot({ path: join(evidence, "browser-mobile-map-workspace.png"), fullPage: true });
   await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Choose another map" }).click();
