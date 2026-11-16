@@ -213,6 +213,9 @@ describe("tileset metadata refresh and RMXP tile-ID limits", () => {
     const canvas = view.container.querySelector("canvas")!;
     fireEvent.keyDown(canvas, { key: "ArrowDown" });
     fireEvent.keyDown(canvas, { key: "End" });
-    expect(onSelectTile).not.toHaveBeenCalled();
+    // Navigation clamps to the last valid RMXP tile rather than emitting an invalid ID.
+    expect(onSelectTile).toHaveBeenCalledTimes(2);
+    expect(onSelectTile).toHaveBeenNthCalledWith(1, 32767);
+    expect(onSelectTile).toHaveBeenNthCalledWith(2, 32767);
   });
 });
