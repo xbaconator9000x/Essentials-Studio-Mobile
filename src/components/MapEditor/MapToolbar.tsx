@@ -297,6 +297,21 @@ export function MapToolbar({
         </div>
       )}
 
+      {/* Keep visibility reachable beside the active layer on a phone. This is
+          renderer state only; changing it must never mutate RMXP map tiles. */}
+      {toolsCollapsed && compactPanel === "edit" && (
+        <div className="toolbar-group map-layer-visibility" role="group" aria-label="Quick layer visibility while editing">
+          {([0, 1, 2] as const).map(layer => (
+            <label className="toolbar-check" key={layer}>
+              <input type="checkbox" aria-label={`Show tile layer ${layer + 1} while editing`}
+                checked={showLayers[layer]} disabled={selectedLayer === layer}
+                onChange={event => onToggleLayerVisibility(layer, event.currentTarget.checked)} />
+              L{layer + 1}
+            </label>
+          ))}
+        </div>
+      )}
+
       {!toolsCollapsed && (
         <div className="toolbar-group map-layer-visibility" role="group" aria-label="Visible tile layers">
           <span className="toolbar-label">Visible:</span>
