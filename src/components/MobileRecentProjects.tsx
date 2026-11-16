@@ -1,5 +1,5 @@
 import { projectPathIdentity } from "../services/recentProject";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./MobileRecentProjects.css";
 
 interface Props {
@@ -34,6 +34,9 @@ function projectLabels(paths: readonly string[]): string[] {
 
 export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }: Props) {
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Switching projects should not leave a stale filter hiding the new project.
+  useEffect(() => { setQuery(""); }, [currentPath]);
   const seen = new Set<string>();
   const uniquePaths = paths.filter((path) => {
     const identity = projectPathIdentity(path);
@@ -55,14 +58,18 @@ export function MobileRecentProjects({ paths, currentPath, disabled, onSelect }:
     <nav className="app-mobile-project-list" aria-label="Recent projects">
       <strong>Recent projects</strong>
       {searchEnabled && (
-        <input type="search" aria-label="Find recent project" placeholder="Find project…"
-          value={query} disabled={disabled} onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && query) {
-              event.stopPropagation();
-              setQuery("");
-            }
-          }} />
+        <div className="app-mobile-project-search">
+          <input ref={searchRef} type="search" aria-label="Find recent project" placeholder="Find project…"
+            value={query} disabled={disabled} onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.stopPropagation();
+                setQuery("");
+              }
+            }} />
+          {query && <button type="button" disabled={disabled} aria-label="Clear project search"
+            onClick={() => { setQuery(""); searchRef.current?.focus(); }}>Clear</button>}
+        </div>
       )}
       {searchEnabled && normalizedQuery && visiblePaths.length > 0 && (
         <p role="status" aria-live="polite">{visiblePaths.length} of {uniquePaths.length} projects</p>
