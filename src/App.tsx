@@ -113,6 +113,7 @@ function AppContent() {
     () => typeof window.matchMedia === "function" && window.matchMedia(MOBILE_LAYOUT_QUERY).matches,
   );
   const [mobileSection, setMobileSection] = useState<"projects" | "maps" | "sprites" | "settings">("projects");
+  const [spriteReturnSection, setSpriteReturnSection] = useState<"projects" | "maps" | "settings">("projects");
   const [mobileEditEnabled, setMobileEditEnabled] = useState(false);
 
   useEffect(() => {
@@ -1371,7 +1372,11 @@ function AppContent() {
               <button type="button" disabled={loading || saving}
                 onClick={() => setShowPbs(true)}>PBS Data</button>
               <button type="button" disabled={loading || saving}
-                onClick={() => { setMobileSection("sprites"); setShowSprites(true); }}>Sprite Editor</button>
+                onClick={() => {
+                  setSpriteReturnSection("settings");
+                  setMobileSection("sprites");
+                  setShowSprites(true);
+                }}>Sprite Editor</button>
             </div>
           </div>
           <details className="app-mobile-safety-note">
@@ -1399,7 +1404,10 @@ function AppContent() {
             <div className="app-mobile-safety-note" role="alert">
               Keep the original ZIP and open the editor only on a disposable project copy.
             </div>
-            <button onClick={() => setShowSprites(true)}>Open Sprite Editor</button>
+            <button onClick={() => {
+              setSpriteReturnSection(currentMapId !== null ? "maps" : "projects");
+              setShowSprites(true);
+            }}>Open Sprite Editor</button>
           </section>
         )}
       </div>
@@ -1409,7 +1417,16 @@ function AppContent() {
           section={mobileSection}
           hasMap={currentMapId !== null}
           busy={loading || saving}
-          onNavigate={setMobileSection}
+          onNavigate={(next) => {
+            if (next === "sprites") {
+              setSpriteReturnSection(mobileSection === "settings" ? "settings"
+                : mobileSection === "maps" ? "maps" : "projects");
+              setMobileSection("sprites");
+              setShowSprites(true);
+            } else {
+              setMobileSection(next);
+            }
+          }}
         />
       )}
 
@@ -1450,7 +1467,7 @@ function AppContent() {
           projectPath={project.path}
           onClose={() => {
             setShowSprites(false);
-            if (mobileLayout) setMobileSection("sprites");
+            if (mobileLayout) setMobileSection(spriteReturnSection);
           }}
           onSaved={() => setGraphicsRevision((revision) => revision + 1)}
         />
