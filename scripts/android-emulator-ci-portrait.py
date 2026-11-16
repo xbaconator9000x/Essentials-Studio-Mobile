@@ -323,18 +323,29 @@ def private_imported_map_sha256(package: str) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+
+def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
+    """Expand canvas-first contextual tools through actual Android accessibility.
+
+    Each command closes the disclosure; tests must reopen it before the next
+    command instead of assuming a permanently expanded desktop toolbar.
+    """
+    nodes = wait_ui("Show map tools", name + "-collapsed", timeout=timeout)
+    tap_button(nodes, "Show map tools")
+    return wait_ui("Enable map editing", name + "-expanded", timeout=timeout)
+
 def native_map_edit_and_save(package: str) -> dict[str, object]:
     """Paint one actual synthetic map tile through Android touch then Save All.
 
     This checks UI mutation and Save All acknowledgement, NOT yet the bytes in
     a SAF-exported ZIP. The receipt explicitly keeps export/reimport unverified.
     """
-    original = wait_ui("Enable map editing", "native-edit-before", timeout=30)
+    original = open_map_tools("native-edit-before", timeout=30)
     if has_unsaved_map(original, package):
         raise AssertionError("Synthetic map was already dirty before native edit")
     before_map_sha256 = private_imported_map_sha256(package)
     tap_button(original, "Enable map editing")
-    enabled = wait_ui("Switch map to view mode", "native-edit-enabled", timeout=30)
+    enabled = open_map_tools("native-edit-enabled", timeout=30)
     tap_button(enabled, "Open tile palette")
     palette = wait_ui("Tile right", "native-edit-tile-picker", timeout=35)
     # Select a regular source tile different from the default; no hand-written
@@ -342,7 +353,7 @@ def native_map_edit_and_save(package: str) -> dict[str, object]:
     tap_button(palette, "Tile right")
     palette = wait_ui("Tile down", "native-edit-tile-selected", timeout=25)
     tap_button(palette, "Tile down")
-    current = wait_ui("Hide tile palette", "native-edit-close-palette", timeout=25)
+    current = open_map_tools("native-edit-close-palette", timeout=25)
     tap_button(current, "Hide tile palette")
     canvas = wait_ui("Map tile editing canvas", "native-edit-canvas", timeout=35)
     density = device_screen_density()
@@ -523,24 +534,25 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     if not map_point:
         raise AssertionError("Synthetic map is missing from imported map tree")
     tap(map_point)
-    map_nodes = wait_ui("Enable map editing", "portrait-map-editor", timeout=70)
+    map_nodes = open_map_tools("portrait-map-editor", timeout=70)
     portrait_map = screenshot("portrait-map-editor")
     assert_visible_controls(map_nodes, ("Save all changes", "Export project ZIP",
                             "Choose another map", "Enable map editing", "Open tile palette"),
                             portrait_map)
     tap_button(map_nodes, "Open tile palette")
-    tiles_nodes = wait_ui("Hide tile palette", "portrait-map-tiles", timeout=35)
+    tiles_nodes = open_map_tools("portrait-map-tiles", timeout=35)
     screenshot("portrait-map-tiles")
     tap_button(tiles_nodes, "Hide tile palette")
 
     # Rotate WHILE THE MAP is open, not merely on the start screen.
-    landscape_nodes, landscape = rotate(True, "landscape-map-editor", "Enable map editing")
+    landscape_nodes, landscape = rotate(True, "landscape-map-editor", "Show map tools")
+    landscape_nodes = open_map_tools("landscape-map-tools")
     assert_visible_controls(landscape_nodes, ("Save all changes", "Export project ZIP",
                             "Choose another map", "Enable map editing", "Open tile palette"),
                             landscape)
     screenshot("landscape-map-editor")
     tap_button(landscape_nodes, "Open tile palette")
-    landscape_tiles = wait_ui("Hide tile palette", "landscape-map-tiles", timeout=35)
+    landscape_tiles = open_map_tools("landscape-map-tiles", timeout=35)
     screenshot("landscape-map-tiles")
     tap_button(landscape_tiles, "Hide tile palette")
 
@@ -562,7 +574,7 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     # explicitly reopened through its real hierarchy row, with no new import.
     navigation_mode = "retained-map"
     current = ui_nodes("portrait-map-return-start")
-    if not locate(current, "Enable map editing"):
+    if not locate(current, "Show map tools"):
         map_item = locate(current, "Synthetic Map")
         if map_item is None:
             current = wait_ui("Synthetic Map", "portrait-map-return-list", timeout=25)
@@ -571,7 +583,7 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
             raise AssertionError("Neither map canvas nor synthetic map entry is accessible after rotation")
         tap(map_item)
         navigation_mode = "map-list-reselected"
-    back_map = wait_ui("Enable map editing", "portrait-map-return", timeout=40)
+    back_map = open_map_tools("portrait-map-return", timeout=40)
     assert_visible_controls(back_map, ("Save all changes", "Export project ZIP",
                             "Enable map editing", "Open tile palette"),
                             screenshot("portrait-map-return"))
