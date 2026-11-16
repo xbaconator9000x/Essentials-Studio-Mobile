@@ -30,10 +30,17 @@ export function MobileWorkspaceBar({
 }: Props) {
   const [expandedSection, setExpandedSection] = useState<MobileWorkspaceSection | null>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
+  const previousSectionRef = useRef(section);
   const onMap = section === "maps";
   const onProjectList = section === "projects";
   const hasContextTools = onMap || onProjectList;
   const toolsOpen = expandedSection === section;
+  // A returned workspace must not inherit a disclosure opened before navigation.
+  // Clear the old section synchronously so its tools cannot flash for one render.
+  if (previousSectionRef.current !== section) {
+    previousSectionRef.current = section;
+    if (expandedSection !== null) setExpandedSection(null);
+  }
   // Native Save All and export operations must not leave stale editing tools open.
   useEffect(() => {
     if (busy) setExpandedSection(null);
