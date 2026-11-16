@@ -33,6 +33,11 @@ export function MobileWorkspaceBar({
   const onProjectList = section === "projects";
   const hasContextTools = onMap || onProjectList;
   const toolsOpen = expandedSection === section;
+  const invokeContextAction = (action: () => void) => {
+    // Return screen space to the canvas after an explicit contextual command.
+    setExpandedSection(null);
+    action();
+  };
   return (
     <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions" aria-busy={busy}>
       <div className="app-mobile-workspace-context">
@@ -66,7 +71,7 @@ export function MobileWorkspaceBar({
         <div className="app-mobile-workspace-secondary" id="mobile-workspace-context-tools"
           role="group" aria-label={onMap ? "Map tools" : "Project organisation tools"}>
           {onMap && (
-            <button type="button" onClick={onShowProjects} disabled={busy}
+            <button type="button" onClick={() => invokeContextAction(onShowProjects)} disabled={busy}
               aria-label="Choose another map">Choose map</button>
           )}
           <button type="button" className={editingEnabled ? "is-active" : ""}
@@ -74,14 +79,14 @@ export function MobileWorkspaceBar({
             aria-label={onProjectList
               ? (editingEnabled ? "Lock map organisation" : "Enable map organisation")
               : (editingEnabled ? "Switch map to view mode" : "Enable map editing")}
-            disabled={busy} onClick={onToggleEditing}>
+            disabled={busy} onClick={() => invokeContextAction(onToggleEditing)}>
             {onProjectList ? (editingEnabled ? "Editing maps" : "Edit maps")
               : (editingEnabled ? "Editing on" : "View only")}
           </button>
           {onMap && (
             <button type="button" className={paletteVisible ? "is-active" : ""}
               aria-pressed={paletteVisible} aria-label={paletteVisible ? "Hide tile palette" : "Open tile palette"}
-              disabled={busy} onClick={onTogglePalette}>Tiles</button>
+              disabled={busy} onClick={() => invokeContextAction(onTogglePalette)}>Tiles</button>
           )}
         </div>
       )}
