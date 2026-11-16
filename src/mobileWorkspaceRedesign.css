@@ -1,0 +1,66 @@
+/* Phone-only workspace architecture. Imported last, after the legacy shell.
+ * Desktop remains intact; do not shrink map tiles or sprite source pixels. */
+.pbs-mobile-workspace-controls { display: none; }
+@media (max-width: 900px) {
+  /* The workspace bar already names the project/map and owns Save/Export:
+     remove the redundant full-width title from loaded projects. */
+  .app--workspace > .app-titlebar { display: none; }
+  .app--workspace { position: relative; }
+  /* A success/error receipt is transient information, not permanent chrome.
+     Float it over the workspace and keep Details/dismiss reachable. */
+  .app--workspace .app-mobile-operation-feedback {
+    position: fixed;
+    z-index: 800;
+    top: max(6px, env(safe-area-inset-top));
+    left: max(6px, env(safe-area-inset-left));
+    right: max(6px, env(safe-area-inset-right));
+    max-width: min(96vw, 460px);
+    background: var(--color-base);
+    border: 1px solid var(--color-surface1);
+    border-radius: 7px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.22);
+    overflow: hidden;
+  }
+  .app--workspace .app-mobile-operation-line { min-height: 28px; }
+  .app--workspace .app-mobile-workspace-bar {
+    border-top: 1px solid var(--color-surface0);
+  }
+  /* The map tree IS the Projects screen. One small collapsible files switcher
+     suffices; don't repeat the project title and explanatory text. */
+  .app-body--mobile-projects .app-mobile-project-summary {
+    flex: 0 0 auto;
+    max-height: none;
+    gap: 0;
+    padding: 2px 5px;
+    background: var(--color-mantle);
+  }
+  .app-mobile-project-options {
+    border: 0;
+    background: transparent;
+  }
+  .app-mobile-project-options > summary {
+    min-height: 26px;
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-subtext1);
+  }
+  /* Settings is a compact tool launcher, not another project dashboard. */
+  .app-body--mobile-settings .app-mobile-settings {
+    padding: 8px 9px;
+    gap: 7px;
+  }
+  .app-mobile-settings > h1,
+  .app-mobile-settings > p,
+  .app-mobile-tools-section > p { display: none; }
+  .app-mobile-tools-section { padding-top: 0; border-top: 0; gap: 6px; }
+  .app-mobile-tools-section h2 { font-size: 13px; }
+  .app-mobile-tools-grid { gap: 5px; }
+  .app-mobile-tools-grid button {
+    min-height: 36px;
+    padding: 4px 6px;
+    font-size: 12px;
+    border-radius: 5px;
+  }
+  .app-mobile-safety-note summary { min-height: 30px; font-size: 11px; }
+}

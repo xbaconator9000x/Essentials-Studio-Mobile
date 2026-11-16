@@ -72,6 +72,7 @@ import {
 } from "./context/ProjectSaveContext";
 import "./App.css";
 import "./mobileCompact.css";
+import "./mobileWorkspaceRedesign.css";
 
 // Android's SAF save picker can expose a ZIP as generic octet-stream.
 const PROJECT_ARCHIVE_ACCEPT =
@@ -1153,7 +1154,7 @@ function AppContent() {
   // ── Main UI ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="app" aria-busy={loading || saving}>
+    <div className="app app--workspace" aria-busy={loading || saving}>
       {/* Title bar — * reflects all dirty editors via dirtyCount */}
       <div className="app-titlebar">
         <span className="app-title">
@@ -1271,13 +1272,8 @@ function AppContent() {
       {/* Desktop keeps the three-panel layout; Android uses project/map screens. */}
       <div className={`app-body${mobileLayout ? ` app-body--mobile app-body--mobile-${mobileSection}` : ""}`}>
         <section className="app-mobile-project-summary">
-          <div>
-            <h1>{project.name}</h1>
-            <p>{Object.keys(project.map_infos).length} maps available</p>
-          </div>
-          <p>Select a map to open the editor. Your source ZIP remains unchanged.</p>
           <details className="app-mobile-project-options">
-            <summary>Project files and recent projects</summary>
+            <summary>Switch project or import ZIP</summary>
           <label className="app-mobile-import-btn">
             Import disposable ZIP
             <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
