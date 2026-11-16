@@ -4,16 +4,16 @@
 
 ## Phase 1 — shell, wayfinding and workspace
 - [x] Existing baseline provides bottom Projects/Maps/Sprites/Settings navigation, map-organisation/view-edit controls, Save/Export command strip and preserved map-tree state.
-- [ ] Simplify portrait chrome while keeping Save/Export visible and distinguish map versus project actions.
-- [ ] Make contextual transitions clear, accessible, non-destructive and independent of project save state.
-- [ ] Prioritise map canvas height with compact collapsible controls, landscape responsiveness, safe-area padding and keyboard-safe overlays.
-- [ ] Regression tests for all visible destinations, dirty-state continuity, busy behaviour and phone-width layouts.
+- [x] Keep Save/Export visible while disclosing context-specific Map/Project actions.
+- [x] Functional, active-state bottom navigation, disabled when no map is loaded or native operation active; switching tabs preserves mounted editor state.
+- [x] Collapsible workspace actions and project ZIP/recent controls reclaim canvas/tree space; preserve existing safe-area CSS.\n- [ ] Finish keyboard-aware overlays and physically verify landscape/portrait safe areas.
+- [x] Added rendered navigation, dirty/busy state and portrait CSS tests; adapted Chromium portrait/landscape journey to verify disclosure and canvas-space invariants.\n- [ ] Real-device layout acceptance outstanding.
 **Acceptance:** project opens; map selection enters editor; browser/Android Back and tab switching preserve unsaved map edits; Save All/ZIP work; controls and map fit portrait; desktop unchanged.
 
 ## Phase 2 — maps and tilesets
 - [ ] Validate painting vs pinch/pan gesture arbitration with tests.
 - [ ] Brush/erase/fill/selection discoverability, layer and visibility status, active tools and undo/redo.
-- [ ] Collapsible tileset panel, scroll/selection/autotiles/recent tile shortcuts.
+- [x] Touch swipe guards prevent scroll-induced selection; accessible Paint with selected tile returns to map with selection unchanged.\n- [ ] Complete palette zoom, region selection and further compact-panel ergonomics.
 - [ ] Verify oversized tileset and RMXP maximum tile IDs without wrong edits.
 **Acceptance:** open/select/edit/map-change/save/reopen/ZIP preserves tiles and events identically; palette scroll and pan cannot paint.
 
@@ -47,4 +47,4 @@
 - Use existing CI workflows; do not add paid test or binary storage infrastructure.
 
 ## Next concrete work
-Finish phase 1 command/navigation density and phone keyboard/safe-area experience, with regression tests; then map/tileset workflow.
+Reverify newest exact-HEAD workflow evidence after the Chromium disclosure-journey and JSDOM pointer-coordinate fixes. Continue map gesture/tool/palette integration, keyboard-safe panels, then sprite editor.

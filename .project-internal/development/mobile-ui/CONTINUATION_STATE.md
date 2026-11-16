@@ -1,31 +1,38 @@
 # Mobile UI development continuation state
 
-**Recorded:** 16 November 2026, 23:33 AEST (initial repository handover).  
-**Repository/PR:** [Essentials-Studio-Mobile PR #97](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/97).  
-**Branch:** `copilot/android-real-project-and-sprite-editor-20261105`.  
-**Verified handover base HEAD:** `ed4ef232c81d5add40f0c8c57c6d797fd10b226e`. **Historical checkpoint only.** Verify current live branch and PR before editing; never reset it to this SHA.
+**Recorded:** 16 November 2026 AEST.  
+**PR:** [#97](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/pull/97) in `xbaconator9000x/Essentials-Studio-Mobile`.  
+**Branch:** `copilot/android-real-project-and-sprite-editor-20261105`.
 
-## Initial live evidence at the checkpoint
+## Current authoritative checkpoint
 
-Last commits: `65176e5` kept Save/Export together on portrait phones; `ed4ef23` asserted two-column 44px commands across standard phone widths. On `ed4ef23`, eight workflows had concluded SUCCESS: Browser-first native project bridge, Android document export handoff, Android private image in-flight, Project ZIP source-integrity, XP map painting fidelity, Editor save failure, Archive roundtrip and Event Marshal fidelity. Android APK probe [run 43876242873](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43876242873) and Android native emulator UI smoke [run 43876243160](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43876243160) were still IN PROGRESS at that observation; **recheck before reporting conclusions**. Earlier 10/10 passed at `f0698a0`, not proof for later commits.
+Last verified HEAD before writing this file: `b6efb521dd3eb05ba4103d92cef79944becfe000` (the *new* documentation commit has its own later SHA). On every resumption obtain live PR HEAD and reconcile source/CI rather than resetting to this entry.
 
-## Inherited functionality
+### This handover's source-controlled development
 
-React app shell includes Projects/Maps/Sprites/Settings mobile tabs and `MobileWorkspaceBar`; viewport detection at max 900px, responsive layouts, safe-area support, dirty-state status, Save All/ZIP, source-backed map view, layered tilesets and modal editors. Existing map/project guarded navigation, user-acknowledged project switching, recent-project search, sprite frame transforms and tests must remain intact. No new data model or duplicate native calls.
+- `28e61a10ead3d20fb982203f8c15a18ca7e6be67`: created all four authoritative guidance documents in this public dot-prefixed directory.
+- `b6b48112aa5c4860a39e6aac87d58ac240c81569`: new functional `MobileBottomNavigation`, 44px touch/active/busy/no-map controls; `MobileWorkspaceBar` always-visible Save/ZIP and expandable map/project tools; collapsible project import/recent list; reduced duplicate Settings chrome; rendered UI and CSS tests.
+- `f2e0cbe1f5d68edf938920266cdf9855c0b41188`: retained explicit Save/Export positioning under the portrait CSS regression.
+- `adc7ed2005b84ffdb5acaafdd1741010bf4f587b`: `TilesetPalette` pointer-drag vs click guard, native vertical scroll, 48px Paint with selected tile button, touch tests, unchanged tile ID/mutation services.
+- `c6bf4b2f3129e6400cfb5a974d862e444aef8241`: updated *real* Chromium browser-ui-smoke portrait and landscape steps to open the map/project disclosure controls before editing, while retaining canvas-height, toolbar-height, accessibility, persistence and ZIP roundtrip assertions. This repairs the new-shell interaction route without weakening checks.
+- `b6efb521dd3eb05ba4103d92cef79944becfe000`: JSDOM regression harness now supplies MouseEvent-compatible PointerEvent coordinates to test pointer swipe accurately; gesture assertions unchanged.
 
-## Current handover batch
+### Verified test evidence and pending
 
-- Created the four required repository-owned documents in `.project-internal/development/mobile-ui/` as **public source-control guidance**, not secrets or APK runtime assets.
-- Next within this batch: implement a focused, functional phase-1 navigation/screen-space improvement and regression tests, commit against live head, then update this state with actual commit/results.
-- Overlap watch: recent edits touched mobile command strip and portrait CSS/tests. Recheck whether Copilot/other workflows touched these files before modifying.
-- Blocker: authentic physical Android UI/gesture acceptance is deferred; do not treat APK build or KVM workflow as user acceptance.
-- Android APK artifact: **none verified yet at handover SHA**; inspect exact-HEAD APK workflow and publish only GitHub Actions artifact links + GitHub ZIP checksum when available.
+At `b6b4811`, Android APK workflow's TypeScript frontend test job passed (including mobile component tests) and XP painting suite passed; [browser bridge run 43878809158](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43878809158) **failed** because the old Chromium script looked for the newly disclosed Edit button without expanding Map tools. Browser journey was repaired at `c6bf4b2`; check its/newer exact-HEAD run before calling it passed.
 
-## Next session checklist
+At `f2e0cbe`, eight workflows (including XP paint, event Marshal, source integrity, editor save and archive) completed SUCCESS, [Android APK probe 43879321895](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43879321895) completed SUCCESS, but browser bridge failed for the old disclosure path. At `adc7ed2`, [XP painting run 43880719954](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43880719954) **failed** in new tile touch regression because JSDOM's fallback PointerEvent omitted `clientX/clientY`. Fixed its pointer-event test fixture at `b6efb52`. All latter results need re-verification. Never treat earlier-head passes as current-head acceptance.
 
-1. Read [DEVELOPMENT_DIRECTIVE.md](DEVELOPMENT_DIRECTIVE.md), [UI_IMPLEMENTATION_PLAN.md](UI_IMPLEMENTATION_PLAN.md), this file and [TESTING_AND_RELEASE_POLICY.md](TESTING_AND_RELEASE_POLICY.md).
-2. Fetch PR #97/head/recent commits and compare with this checkpoint; inspect exact-HEAD workflow results and other writers.
-3. Resume most recent incomplete phase-1 code/test task, without overwriting newer work.
-4. Update this state with new exact commit, tests, artifact evidence, current blocker and next implementation task.
+### APK distribution
 
-**Note:** any subsequent GitHub commits and their CI supersede the checkpoint above. Avoid presenting old evidence as new.
+A verified *earlier-head* debug ARM64 APK from docs-only commit `28e61a1`: [run 43877663596, artifact 14231915119](https://github.com/xbaconator9000x/Essentials-Studio-Mobile/actions/runs/43877663596/artifacts/14231915119); GitHub-reported artifact ZIP SHA-256 `ffa9892a9a2bf15206022218d7327f63df385b2b49bbb9623fb1edbfb83fa8d4`. **It does not contain the new mobile UI changes.** Retrieve exact-HEAD artifact ID/digest for a current APK before offering a new UI APK. Do not upload binaries to ChatGPT Library, public commits or stable releases.
+
+## Priority next task
+
+1. Confirm exact-HEAD browser/XP-paint tests after `c6bf4b2` and `b6efb52`; fix any remaining actual failures without weakening assertions.
+2. Continue Phase 2 coherent map/palette gesture/tool switch ergonomics, then sprites and event editor.
+3. Preserve other contributors' changes, working desktop, RMXP/Event Marshal/persistence, all project ZIP fidelity.
+
+**Primary acceptance blocker:** physical Android touchscreen/portrait/landscape verification is still deferred, and passing an APK build or Chromium test must not be called physical acceptance. Emulator/KVM status is separately reported and never assumed passed.
+
+Read [DEVELOPMENT_DIRECTIVE.md](DEVELOPMENT_DIRECTIVE.md), [UI_IMPLEMENTATION_PLAN.md](UI_IMPLEMENTATION_PLAN.md), this file and [TESTING_AND_RELEASE_POLICY.md](TESTING_AND_RELEASE_POLICY.md) on handover. Live source and CI supersede dated snapshots.
