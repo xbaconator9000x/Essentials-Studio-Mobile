@@ -46,6 +46,30 @@ describe("canvas-first mobile workspace commands", () => {
     expect(screen.getByRole("button", { name: "Save all changes" })).toBeTruthy();
   });
 
+  it("dismisses contextual tools with Escape and returns keyboard focus to the disclosure", () => {
+    const { actions } = renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    const edit = screen.getByRole("button", { name: "Enable map editing" });
+    edit.focus();
+    expect(document.activeElement).toBe(edit);
+    fireEvent.keyDown(edit, { key: "Escape" });
+    const toggle = screen.getByRole("button", { name: "Show map tools" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.queryByRole("button", { name: "Enable map editing" })).toBeNull();
+    expect(actions.onToggleEditing).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Enable map editing" })).toBeTruthy();
+  });
+
+  it("keeps contextual commands open for unrelated keys", () => {
+    renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    const edit = screen.getByRole("button", { name: "Enable map editing" });
+    fireEvent.keyDown(edit, { key: "ArrowDown" });
+    expect(screen.getByRole("button", { name: "Hide map tools" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("announces dirty and busy state without losing context or Save/Export", () => {
     const { view, actions } = renderActions({ dirtyCount: 3 });
     const workspace = screen.getByLabelText("Mobile workspace actions");
