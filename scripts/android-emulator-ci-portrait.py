@@ -577,6 +577,20 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     if not any(n.get("package") == package and "Map tile editing canvas" in label(n)
                for n in map_canvas):
         raise AssertionError("Imported map canvas was not owned by the editor app")
+    # A map canvas may remain mounted behind the Projects workspace. Explicitly
+    # activate Maps through the real bottom navigation before inspecting tools;
+    # canvas presence alone is not proof that its toolbar is the visible view.
+    visible = ui_nodes("portrait-map-workspace-before")
+    if not action(visible, "Show map tools") and not action(visible, "Hide map tools"):
+        maps_tab = next((node for node in visible
+                         if node.get("package") == package
+                         and label(node).strip() == "Maps"
+                         and node.get("class", "").endswith("Button")
+                         and node.get("enabled") != "false"
+                         and locate([node], "Maps")), None)
+        if maps_tab is None:
+            raise AssertionError("Imported canvas exists but Maps workspace navigation is unavailable")
+        tap(locate([maps_tab], "Maps"))
     map_nodes = open_map_tools("portrait-map-editor", timeout=35)
     portrait_map = screenshot("portrait-map-editor")
     assert_visible_controls(map_nodes, ("Save all changes", "Export project ZIP",
