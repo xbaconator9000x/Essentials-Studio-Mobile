@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./MobileWorkspaceBar.css";
 
 export type MobileWorkspaceSection = "projects" | "maps" | "sprites" | "settings";
@@ -29,6 +29,7 @@ export function MobileWorkspaceBar({
   onSaveAll, onExportZip,
 }: Props) {
   const [expandedSection, setExpandedSection] = useState<MobileWorkspaceSection | null>(null);
+  const disclosureRef = useRef<HTMLButtonElement>(null);
   const onMap = section === "maps";
   const onProjectList = section === "projects";
   const hasContextTools = onMap || onProjectList;
@@ -37,13 +38,23 @@ export function MobileWorkspaceBar({
   useEffect(() => {
     if (busy) setExpandedSection(null);
   }, [busy]);
+  const closeContextTools = (restoreFocus = false) => {
+    setExpandedSection(null);
+    if (restoreFocus) disclosureRef.current?.focus();
+  };
   const invokeContextAction = (action: () => void) => {
     // Return screen space to the canvas after an explicit contextual command.
-    setExpandedSection(null);
+    closeContextTools();
     action();
   };
   return (
-    <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions" aria-busy={busy}>
+    <div className="app-mobile-workspace-bar" aria-label="Mobile workspace actions" aria-busy={busy}
+      onKeyDown={event => {
+        if (event.key === "Escape" && toolsOpen) {
+          event.stopPropagation();
+          closeContextTools(true);
+        }
+      }}>
       <div className="app-mobile-workspace-context">
         <div className="app-mobile-workspace-identity">
           <span className="app-mobile-workspace-name" title={onMap ? mapName || projectName : projectName}>
@@ -55,7 +66,7 @@ export function MobileWorkspaceBar({
           </span>
         </div>
         {hasContextTools && (
-          <button type="button" className="app-mobile-workspace-tools-toggle"
+          <button ref={disclosureRef} type="button" className="app-mobile-workspace-tools-toggle"
             aria-controls="mobile-workspace-context-tools" aria-expanded={toolsOpen}
             aria-label={toolsOpen ? (onMap ? "Hide map tools" : "Hide project tools")
               : (onMap ? "Show map tools" : "Show project tools")}
