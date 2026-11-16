@@ -36,6 +36,7 @@ import { saveThenMarkClean, mapStillUnchanged } from "./services/saveGuards";
 import { saveBeforeMapNavigation } from "./services/mapNavigationSave";
 import { prepareProjectBeforeOpen, prepareMapSelection, preserveUnsavedMapTiles, assertRequiredXpGraphics, ProjectOpenCoordinator } from "./services/projectOpenGuards";
 import { confirmProjectSwitch as confirmProjectSwitchWithSave } from "./services/projectSwitchGuards";
+import { ProjectSwitchPromptGate } from "./services/projectSwitchPromptGate";
 import {
   getLastMapId,
   getLastProjectPath,
@@ -426,17 +427,10 @@ function AppContent() {
   // A second tap while the unsaved-work dialog is pending must not open a
   // competing dialog or start a second project load. ZIP import owns its own
   // guarded transition and deliberately bypasses this folder-open gate.
-  const projectOpenPendingRef = useRef(false);
+  const projectSwitchPromptGate = useRef(new ProjectSwitchPromptGate());
   const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
-    if (!skipSwitchGuard) {
-      if (projectOpenPendingRef.current) return;
-      projectOpenPendingRef.current = true;
-      try {
-        if (!(await confirmProjectSwitch())) return;
-      } finally {
-        projectOpenPendingRef.current = false;
-      }
-    }
+    if (!skipSwitchGuard &&
+        !(await projectSwitchPromptGate.current.confirm(confirmProjectSwitch))) return;
     // Cancel in-flight map loads before preparing another project.
     mapSelectionCoordinator.current.begin();
     const lease = projectOpenCoordinator.current.begin();
