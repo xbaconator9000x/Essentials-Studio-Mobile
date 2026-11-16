@@ -510,10 +510,13 @@ try {
     JSON.stringify(pbsMetrics));
   await page.screenshot({ path: join(evidence, "browser-mobile-pbs-editor.png"), fullPage: true });
   await pbsModal.getByRole("button", { name: "Browse PBS records" }).click();
-  await pbsModal.locator(".pbs-entity-list").waitFor({ state: "visible" });
+  // All nine PBS panels remain mounted to preserve dirty state. Only the
+  // active Pokémon record picker is interactive; never match hidden lists.
+  const pokemonRecordList = pbsModal.locator(".pbs-pokemon-panel .pbs-entity-list");
+  await pokemonRecordList.waitFor({ state: "visible" });
   await page.screenshot({ path: join(evidence, "browser-mobile-pbs-record-picker.png"), fullPage: true });
-  await pbsModal.locator(".pbs-entity-list [role='option']").first().click();
-  await pbsModal.locator(".pbs-entity-list").waitFor({ state: "hidden" });
+  await pokemonRecordList.locator("[role='option']").first().click();
+  await pokemonRecordList.waitFor({ state: "hidden" });
   await pbsModal.locator(".pbs-entity-close").click();
   await pbsModal.waitFor({ state: "hidden", timeout: 15_000 });
 
