@@ -66,11 +66,15 @@ export function TilesetPalette({
     ? Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE) : 0;
   const tileCols = tilesetImage
     ? Math.min(TILESET_COLUMNS, Math.floor((tilesetImage.naturalWidth || tilesetImage.width) / TILE_SIZE)) : 0;
+  // RMXP stores tile IDs in a signed 16-bit field. Oversized or malformed
+  // images must not make the keyboard navigate into unrepresentable rows.
+  const lastSelectableRow = Math.min(tileRows - 1,
+    Math.floor((32767 - FIRST_REGULAR_TILE) / TILESET_COLUMNS));
   const tileIdIsValid = useCallback((id: number) => Number.isSafeInteger(id)
     && id >= FIRST_REGULAR_TILE && id <= 32767
     && tileCols > 0 && tileRows > 0
     && (id - FIRST_REGULAR_TILE) % TILESET_COLUMNS < tileCols
-    && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) < tileRows, [tileCols, tileRows]);
+    && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) <= lastSelectableRow, [tileCols, tileRows, lastSelectableRow]);
   const validRecentTiles = recentTileIds.filter(id => id < FIRST_REGULAR_TILE
     ? id >= 48 && id < 48 * ((tilesetInfo?.autotile_names.length ?? 0) + 1)
       && Boolean(tilesetInfo?.autotile_names[Math.floor(id / 48) - 1])
@@ -93,10 +97,10 @@ export function TilesetPalette({
   }, [selectedTileId, activeTab, tileIdIsValid]);
 
   const navigateTile = (dx: number, dy: number) => {
-    if (!tileCols || !tileRows) return;
+    if (!tileCols || lastSelectableRow < 0) return;
     const index = tileIdIsValid(selectedTileId) ? selectedTileId - FIRST_REGULAR_TILE : 0;
     const x = Math.max(0, Math.min(tileCols - 1, index % TILESET_COLUMNS + dx));
-    const y = Math.max(0, Math.min(tileRows - 1, Math.floor(index / TILESET_COLUMNS) + dy));
+    const y = Math.max(0, Math.min(lastSelectableRow, Math.floor(index / TILESET_COLUMNS) + dy));
     const target = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
     if (tileIdIsValid(target)) selectTile(target);
   };
@@ -176,7 +180,7 @@ export function TilesetPalette({
   const handleTilesetKey = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (!tilesetImage || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
     const cols = Math.min(TILESET_COLUMNS, Math.floor((tilesetImage.naturalWidth || tilesetImage.width) / TILE_SIZE));
-    const rows = Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE);
+    const rows = Math.min(Math.floor((tilesetImage.naturalHeight || tilesetImage.height) / TILE_SIZE), lastSelectableRow + 1);
     if (cols < 1 || rows < 1) return;
     e.preventDefault();
     const index = selectedTileId - FIRST_REGULAR_TILE;
@@ -194,7 +198,7 @@ export function TilesetPalette({
     y = Math.max(0, Math.min(rows - 1, y));
     const tileId = FIRST_REGULAR_TILE + y * TILESET_COLUMNS + x;
     if (tileIdIsValid(tileId)) selectTile(tileId);
-  }, [selectTile, selectedTileId, tilesetImage, tileIdIsValid]);
+  }, [selectTile, selectedTileId, tilesetImage, tileIdIsValid, lastSelectableRow]);
 
   // Handle autotile selection
   const handleAutotileClick = useCallback(
