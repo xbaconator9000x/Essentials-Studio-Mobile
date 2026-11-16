@@ -47,6 +47,7 @@ import {
 import { installEditorBackHandler } from "./services/editorBackNavigation";
 import { MobileRecentProjects } from "./components/MobileRecentProjects";
 import { MobileWorkspaceBar } from "./components/MobileWorkspaceBar";
+import { MobileBottomNavigation } from "./components/MobileBottomNavigation";
 import { MobileOperationFeedback } from "./components/MobileOperationFeedback";
 import { MapTreePanel } from "./components/MapTree/MapTreePanel";
 import { MapEditor } from "./components/MapEditor/MapEditor";
@@ -1274,6 +1275,8 @@ function AppContent() {
             <p>{Object.keys(project.map_infos).length} maps available</p>
           </div>
           <p>Select a map to open the editor. Your source ZIP remains unchanged.</p>
+          <details className="app-mobile-project-options">
+            <summary>Project files and recent projects</summary>
           <label className="app-mobile-import-btn">
             Import disposable ZIP
             <input type="file" accept={PROJECT_ARCHIVE_ACCEPT}
@@ -1294,6 +1297,7 @@ function AppContent() {
               });
             }}
           />
+          </details>
         </section>
         {/* Left: Map tree */}
         <MapTreePanel
@@ -1390,12 +1394,6 @@ function AppContent() {
                 if (file) void handleImportProjectZip(file);
               }} />
           </label>
-          <button disabled={loading || saving} onClick={() => void handleSaveAll()}>
-            Save All
-          </button>
-          <button disabled={loading || saving} onClick={() => void handleExportProjectZip()}>
-            Export ZIP
-          </button>
         </section>
         {mobileLayout && mobileSection === "sprites" && (
           <section className="app-mobile-sprite-preview">
@@ -1410,22 +1408,12 @@ function AppContent() {
       </div>
 
       {mobileLayout && !showSprites && (
-        <nav className="app-mobile-nav" aria-label="Main navigation">
-          {([
-            ["projects", "Projects"],
-            ["maps", "Maps"],
-            ["sprites", "Sprites"],
-            ["settings", "Settings"],
-          ] as const).map(([section, label]) => (
-            <button key={section} aria-current={mobileSection === section ? "page" : undefined}
-              onClick={() => {
-                setMobileSection(section);
-                if (section === "sprites") setShowSprites(false);
-              }}>
-              {label}
-            </button>
-          ))}
-        </nav>
+        <MobileBottomNavigation
+          section={mobileSection}
+          hasMap={currentMapId !== null}
+          busy={loading || saving}
+          onNavigate={setMobileSection}
+        />
       )}
 
       {/* Database editor modal */}

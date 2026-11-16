@@ -1,12 +1,13 @@
-/* A single predictable command strip replaces the desktop's hidden,
-   horizontally scrolling titlebar on portrait phones. */
+/* Canvas-first phone commands; Save All and ZIP occupy a stable two-column row.
+   Context-only controls are disclosed deliberately instead of stealing 44px+
+   from every map viewport. Shared controls use the existing theme palette. */
 .app-mobile-workspace-bar {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
-  padding: 5px max(8px, env(safe-area-inset-right)) 7px max(8px, env(safe-area-inset-left));
+  padding: 4px max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
   background: var(--color-base);
   border-bottom: 1px solid var(--color-surface0);
 }
@@ -15,36 +16,41 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 12px;
+  min-height: 44px;
+}
+.app-mobile-workspace-identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.3;
 }
 .app-mobile-workspace-name {
-  flex: 1;
+  display: block;
   min-width: 0;
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
 }
 .app-mobile-workspace-dirty,
-.app-mobile-workspace-clean {
-  flex-shrink: 0;
-  font-size: 11px;
-}
+.app-mobile-workspace-clean { font-size: 11px; }
 .app-mobile-workspace-dirty { color: var(--color-accent); }
 .app-mobile-workspace-clean { color: var(--color-subtext1); }
 .app-mobile-workspace-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   min-width: 0;
-  /* All commands remain visible without horizontal scrolling on portrait phones. */
 }
-.app-mobile-workspace-actions > button[aria-label="Save all changes"] { order: -2; }
-.app-mobile-workspace-actions > button[aria-label="Export project ZIP"] { order: -1; }
-.app-mobile-workspace-actions > button {
-  min-height: 44px;
+.app-mobile-workspace-actions > button,
+.app-mobile-workspace-secondary > button,
+.app-mobile-workspace-tools-toggle {
   min-width: 0;
-  padding: 7px 9px;
+  min-height: 44px;
+  padding: 6px 9px;
   border: 1px solid var(--color-surface1);
   border-radius: 8px;
   background: var(--color-surface0);
@@ -52,21 +58,39 @@
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
   touch-action: manipulation;
 }
-.app-mobile-workspace-actions > button.is-active {
+.app-mobile-workspace-actions > button { white-space: nowrap; }
+.app-mobile-workspace-tools-toggle {
+  flex: 0 0 auto;
+  min-width: 100px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.app-mobile-workspace-tools-toggle[aria-expanded="true"] {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: var(--color-surface1);
 }
 .app-mobile-workspace-actions > button.app-mobile-workspace-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: var(--color-crust);
+  color: #fff;
 }
-.app-mobile-workspace-actions > button:disabled { opacity: .48; }
-.app-mobile-workspace-actions > button:focus-visible {
+.app-mobile-workspace-secondary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+.app-mobile-workspace-secondary > button.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-surface1);
+}
+.app-mobile-workspace-bar button:disabled { opacity: .48; cursor: not-allowed; }
+.app-mobile-workspace-bar button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
@@ -75,49 +99,27 @@
     padding-left: max(5px, env(safe-area-inset-left));
     padding-right: max(5px, env(safe-area-inset-right));
   }
+  .app-mobile-workspace-tools-toggle { min-width: 88px; }
   .app-mobile-workspace-actions > button { padding-inline: 7px; }
 }
-
+/* Rotated phones share the same disclosure controls without a scrolling
+   toolbar, and the two write actions stay accessible in landscape. */
 @media (max-width: 900px) and (orientation: landscape) {
   .app-mobile-workspace-bar {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 240px);
     align-items: center;
-    gap: 8px;
+    padding-block: 2px;
     min-height: 48px;
-    padding: 2px max(8px, env(safe-area-inset-right)) 2px max(8px, env(safe-area-inset-left));
   }
-  .app-mobile-workspace-context {
-    flex: 0 1 180px;
-    min-width: 85px;
-    max-width: 180px;
-    overflow: hidden;
-  }
-  .app-mobile-workspace-name { min-width: 0; }
-  .app-mobile-workspace-actions {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: flex-end;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: thin;
-    gap: 5px;
-  }
-  .app-mobile-workspace-actions > button {
-    flex: 1 0 72px;
-    min-width: 66px;
-    min-height: 44px;
-    padding: 5px 8px;
-  }
+  .app-mobile-workspace-context { min-width: 0; }
+  .app-mobile-workspace-secondary { grid-column: 1 / -1; }
 }
-
-/* On portrait phones, keep Save and Export in a dedicated first row.
-   The remaining commands get full-width targets instead of cramped labels. */
+/* On portrait phones, keep Save and Export in one dedicated two-column row,
+   not separated by a dynamic number of context controls. */
 @media (max-width: 600px) and (orientation: portrait) {
   .app-mobile-workspace-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .app-mobile-workspace-actions > button[aria-label="Save all changes"] { order: -2; }
-  .app-mobile-workspace-actions > button[aria-label="Export project ZIP"] { order: -1; }
   .app-mobile-workspace-actions > button { min-height: 44px; }
 }

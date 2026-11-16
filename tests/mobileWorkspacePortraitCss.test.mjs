@@ -18,3 +18,10 @@ test("workspace strip accounts for left and right display cutouts", () => {
   assert.match(css, /env\(safe-area-inset-right\)/);
   assert.match(css, /@media \(max-width: 900px\) and \(orientation: landscape\)/);
 });
+
+test("disclosed context commands cannot consume canvas height while hidden", () => {
+  assert.match(css, /app-mobile-workspace-secondary/);
+  assert.match(css, /app-mobile-workspace-tools-toggle/);
+  assert.match(css, /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(160px, 240px\)/);
+  assert.match(css, /min-height:\s*44px/);
+});
