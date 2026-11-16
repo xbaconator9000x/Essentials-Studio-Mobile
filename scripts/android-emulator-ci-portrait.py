@@ -330,6 +330,9 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
     Each command closes the disclosure; tests must reopen it before the next
     command instead of assuming a permanently expanded desktop toolbar.
     """
+    nodes = ui_nodes(name + "-initial")
+    if action(nodes, "Enable map editing"):
+        return nodes
     nodes = wait_ui("Show map tools", name + "-collapsed", timeout=timeout)
     tap_button(nodes, "Show map tools")
     return wait_ui("Enable map editing", name + "-expanded", timeout=timeout)
