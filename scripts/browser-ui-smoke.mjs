@@ -410,11 +410,16 @@ try {
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).waitFor({ state: "visible" });
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
   await page.getByRole("combobox", { name: "Select active map tool" }).waitFor({ state: "visible" });
+  // Contextual commands automatically dismiss the disclosure, returning
+  // vertical space to the actual canvas after each action.
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
   await page.locator(".tileset-palette").waitFor({ state: "visible" });
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
   await page.locator(".tileset-palette").waitFor({ state: "hidden" });
-  await workspaceActions.getByRole("button", { name: "Hide map tools" }).click();
+  assert.equal(await workspaceActions.getByRole("button", { name: "Show map tools" }).isVisible(), true,
+    "Map contextual commands must collapse after actions");
   const mobileMetrics = await page.evaluate(() => ({
     canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
     compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
