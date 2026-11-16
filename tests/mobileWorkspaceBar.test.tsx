@@ -32,12 +32,16 @@ describe("canvas-first mobile workspace commands", () => {
     fireEvent.click(expand);
     expect(screen.getByRole("button", { name: "Hide map tools" }).getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Enable map editing" }));
+    expect(screen.queryByRole("button", { name: "Open tile palette" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
     fireEvent.click(screen.getByRole("button", { name: "Open tile palette" }));
+    expect(screen.queryByRole("button", { name: "Choose another map" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose another map" }));
     expect(actions.onToggleEditing).toHaveBeenCalledTimes(1);
     expect(actions.onTogglePalette).toHaveBeenCalledTimes(1);
     expect(actions.onShowProjects).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Hide map tools" }));
+    expect(screen.getByRole("button", { name: "Show map tools" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Open tile palette" })).toBeNull();
     expect(screen.getByRole("button", { name: "Save all changes" })).toBeTruthy();
   });
