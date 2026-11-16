@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./MobileWorkspaceBar.css";
 
 export type MobileWorkspaceSection = "projects" | "maps" | "sprites" | "settings";
@@ -33,6 +33,10 @@ export function MobileWorkspaceBar({
   const onProjectList = section === "projects";
   const hasContextTools = onMap || onProjectList;
   const toolsOpen = expandedSection === section;
+  // Native Save All and export operations must not leave stale editing tools open.
+  useEffect(() => {
+    if (busy) setExpandedSection(null);
+  }, [busy]);
   const invokeContextAction = (action: () => void) => {
     // Return screen space to the canvas after an explicit contextual command.
     setExpandedSection(null);
