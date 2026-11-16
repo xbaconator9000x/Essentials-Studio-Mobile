@@ -114,6 +114,35 @@ describe("mobile recent project switcher", () => {
   });
 
 
+  it("clears a stale project filter when the active project changes", () => {
+    const onSelect = vi.fn();
+    const paths = ["/projects/one/Game", "/projects/two/Game", "/projects/three/Game",
+      "/projects/four/Game", "/projects/five/Shattered"];
+    const { rerender } = render(<MobileRecentProjects paths={paths} currentPath={paths[0]}
+      disabled={false} onSelect={onSelect} />);
+    const search = screen.getByRole("searchbox", { name: "Find recent project" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "Shattered" } });
+    expect(screen.queryByRole("button", { name: "two/Game" })).toBeNull();
+    rerender(<MobileRecentProjects paths={paths} currentPath={paths[4]}
+      disabled={false} onSelect={onSelect} />);
+    expect(search.value).toBe("");
+    expect(screen.getByRole("button", { name: "Shattered · Current" })).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(5);
+  });
+
+  it("offers a touch clear action without accidentally opening a project", () => {
+    const onSelect = vi.fn();
+    render(<MobileRecentProjects paths={["/a/One", "/b/Two", "/c/Three", "/d/Four", "/e/Five"]}
+      currentPath="/a/One" disabled={false} onSelect={onSelect} />);
+    const search = screen.getByRole("searchbox", { name: "Find recent project" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "missing" } });
+    expect(screen.getByText("No matching projects")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear project search" }));
+    expect(search.value).toBe("");
+    expect(document.activeElement).toBe(search);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("deduplicates equivalent picker paths but retains the original native switch target", () => {
     const onSelect = vi.fn();
     render(<MobileRecentProjects
