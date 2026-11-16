@@ -10,6 +10,7 @@ import importlib.util
 import io
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,6 +117,26 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
             {"package": package, "text": "Saved"}], package))
         self.assertFalse(harness.has_unsaved_map([
             {"package": package, "text": "0 unsaved"}], package))
+
+    def test_saved_map_navigation_reopens_collapsed_context_tools(self):
+        # The Save All receipt leaves the map's disclosure collapsed. Reopening
+        # through open_map_tools must restore the actual Choose another map
+        # control before the native test taps it.
+        collapsed = [{"class": "android.widget.Button", "text": "Show map tools",
+                      "bounds": "[10,10][120,60]", "enabled": "true",
+                      "clickable": "true"}]
+        expanded = collapsed + [
+            {"class": "android.widget.Button", "text": "Enable map editing",
+             "bounds": "[10,70][160,120]", "enabled": "true", "clickable": "true"},
+            {"class": "android.widget.Button", "text": "Choose another map",
+             "bounds": "[10,130][160,180]", "enabled": "true", "clickable": "true"},
+        ]
+        with patch.object(harness, "ui_nodes", side_effect=[collapsed, expanded]), \
+             patch.object(harness, "wait_ui", return_value=collapsed), \
+             patch.object(harness, "tap_button") as tapped:
+            result = harness.open_map_tools("native-map-before-reopen", timeout=2)
+        tapped.assert_called_once_with(collapsed, "Show map tools")
+        self.assertEqual(harness.action(result, "Choose another map"), (85, 155))
 
     def test_launcher_anr_cannot_be_misidentified_as_editor_anr(self):
         package = "com.xbaconator.essentialsstudiomobile"
