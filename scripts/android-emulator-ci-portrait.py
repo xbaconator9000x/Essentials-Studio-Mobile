@@ -217,6 +217,13 @@ def owned_labels(nodes: list[dict[str, str]], package: str) -> list[str]:
     return [label(node) for node in nodes if node.get("package") == package and label(node)]
 
 
+def imported_project_tree_ready(nodes: list[dict[str, str]], package: str) -> bool:
+    """Require real app-owned imported project identity and map, not a toast."""
+    labels = owned_labels(nodes, package)
+    return (any("Synthetic RMXP" in item for item in labels)
+            and any("Synthetic Map" in item for item in labels))
+
+
 def has_unsaved_map(nodes: list[dict[str, str]], package: str) -> bool:
     return any(re.search(r"\b[1-9]\d* unsaved\b", text, re.IGNORECASE)
                for text in owned_labels(nodes, package))
@@ -531,11 +538,8 @@ def synthetic_project_ui(package: str, source: Path) -> dict[str, object]:
     # the former summary phrase "maps available". Require app-owned project
     # identity AND its concrete imported map; a stale toast is not acceptance.
     project_nodes = wait_ui("Synthetic Map", "synthetic-project-loaded", timeout=100)
-    project_labels = owned_labels(project_nodes, package)
-    if not any("Synthetic RMXP" in item for item in project_labels):
-        raise AssertionError("Imported synthetic project identity is absent from the Android app")
-    if not any("Synthetic Map" in item for item in project_labels):
-        raise AssertionError("Imported synthetic map is absent from the Android project tree")
+    if not imported_project_tree_ready(project_nodes, package):
+        raise AssertionError("Imported project identity and map tree were not both rendered by the Android app")
 
     portrait = screenshot("portrait-project-overview")
     if portrait[0] >= portrait[1]:
