@@ -423,8 +423,20 @@ function AppContent() {
     saveAll: saveAllWithLock,
   }), [saveAllWithLock, hasUnsavedEdits]);
 
+  // A second tap while the unsaved-work dialog is pending must not open a
+  // competing dialog or start a second project load. ZIP import owns its own
+  // guarded transition and deliberately bypasses this folder-open gate.
+  const projectOpenPendingRef = useRef(false);
   const handleOpenProject = useCallback(async (path: string, skipSwitchGuard = false) => {
-    if (!skipSwitchGuard && !(await confirmProjectSwitch())) return;
+    if (!skipSwitchGuard) {
+      if (projectOpenPendingRef.current) return;
+      projectOpenPendingRef.current = true;
+      try {
+        if (!(await confirmProjectSwitch())) return;
+      } finally {
+        projectOpenPendingRef.current = false;
+      }
+    }
     // Cancel in-flight map loads before preparing another project.
     mapSelectionCoordinator.current.begin();
     const lease = projectOpenCoordinator.current.begin();
