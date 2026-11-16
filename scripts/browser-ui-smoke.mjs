@@ -530,6 +530,9 @@ try {
   await workspaceActions.getByRole("button", { name: "Enable map editing" })
     .waitFor({ state: "visible", timeout: 15_000 });
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
+  // Enabling editing collapses the contextual toolbar. Reopen it before
+  // checking the persisted armed state and closing the disclosure.
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Switch map to view mode" })
     .waitFor({ state: "visible", timeout: 15_000 });
   await workspaceActions.getByRole("button", { name: "Hide map tools" }).click();
