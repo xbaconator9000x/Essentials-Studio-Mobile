@@ -405,6 +405,8 @@ try {
   assert.equal(await workspaceActions.getByRole("button", { name: "Export project ZIP" }).isVisible(), true,
     "ZIP export must be directly available on a phone");
   await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  // Contextual map controls are deliberately collapsed to preserve canvas space.
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).waitFor({ state: "visible" });
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
   await page.getByRole("combobox", { name: "Select active map tool" }).waitFor({ state: "visible" });
@@ -412,6 +414,7 @@ try {
   await page.locator(".tileset-palette").waitFor({ state: "visible" });
   await workspaceActions.getByRole("button", { name: "Hide tile palette" }).click();
   await page.locator(".tileset-palette").waitFor({ state: "hidden" });
+  await workspaceActions.getByRole("button", { name: "Hide map tools" }).click();
   const mobileMetrics = await page.evaluate(() => ({
     canvasHeight: document.querySelector(".map-editor-canvas-container")?.getBoundingClientRect().height ?? 0,
     compactToolbarHeight: document.querySelector(".map-editor-toolbar")?.getBoundingClientRect().height ?? 0,
@@ -422,6 +425,7 @@ try {
   assert.ok(mobileMetrics.compactToolbarHeight <= 92,
     "Compact portrait toolbar should not expand into multiple obstructing rows: " + JSON.stringify(mobileMetrics));
   await page.screenshot({ path: join(evidence, "browser-mobile-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Choose another map" }).click();
   await page.locator(".app-mobile-project-summary").waitFor({ state: "visible" });
   assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
@@ -434,6 +438,7 @@ try {
   await page.getByRole("button", { name: "New Child Map..." }).waitFor({ state: "visible" });
   await page.screenshot({ path: join(evidence, "browser-mobile-map-actions.png"), fullPage: true });
   await page.locator(".map-tree-context-overlay").click({ position: { x: 2, y: 2 } });
+  await workspaceActions.getByRole("button", { name: "Show project tools" }).click();
   await workspaceActions.getByRole("button", { name: "Lock map organisation" }).click();
   assert.equal(await page.getByRole("button", { name: /Map actions for/ }).count(), 0,
     "Read-only mobile map list must not offer mutation buttons");
@@ -516,11 +521,13 @@ try {
   await navigation.getByRole("button", { name: "Maps", exact: true }).click();
   // Earlier map-list testing deliberately locked editing. Rotating and
   // navigating must preserve that safe view-only state until explicitly armed.
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   await workspaceActions.getByRole("button", { name: "Enable map editing" })
     .waitFor({ state: "visible", timeout: 15_000 });
   await workspaceActions.getByRole("button", { name: "Enable map editing" }).click();
   await workspaceActions.getByRole("button", { name: "Switch map to view mode" })
     .waitFor({ state: "visible", timeout: 15_000 });
+  await workspaceActions.getByRole("button", { name: "Hide map tools" }).click();
   const landscapeMetrics = await page.evaluate(() => {
     const measure = selector => document.querySelector(selector)?.getBoundingClientRect();
     const canvas = measure(".map-editor-canvas-container");
@@ -547,12 +554,14 @@ try {
     "Landscape app bars must not obstruct the canvas: " + JSON.stringify(landscapeMetrics));
   assert.ok(landscapeMetrics.actionsWithinViewport,
     "All landscape Save/Export/Edit/Tiles actions must fit within the phone viewport");
-  for (const label of ["Save all changes", "Export project ZIP", "Choose another map", "Hide tile palette"]) {
-    if (label === "Hide tile palette") continue;
+  for (const label of ["Save all changes", "Export project ZIP", "Show map tools"]) {
     assert.equal(await workspaceActions.getByRole("button", { name: label }).isVisible(), true,
       label + " must remain visible after landscape rotation");
   }
   await page.screenshot({ path: join(evidence, "browser-landscape-map-workspace.png"), fullPage: true });
+  await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
+  assert.equal(await workspaceActions.getByRole("button", { name: "Choose another map" }).isVisible(), true,
+    "Landscape contextual map switching must be accessible through Map tools");
   await workspaceActions.getByRole("button", { name: "Open tile palette" }).click();
   await page.locator(".tileset-palette").waitFor({ state: "visible" });
   await page.screenshot({ path: join(evidence, "browser-landscape-map-tiles.png"), fullPage: true });
