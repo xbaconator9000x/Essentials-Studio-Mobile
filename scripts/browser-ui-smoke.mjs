@@ -341,6 +341,20 @@ try {
   );
   assert.ok(copiedSpriteInfo.newColorPixels > 0,
     "Touch painting must add the selected palette color to the saved copy");
+  // The extended palette was deliberately opened for the color-select test.
+  // Return to the intended canvas-first mobile workspace before measuring
+  // and capturing: a permanently expanded palette is not the default UX.
+  await spriteEditor.getByRole("button", { name: "Tools ▾" }).click();
+  const spriteCompactMetrics = await spriteEditor.evaluate(element => ({
+    toolbarHeight: element.querySelector(".sprite-editor-quick-tools")?.getBoundingClientRect().height ?? 0,
+    canvasHeight: element.querySelector(".sprite-editor-canvas-wrap")?.getBoundingClientRect().height ?? 0,
+    paletteVisible: element.querySelector(".sprite-editor-tools")
+      ? getComputedStyle(element.querySelector(".sprite-editor-tools")).display : "absent",
+  }));
+  assert.ok(spriteCompactMetrics.toolbarHeight <= 44 &&
+      spriteCompactMetrics.canvasHeight >= 390 &&
+      spriteCompactMetrics.paletteVisible === "none",
+    "The compact sprite workspace must give the canvas priority: " + JSON.stringify(spriteCompactMetrics));
   await page.screenshot({ path: join(evidence, "browser-sprite-copy-saved.png"), fullPage: true });
   await spriteEditor.getByRole("button", { name: "Close" }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
