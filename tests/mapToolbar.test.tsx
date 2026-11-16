@@ -233,9 +233,9 @@ describe("mobile map toolbar", () => {
     );
 
     expect(matchMedia).toHaveBeenCalledWith("(max-width: 900px)");
-    fireEvent.click(screen.getByRole("button", { name: /Layer: L1|Layer: L2|Layer: L3|Layer: Ev|Layer: All/ }));
-    expect(screen.getByRole("button", { name: "Layer 2" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Layer 2" }));
+    const layerPicker = screen.getByRole("combobox", { name: "Select active map layer" });
+    expect(layerPicker).toBeTruthy();
+    fireEvent.change(layerPicker, { target: { value: "1" } });
     expect(setSelectedLayer).toHaveBeenCalledWith(1);
     act(() => onMediaChange?.({ matches: false } as MediaQueryListEvent));
     fireEvent.click(screen.getByRole("button", { name: "Layer 3" }));
@@ -387,8 +387,7 @@ describe("mobile map toolbar", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Show map grid" }));
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));
     expect(setShowGrid).toHaveBeenCalledWith(false);
-    fireEvent.click(screen.getByRole("button", { name: /Layer: L1|Layer: L2|Layer: L3|Layer: Ev|Layer: All/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Events layer" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Select active map layer" }), { target: { value: "3" } });
     expect(setSelectedLayer).toHaveBeenCalledWith(3);
 
     view.rerender(toolbar(3, false, null));
