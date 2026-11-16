@@ -147,3 +147,46 @@ describe("recent RMXP tile shortcuts", () => {
     expect(screen.queryByRole("button", { name: "Select recent tile 385" })).toBeNull();
   });
 });
+
+
+describe("tileset metadata refresh and RMXP tile-ID limits", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("preserves recent shortcuts when the same tileset metadata is reconstructed", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 64;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const tileset = { id: 7, name: "Forest", tileset_name: "Forest", autotile_names: [], passages: [], priorities: [], terrain_tags: [] };
+    const props = { tilesetImage: image, autotileImages: [], selectedTileId: 384, onSelectTile: vi.fn(), onClose: vi.fn() };
+    const view = render(<TilesetPalette {...props} tilesetInfo={tileset} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
+    expect(screen.getByRole("button", { name: "Select recent tile 385" })).toBeTruthy();
+    view.rerender(<TilesetPalette {...props} tilesetInfo={{ ...tileset, name: "Forest Updated" }} />);
+    expect(screen.getByRole("button", { name: "Select recent tile 385" })).toBeTruthy();
+    view.rerender(<TilesetPalette {...props} tilesetInfo={{ ...tileset, id: 8 }} />);
+    expect(screen.queryByRole("button", { name: "Select recent tile 385" })).toBeNull();
+  });
+
+  it("does not select out-of-range RMXP tile IDs with End or arrow keys", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 140000;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const onSelectTile = vi.fn();
+    const view = render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Tall", tileset_name: "Tall", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={32767} onSelectTile={onSelectTile} onClose={vi.fn()}
+    />);
+    const canvas = view.container.querySelector("canvas")!;
+    fireEvent.keyDown(canvas, { key: "ArrowDown" });
+    fireEvent.keyDown(canvas, { key: "End" });
+    expect(onSelectTile).not.toHaveBeenCalled();
+  });
+});
