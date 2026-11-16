@@ -171,6 +171,32 @@ describe("tileset metadata refresh and RMXP tile-ID limits", () => {
     expect(screen.queryByRole("button", { name: "Select recent tile 385" })).toBeNull();
   });
 
+  it("clamps End and down navigation to the final representable RMXP row", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 140000;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const onSelectTile = vi.fn();
+    const view = render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Tall", tileset_name: "Tall", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={384}
+      onSelectTile={onSelectTile} onClose={vi.fn()}
+    />);
+    const canvas = view.container.querySelector("canvas")!;
+    fireEvent.keyDown(canvas, { key: "End" });
+    expect(onSelectTile).toHaveBeenLastCalledWith(32767);
+    view.rerender(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Tall", tileset_name: "Tall", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={32767}
+      onSelectTile={onSelectTile} onClose={vi.fn()}
+    />);
+    fireEvent.keyDown(canvas, { key: "ArrowDown" });
+    expect(onSelectTile).toHaveBeenLastCalledWith(32767);
+  });
+
   it("does not select out-of-range RMXP tile IDs with End or arrow keys", () => {
     const image = new Image();
     image.width = 256;
