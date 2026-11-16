@@ -519,19 +519,26 @@ try {
   await projectTools.getByRole("button", { name: "Database" }).click();
   const dbModal = page.locator(".db-editor");
   await dbModal.waitFor({ state: "visible", timeout: 30_000 });
-  // This rights-cleared fixture includes Tilesets.rxdata but omits some
-  // other database files. Select a *real available tab* and wait for its
-  // asynchronous native load before measuring the phone list panel.
-  await dbModal.getByRole("button", { name: "Tilesets", exact: true }).click();
+  // Keep the actual database form full-width. The native category selector
+  // and temporary searchable list replace the old 200px-tall list stack.
+  await dbModal.getByRole("combobox", { name: "Database category" }).selectOption("Tilesets");
+  await dbModal.getByRole("button", { name: "Browse database records" }).click();
   const activeDbList = dbModal.locator(".db-list-panel:visible").first();
   await activeDbList.waitFor({ state: "visible", timeout: 30_000 });
   const dbMetrics = await dbModal.evaluate(element => ({
     listWidth: [...element.querySelectorAll(".db-list-panel")]
       .map(node => node.getBoundingClientRect().width).find(width => width > 0) ?? 0,
     panelWidth: element.getBoundingClientRect().width,
+    tabsDisplay: getComputedStyle(element.querySelector(".db-tabs")).display,
   }));
-  assert.ok(dbMetrics.listWidth >= dbMetrics.panelWidth - 6,
-    "Database portrait list must stack above the entity form: " + JSON.stringify(dbMetrics));
+  assert.ok(dbMetrics.listWidth >= dbMetrics.panelWidth - 6 && dbMetrics.tabsDisplay === "none",
+    "Database record picker must be full-width and category tabs compact: " + JSON.stringify(dbMetrics));
+  await page.screenshot({ path: join(evidence, "browser-mobile-db-record-picker.png"), fullPage: true });
+  await activeDbList.locator(".db-list-item").first().click();
+  await activeDbList.waitFor({ state: "hidden" });
+  const dbEditorWidth = await dbModal.locator(".db-detail-panel:visible").first()
+    .evaluate(element => element.getBoundingClientRect().width);
+  assert.ok(dbEditorWidth >= 370, "Database editing form must fill 390px portrait viewport");
   await page.screenshot({ path: join(evidence, "browser-mobile-database-editor.png"), fullPage: true });
   await dbModal.getByRole("button", { name: "Cancel" }).click();
   await dbModal.waitFor({ state: "hidden", timeout: 15_000 });
@@ -540,12 +547,19 @@ try {
   const scriptModal = page.locator(".script-editor-wrapper");
   await scriptModal.waitFor({ state: "visible", timeout: 30_000 });
   const scriptMetrics = await scriptModal.evaluate(element => ({
-    listWidth: element.querySelector(".script-list-panel")?.getBoundingClientRect().width ?? 0,
-    panelWidth: element.getBoundingClientRect().width,
+    listDisplay: getComputedStyle(element.querySelector(".script-list-panel")).display,
+    codeWidth: element.querySelector(".script-code-panel")?.getBoundingClientRect().width ?? 0,
   }));
-  assert.ok(scriptMetrics.listWidth >= scriptMetrics.panelWidth - 6,
-    "Ruby Scripts portrait navigation must stack above CodeMirror: " + JSON.stringify(scriptMetrics));
+  assert.ok(scriptMetrics.codeWidth >= 370 && scriptMetrics.listDisplay === "none",
+    "Ruby editor must devote the phone width to CodeMirror, not a permanently visible list: " +
+    JSON.stringify(scriptMetrics));
   await page.screenshot({ path: join(evidence, "browser-mobile-ruby-editor.png"), fullPage: true });
+  await scriptModal.getByRole("button", { name: "Browse Ruby scripts" }).click();
+  const scriptList = scriptModal.locator(".script-list-panel");
+  await scriptList.waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-ruby-script-picker.png"), fullPage: true });
+  await scriptList.locator(".script-list-item").first().click();
+  await scriptList.waitFor({ state: "hidden" });
   await scriptModal.getByRole("button", { name: "Cancel" }).click();
   await scriptModal.waitFor({ state: "hidden", timeout: 15_000 });
   assert.deepEqual(pageErrors, [], "Portrait tool navigation must not produce uncaught React errors");
