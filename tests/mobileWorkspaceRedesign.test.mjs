@@ -34,3 +34,16 @@ test("phone Pokémon forms use the whole available viewport without scaling sour
   assert.doesNotMatch(css, /transform:\s*scale\(/);
   assert.match(css, /@media \(max-width: 900px\)/);
 });
+
+test("database and scripts use on-demand record pickers with persistent editing panels", () => {
+  const db = load("../src/components/DatabaseEditor/DatabaseEditor.tsx");
+  const scripts = load("../src/components/ScriptEditor/ScriptEditor.tsx");
+  assert.match(db, /aria-label="Database category"/);
+  assert.match(db, /aria-label=\{recordsOpen \? "Close database record picker" : "Browse database records"\}/);
+  assert.match(scripts, /aria-label=\{scriptListOpen \? "Close Ruby script picker" : "Browse Ruby scripts"\}/);
+  assert.match(css, /\.db-content \.db-list-panel \{ display: none !important; \}/);
+  assert.match(css, /\.script-list-panel \{ display: none !important; \}/);
+  assert.match(css, /\.script-editor-wrapper\.scripts-open \.script-list-panel \{/);
+  assert.match(css, /\.sprite-editor-quick-tools \{\s*display: flex;\s*flex-flow: row nowrap;/);
+  assert.match(css, /\.map-tree-search-label \{ display: none; \}/);
+});
