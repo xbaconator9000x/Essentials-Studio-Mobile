@@ -69,6 +69,10 @@ export function TilesetPalette({
     && tileCols > 0 && tileRows > 0
     && (id - FIRST_REGULAR_TILE) % TILESET_COLUMNS < tileCols
     && Math.floor((id - FIRST_REGULAR_TILE) / TILESET_COLUMNS) < tileRows, [tileCols, tileRows]);
+  const validRecentTiles = recentTileIds.filter(id => id < FIRST_REGULAR_TILE
+    ? id >= 48 && id < 48 * ((tilesetInfo?.autotile_names.length ?? 0) + 1)
+      && Boolean(tilesetInfo?.autotile_names[Math.floor(id / 48) - 1])
+    : tileIdIsValid(id));
   const inputTileId = /^[0-9]+$/.test(tileIdInput.trim()) ? Number(tileIdInput.trim()) : NaN;
   const canJump = tileIdIsValid(inputTileId);
 
@@ -237,7 +241,7 @@ export function TilesetPalette({
 
       <div className="palette-recent-tiles" role="group" aria-label="Recently selected tiles">
         <span className="palette-recent-label">Recent</span>
-        {recentTileIds.filter(id => id < FIRST_REGULAR_TILE\n          ? id >= 48 && id < 48 * (tilesetInfo.autotile_names.length + 1)\n            && Boolean(tilesetInfo.autotile_names[Math.floor(id / 48) - 1])\n          : tileIdIsValid(id)).length ? recentTileIds.filter(id => id < FIRST_REGULAR_TILE\n          ? id >= 48 && id < 48 * (tilesetInfo.autotile_names.length + 1)\n            && Boolean(tilesetInfo.autotile_names[Math.floor(id / 48) - 1])\n          : tileIdIsValid(id)).map(id => (
+        {validRecentTiles.length ? validRecentTiles.map(id => (
           <button key={id} type="button" className={selectedTileId === id ? "active" : ""}
             aria-label={`Select recent tile ${id}`} aria-pressed={selectedTileId === id}
             onClick={() => { selectTile(id); setActiveTab(id < FIRST_REGULAR_TILE ? "autotiles" : "tiles"); }}>
