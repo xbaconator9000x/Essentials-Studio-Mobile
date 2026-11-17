@@ -811,3 +811,62 @@ describe("hidden RMXP layer selection safety", () => {
     expect(setSelectedLayer.mock.calls).toEqual([[2], [3], [-1]]);
   });
 });
+
+
+describe("mobile paint workflow palette and layer focus", () => {
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
+
+  it("keeps palette and active-layer isolation accessible without opening the View tab", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const onTogglePalette = vi.fn();
+    const onToggleLayerVisibility = vi.fn();
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 1, setSelectedLayer: vi.fn(),
+      ...noTileClipboardActions,
+      showLayers: [true, false, true] as [boolean, boolean, boolean],
+      onToggleLayerVisibility,
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(),
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: false, onTogglePalette,
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open tile palette" }));
+    expect(onTogglePalette).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Isolate tile layer 2" }));
+    expect(onToggleLayerVisibility.mock.calls).toEqual([
+      [0, false], [1, true], [2, false],
+    ]);
+    view.rerender(<MapToolbar {...props} showLayers={[false, true, false]} paletteVisible />);
+    expect((screen.getByRole("button", { name: "Isolate tile layer 2" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Close tile palette" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reveal all tile layers while painting" }));
+    expect(onToggleLayerVisibility.mock.calls.slice(3)).toEqual([[0, true], [2, true]]);
+  });
+
+  it("does not offer tile isolation for the event or all-layer views", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const props = {
+      paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 3, setSelectedLayer: vi.fn(),
+      ...noTileClipboardActions,
+      showLayers: [true, true, true] as [boolean, boolean, boolean],
+      onToggleLayerVisibility: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1, setZoom: vi.fn(),
+      onUndo: vi.fn(), onRedo: vi.fn(),
+      showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: false, onTogglePalette: vi.fn(),
+      eventCount: 0, eventListVisible: false, onToggleEventList: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    expect(screen.queryByRole("button", { name: /Isolate tile layer/ })).toBeNull();
+    view.rerender(<MapToolbar {...props} selectedLayer={-1} />);
+    expect(screen.queryByRole("button", { name: /Isolate tile layer/ })).toBeNull();
+  });
+});
