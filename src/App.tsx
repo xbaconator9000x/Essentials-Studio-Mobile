@@ -1265,6 +1265,11 @@ function AppContent() {
             writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, next);
             return next;
           })}
+          onStartPainting={() => {
+            setMobileEditEnabled(true);
+            setShowTilesetPalette(true);
+            writeBooleanPanelPreference(TILESET_PALETTE_PREFERENCE, true);
+          }}
           onSaveAll={() => void handleSaveAll()}
           onExportZip={() => void handleExportProjectZip()}
         />
