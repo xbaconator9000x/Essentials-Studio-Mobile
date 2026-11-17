@@ -50,7 +50,8 @@ export function TilesetPalette({
   onClose,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("tiles");
-  const [tileScale, setTileScale] = useState(1); // Visual pixels only; native tile IDs stay fixed.
+  const [tileScale, setTileScale] = useState(1);
+  const [showNavigation, setShowNavigation] = useState(false); // Visual pixels only; native tile IDs stay fixed.
   const [recentTileIds, setRecentTileIds] = useState<number[]>([]);
   const selectTile = useCallback((id: number) => {
     onSelectTile(id);
@@ -306,8 +307,13 @@ export function TilesetPalette({
       {/* Tiles tab: keyboard and finger-accessible native RMXP tile IDs. */}
       {activeTab === "tiles" && (
         <>
-          {tilesetImage && (
-            <div className="palette-tile-navigation" role="group" aria-label="Tile selection controls">
+          {tilesetImage && <button type="button" className="palette-navigation-toggle"
+            aria-expanded={showNavigation} aria-controls="palette-advanced-navigation"
+            onClick={() => setShowNavigation(value => !value)}>
+            {showNavigation ? "Hide tile ID and arrow controls" : "Tile ID and arrow controls"}
+          </button>}
+          {tilesetImage && showNavigation && (
+            <div id="palette-advanced-navigation" className="palette-tile-navigation" role="group" aria-label="Tile selection controls">
               <form onSubmit={event => {
                 event.preventDefault();
                 if (canJump) selectTile(inputTileId);
