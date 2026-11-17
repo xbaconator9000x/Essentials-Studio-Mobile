@@ -63,6 +63,41 @@ export function EventEditor({
   const { saveAll: saveProjectAll, unregister: unregisterSavedEvent } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
   const [pageActionsOpen, setPageActionsOpen] = useState(false);
+  const eventOverlayRef = useRef<HTMLDivElement>(null);
+  // Android WebView may shrink only the visual viewport rather than the layout
+  // viewport. Keep the entire editor and its footer above the actual keyboard.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const overlay = eventOverlayRef.current;
+    if (!viewport || !overlay || !Number.isFinite(viewport.height)) return;
+    let expandedHeight = window.innerHeight;
+    const sync = () => {
+      if (window.innerWidth <= 900 && Math.abs(viewport.scale - 1) < 0.01) {
+        const covered = Math.max(window.innerHeight, expandedHeight) - viewport.height;
+        const keyboardVisible = covered > 100;
+        if (!keyboardVisible) expandedHeight = window.innerHeight;
+        if (keyboardVisible && viewport.height > 0) {
+          overlay.dataset.keyboardOpen = "true";
+          overlay.style.setProperty("--event-visible-height", `${Math.floor(viewport.height)}px`);
+          overlay.style.setProperty("--event-visible-top", `${Math.max(0, viewport.offsetTop)}px`);
+          return;
+        }
+      }
+      delete overlay.dataset.keyboardOpen;
+      overlay.style.removeProperty("--event-visible-height");
+      overlay.style.removeProperty("--event-visible-top");
+    };
+    const reset = () => { expandedHeight = window.innerHeight; sync(); };
+    viewport.addEventListener("resize", sync);
+    viewport.addEventListener("scroll", sync);
+    window.addEventListener("orientationchange", reset);
+    sync();
+    return () => {
+      viewport.removeEventListener("resize", sync);
+      viewport.removeEventListener("scroll", sync);
+      window.removeEventListener("orientationchange", reset);
+    };
+  }, []);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [commandSearch, setCommandSearch] = useState("");
   const commandListRef = useRef<HTMLDivElement>(null);
@@ -182,6 +217,7 @@ export function EventEditor({
           setWithoutHistory(data);
           resetHistory();
           setActivePage(0);
+          setPageActionsOpen(false);
           setSelectedCommand(-1);
           setEditingCommand(null);
           setCommandSearch("");
@@ -646,7 +682,7 @@ export function EventEditor({
   );
 
   return (
-    <div className="event-editor-overlay" onClick={handleOverlayClick}>
+    <div ref={eventOverlayRef} className="event-editor-overlay" onClick={handleOverlayClick}>
       <div className="event-editor">
         {/* Header */}
         <div className="event-editor-header">
@@ -743,8 +779,10 @@ export function EventEditor({
             aria-pressed={mobilePanel === "commands"} onClick={() => setMobilePanel("commands")}>Commands</button>
           <button type="button" className={mobilePanel === "properties" ? "active" : ""}
             aria-pressed={mobilePanel === "properties"} onClick={() => {
-              setMobilePanel("properties");
-              setPropertiesCollapsed(false);
+              commitDraftBeforeAction(() => {
+                setMobilePanel("properties");
+                setPropertiesCollapsed(false);
+              });
             }}>Page properties</button>
         </div>
         {/* Body */}

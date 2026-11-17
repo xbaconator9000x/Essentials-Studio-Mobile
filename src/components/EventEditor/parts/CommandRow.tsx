@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { EventCommand } from "../../../types";
 import { getCommandDef, summarizeCommand } from "../../../services/eventCommands";
 import { CommandParamEditor, hasParamEditor } from "../CommandParamEditor";
@@ -132,6 +132,7 @@ export function CommandRow({
           autoCorrect="off"
           spellCheck={false}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Enter") {
               finishEditing();
               e.preventDefault();
@@ -258,6 +259,7 @@ export function MultiLineBlock({
         ...block.contCmds.map((c) => String(c.parameters[0] ?? "")),
       ];
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [draftLineCount, setDraftLineCount] = useState(allLines.length || 1);
   const commitDraft = useCallback(() => {
     const lines = (textareaRef.current?.value ?? "").split("\n");
     onUpdateLines(lines.length > 0 ? lines : [""]);
@@ -268,6 +270,7 @@ export function MultiLineBlock({
     if (!editing) return;
     const textarea = textareaRef.current;
     if (!textarea) return;
+    setDraftLineCount(textarea.value.split("\n").length);
     const revealEditor = () => textarea.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     textarea.focus({ preventScroll: true });
     revealEditor();
@@ -309,10 +312,11 @@ export function MultiLineBlock({
           <span className="event-command-icon">{icon}</span>
           <span className="event-command-name">{def.name}</span>
         </div>
-        <div style={{ padding: "2px 12px 4px 34px" }}>
+        <div className="event-dialogue-draft">
           <div className="event-command-edit-actions" role="group" aria-label="Dialogue edit actions">
-            <div style={{ fontSize: 9, color: "#8c8fa1" }}>
-              Each line becomes a continuation.
+            <div className="event-dialogue-line-count" aria-live="polite">
+              {draftLineCount} {draftLineCount === 1 ? "line" : "lines"}
+              <span> · Each line is preserved</span>
             </div>
             <button
               type="button"
@@ -340,8 +344,15 @@ export function MultiLineBlock({
             autoFocus
             autoCorrect="off"
             spellCheck={false}
-            rows={Math.max(2, allLines.length + 1)}
+            rows={Math.max(3, Math.min(10, allLines.length + 1))}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                commitDraft();
+                return;
+              }
               if (e.key === "Escape") {
                 onDraftCancel();
                 onStopEditing();
@@ -349,7 +360,7 @@ export function MultiLineBlock({
                 e.stopPropagation();
               }
             }}
-            onChange={onDraftChange}
+            onChange={e => { setDraftLineCount(e.currentTarget.value.split("\n").length); onDraftChange(); }}
           />
         </div>
       </div>

@@ -198,6 +198,13 @@ try {
   });
   const eventEditor = page.locator(".event-editor");
   await eventEditor.waitFor({ timeout: 15_000 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await eventEditor.getByRole("combobox", { name: "Select event page" }).waitFor({ state: "visible" });
+  assert.equal(await eventEditor.getByRole("combobox", { name: "Select event page" }).inputValue(), "0");
+  await eventEditor.getByRole("button", { name: "Page actions" }).click();
+  await eventEditor.getByRole("button", { name: "Duplicate current event page" }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-event-page-navigation.png"), fullPage: true });
+  await eventEditor.getByRole("button", { name: "Page actions" }).click();
   // Use the visible mobile action as well as retaining the desktop double-click
   // path; this catches regressions where the editor is not exposed to touch users.
   await eventEditor.locator(".event-command-row").filter({ hasText: "Show Text" }).first()
@@ -209,6 +216,22 @@ try {
   await eventEditor.getByRole("button", { name: "OK", exact: true }).click();
   // Wait for React to render the new revision before requesting a native save.
   await eventEditor.locator(".event-command-params").filter({ hasText: updatedDialogue }).waitFor({ timeout: 10_000 });
+  await eventEditor.getByRole("button", { name: "Page properties" }).click();
+  await eventEditor.getByRole("checkbox", {name: "Self Switch"}).check();
+  await eventEditor.getByRole("combobox", {name: "Self switch letter"}).selectOption("D");
+  await eventEditor.getByRole("combobox", {name: "Character facing direction"}).selectOption("8");
+  await eventEditor.getByRole("combobox", {name: "Character animation frame"}).selectOption("3");
+  await eventEditor.getByRole("button", {name: "Browse event character graphics"}).click();
+  const characterBrowser = eventEditor.getByRole("dialog", {name: "Select character graphic"});
+  await characterBrowser.getByRole("searchbox").fill("SyntheticGuide");
+  await characterBrowser.getByRole("button", {name: "Character SyntheticGuide"}).waitFor({state: "visible"});
+  await page.screenshot({ path: join(evidence, "browser-mobile-event-character-picker.png"), fullPage: true });
+  await characterBrowser.getByRole("button", {name: "Character SyntheticGuide"}).click();
+  await characterBrowser.getByRole("button", {name: "OK", exact: true}).click();
+  await page.screenshot({ path: join(evidence, "browser-mobile-event-page-properties.png"), fullPage: true });
+  await eventEditor.getByRole("button", {name: "Commands", exact: true}).click();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.screenshot({ path: join(evidence, "browser-landscape-event-commands.png"), fullPage: true });
   await page.waitForFunction(
     () => document.querySelector(".app-title")?.textContent?.includes(" *"),
     null,
@@ -221,6 +244,12 @@ try {
   const dialogueAfter = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
   assert.equal(dialogueAfter.pages[0].list[0].parameters[0], "",
     "Show Text face graphic must remain unchanged");
+  assert.equal(dialogueAfter.pages[0].condition.self_switch_valid, true);
+  assert.equal(dialogueAfter.pages[0].condition.self_switch_ch, "D");
+  assert.equal(dialogueAfter.pages[0].graphic.character_name, "SyntheticGuide");
+  assert.equal(dialogueAfter.pages[0].graphic.tile_id, 0);
+  assert.equal(dialogueAfter.pages[0].graphic.direction, 8);
+  assert.equal(dialogueAfter.pages[0].graphic.pattern, 3);
   const savedDialogue = dialogueAfter.pages[0].list[1].parameters[0];
   assert.equal(savedDialogue, updatedDialogue,
     `Save All must persist dialogue edited through React in native RMXP event commands.\n` +
@@ -228,6 +257,7 @@ try {
     pageConsole.filter(message => /\[save-all\]|\[event-save\]/.test(message)).slice(-100).join("\n"));
   await eventEditor.getByRole("button", { name: "Cancel", exact: true }).click();
   await eventEditor.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   // Saving the event must not undo the tile edit saved earlier.
   const afterEvent = await invokeRead("load_map", { projectPath: root, mapId: 1 });
   assert.equal(afterEvent.tiles[differences[0].index], differences[0].tile);
@@ -283,6 +313,11 @@ try {
   assert.deepEqual(restartMap.tiles, afterEvent.tiles,
     "Map edits must remain on disk and reload after React and Rust process restart");
   const restartEvent = await invokeRead("load_event", { projectPath: root, mapId: 1, eventId: 7 });
+  assert.equal(restartEvent.pages[0].condition.self_switch_ch, "D");
+  assert.equal(restartEvent.pages[0].condition.self_switch_valid, true);
+  assert.equal(restartEvent.pages[0].graphic.direction, 8);
+  assert.equal(restartEvent.pages[0].graphic.pattern, 3);
+  assert.equal(restartEvent.pages[0].graphic.character_name, "SyntheticGuide");
   assert.equal(restartEvent.pages[0].list[1].parameters[0], updatedDialogue,
     "Dialogue edits must remain on disk and reload after React and Rust process restart");
   await page.getByRole("button", { name: "Events layer", exact: true }).click();

@@ -159,6 +159,37 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("shrinks the mobile event workspace to the visual keyboard viewport, preserving multiline drafts", async () => {
+    Object.defineProperty(window, "innerWidth", {configurable: true, value: 390});
+    const viewport = Object.assign(new EventTarget(), {height: window.innerHeight, scale: 1, offsetTop: 0});
+    Object.defineProperty(window, "visualViewport", {configurable: true, value: viewport});
+    const view = renderProject();
+    fireEvent.click(await screen.findByRole("button", {name: "Edit dialogue"}));
+    const textarea = screen.getByRole("textbox", {name: "Show Text dialogue lines"});
+    viewport.height = 340;
+    viewport.offsetTop = 12;
+    viewport.dispatchEvent(new Event("resize"));
+    const overlay = view.container.querySelector(".event-editor-overlay") as HTMLElement;
+    expect(overlay.dataset.keyboardOpen).toBe("true");
+    expect(overlay.style.getPropertyValue("--event-visible-height")).toBe("340px");
+    expect(overlay.style.getPropertyValue("--event-visible-top")).toBe("12px");
+    fireEvent.change(textarea, {target: {value: "First line\nSecond line"}});
+    expect(screen.getByText("2 lines", {exact: false})).toBeTruthy();
+    fireEvent.keyDown(textarea, {key: "Enter", ctrlKey: true, isComposing: true});
+    expect(screen.getByRole("textbox", {name: "Show Text dialogue lines"})).toBeTruthy();
+    fireEvent.keyDown(textarea, {key: "Enter", ctrlKey: true});
+    await waitFor(() => expect(screen.queryByRole("textbox", {name: "Show Text dialogue lines"})).toBeNull());
+    viewport.height = window.innerHeight;
+    viewport.offsetTop = 0;
+    viewport.dispatchEvent(new Event("resize"));
+    expect(overlay.dataset.keyboardOpen).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", {name: "Save All"}));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].list.filter(command => command.code === 401).map(command => command.parameters[0]))
+      .toEqual(["First line", "Second line"]);
+    expect(diskEvent.pages[0].list[0].parameters).toEqual(["",0,0,2]);
+  });
+
   it("commits dialogue before quick page navigation and persists labelled page conditions and graphic fields", async () => {
     const next = structuredClone(diskEvent.pages[0]);
     next.source_index = 1;

@@ -1439,3 +1439,38 @@
   .event-page-properties .condition-item { padding: 4px 0; border-bottom: 1px solid var(--color-surface0); }
   .character-picker-pagination button { min-height: 44px; }
 }
+
+.event-dialogue-draft { padding: 2px 12px 4px 34px; }
+.event-dialogue-line-count { flex: 1; min-width: 0; color: var(--color-subtext0); font-size: 11px; }
+@media (max-width: 900px) {
+  .event-dialogue-draft { padding: 4px 8px; }
+  .event-dialogue-line-count { font-size: 12px; }
+  .event-editor-overlay[data-keyboard-open="true"] {
+    top: var(--event-visible-top, 0px);
+    bottom: auto;
+    height: var(--event-visible-height);
+    max-height: var(--event-visible-height);
+    padding-bottom: 0;
+  }
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+  }
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor-pages,
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor-mobile-tabs { display: none; }
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor-header { min-height: 36px; padding: 2px 8px; }
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor-header-info { display: none; }
+  .event-editor-overlay[data-keyboard-open="true"] .event-command-panel-header { display: none; }
+  .event-editor-overlay[data-keyboard-open="true"] .event-command-panel:has(.event-command-block.editing, .event-command-row.editing) .event-command-search { display: none; }
+  .event-editor-overlay[data-keyboard-open="true"] .event-command-edit-textarea {
+    min-height: 64px;
+    max-height: max(64px, calc(var(--event-visible-height) - 180px));
+    resize: vertical;
+    scroll-margin-block: 8px;
+  }
+  .event-editor-overlay[data-keyboard-open="true"] .event-editor-footer { min-height: 48px; padding: 2px 6px; }
+  .event-editor-overlay[data-keyboard-open="true"] .character-picker {
+    max-height: calc(var(--event-visible-height) - 12px);
+  }
+}
