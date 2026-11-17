@@ -131,12 +131,27 @@ class AndroidEmulatorHarnessTests(unittest.TestCase):
             {"class": "android.widget.Button", "text": "Choose another map",
              "bounds": "[10,130][160,180]", "enabled": "true", "clickable": "true"},
         ]
-        with patch.object(harness, "ui_nodes", side_effect=[collapsed, expanded]), \
-             patch.object(harness, "wait_ui", return_value=collapsed), \
+        with patch.object(harness, "ui_nodes", side_effect=[collapsed, collapsed, expanded]), \
              patch.object(harness, "tap") as tapped, \
              patch.object(harness.time, "sleep"):
             result = harness.open_map_tools("native-map-before-reopen", timeout=2)
         tapped.assert_called_once_with((65, 35))
+        self.assertEqual(harness.action(result, "Choose another map"), (85, 155))
+
+    def test_map_tools_already_expanded_does_not_toggle_disclosure(self):
+        expanded = [
+            {"class": "android.widget.Button", "text": "Hide map tools",
+             "bounds": "[10,10][120,60]", "enabled": "true", "clickable": "true"},
+            {"class": "android.widget.Button", "text": "Switch map to view mode",
+             "bounds": "[10,70][160,120]", "enabled": "true", "clickable": "true"},
+            {"class": "android.widget.Button", "text": "Choose another map",
+             "bounds": "[10,130][160,180]", "enabled": "true", "clickable": "true"},
+        ]
+        with patch.object(harness, "ui_nodes", return_value=expanded) as read, \
+             patch.object(harness, "tap") as tapped:
+            result = harness.open_map_tools("already-expanded", timeout=2)
+        read.assert_called_once()
+        tapped.assert_not_called()
         self.assertEqual(harness.action(result, "Choose another map"), (85, 155))
 
     def test_launcher_anr_cannot_be_misidentified_as_editor_anr(self):
