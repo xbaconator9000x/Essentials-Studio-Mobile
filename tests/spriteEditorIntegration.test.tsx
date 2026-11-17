@@ -137,6 +137,26 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("shows live dirty and saving feedback with tools collapsed without duplicating status", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    let completeSave!: (name: string) => void;
+    editorApi.savePrivateProjectSprite.mockImplementationOnce(() => new Promise<string>(resolve => { completeSave = resolve; }));
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    await waitFor(() => expect(context.drawImage.mock.calls.some(call => call.length === 5)).toBe(true));
+    const canvas = screen.getByRole("application", { name: "Sprite canvas" });
+    fireEvent.pointerDown(canvas, { pointerId: 301, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(canvas, { pointerId: 301, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    const status = await screen.findByText("Unsaved pixel edits");
+    expect(status.closest(".sprite-editor-canvas-status")?.getAttribute("role")).toBe("status");
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await screen.findByText("Saving sprite…");
+    await act(async () => { completeSave("Guide_copy"); });
+    await waitFor(() => expect(screen.queryByText("Saving sprite…")).toBeNull());
+    expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
+  });
+
   it("shows actual sheet thumbnails and selects a different focused frame without a write", async () => {
     editorApi.loadCharacterImage.mockResolvedValue({ width: 16, height: 16 });
     renderEditor();
@@ -209,12 +229,14 @@ describe("sprite editor integration", () => {
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
       expect(pixels[(y * 16 + x) * 4 + 3]).toBe(x >= 8 && x < 12 && y >= 8 && y < 12 ? 255 : 0);
     }
-    fireEvent.click(screen.getByRole("button", { name: "Invert" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tools ▾" }));
+    fireEvent.click(screen.getByRole("button", { name: "Transform" }));
+    fireEvent.click(screen.getByRole("button", { name: "Invert sprite selection colors" }));
     const inverted = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
     expect([...inverted.slice((8 * 16 + 8) * 4, (8 * 16 + 8) * 4 + 4)]).toEqual([0, 0, 0, 255]);
     expect([...inverted.slice(0, 4)]).toEqual([0, 0, 0, 0]);
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo sprite edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo sprite edit" }));
     expect(putImageData.mock.calls.at(-1)?.[0].data.every((v: number) => v === 0)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Whole sheet" }));
     expect(screen.getByRole("button", { name: "Focus frame" }).getAttribute("aria-pressed")).toBe("false");

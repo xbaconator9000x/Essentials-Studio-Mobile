@@ -2262,8 +2262,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             )}
             {dirty && importedSpriteName === null && !controlsCollapsed && <button type="button"
               disabled={saving || loading} onClick={() => void requestDiscardEdits()}>Discard sprite edits</button>}
-            {loading && <span role="status">Loading sprite…</span>}
-            {dirty && (
+            {!controlsCollapsed && loading && <span role="status">Loading sprite…</span>}
+            {!controlsCollapsed && dirty && (
               <span className="sprite-editor-dirty">
                 {importedSpriteName !== null ? "Unsaved imported sprite" : "Unsaved pixel edits"}
               </span>
@@ -2274,6 +2274,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </span>
           </aside>
           <div className="sprite-editor-canvas-wrap">
+            {controlsCollapsed && (loading || saving || dirty) && (
+              <div className="sprite-editor-canvas-status" role="status" aria-live="polite"
+                data-state={loading ? "loading" : saving ? "saving" : "dirty"}>
+                {loading ? "Loading sprite…" : saving ? "Saving sprite…" :
+                  importedSpriteName !== null ? "Unsaved imported sprite" : "Unsaved pixel edits"}
+              </div>
+            )}
             {walkSheetMode && walkFramePickerOpen && imageCanvasRef.current && !loading && (
               <WalkFramePicker source={imageCanvasRef.current} revision={imageRevision} selected={walkFrameIndex}
                 onChoose={index => {
