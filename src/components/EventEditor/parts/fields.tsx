@@ -11,34 +11,22 @@ export function EditableCondition({
 }) {
   return (
     <div className="condition-item">
-      <div
-        className={`condition-indicator ${active ? "condition-active" : "condition-inactive"}`}
-        onClick={onToggle}
-        style={{ cursor: "pointer" }}
-        title="Click to toggle"
-      />
-      <input
-        type="checkbox"
-        checked={active}
-        onChange={onToggle}
-        style={{ margin: 0, accentColor: "#40a02b" }}
-      />
-      <span style={{ color: active ? "#4c4f69" : "#8c8fa1", fontSize: 11, minWidth: 60 }}>{label}</span>
-      {active && <span style={{ display: "flex", alignItems: "center", gap: 4 }}>{children}</span>}
+      <label className="event-condition-toggle">
+        <input type="checkbox" checked={active} onChange={onToggle} />
+        <span>{label}</span>
+      </label>
+      {active && <div className="event-condition-fields">{children}</div>}
     </div>
   );
 }
 
-export function ToggleBadge({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+export function ToggleBadge({ on, onToggle, label }: { on: boolean; onToggle: () => void; label?: string }) {
   return (
-    <span
+    <button type="button" aria-label={label} aria-pressed={on}
       className={`prop-badge ${on ? "prop-badge-on" : "prop-badge-off"}`}
-      onClick={onToggle}
-      style={{ cursor: "pointer", userSelect: "none" }}
-      title="Click to toggle"
-    >
+      onClick={onToggle}>
       {on ? "ON" : "OFF"}
-    </span>
+    </button>
   );
 }
 
@@ -59,10 +47,12 @@ export function NamedIdSelector({
     return (
       <select
         className="prop-select"
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{ flex: 1, minWidth: 100, maxWidth: 200, fontSize: 10 }}
       >
+        {(value < 1 || value >= names.length) && <option value={value}>[{value}] (unlisted)</option>}
         {names.map((name, i) => {
           if (i === 0) return null; // skip index 0
           return (
@@ -79,6 +69,7 @@ export function NamedIdSelector({
     <input
       type="number"
       className="prop-number-input"
+      aria-label={label}
       value={value}
       min={1}
       onChange={(e) => onChange(Number(e.target.value))}
@@ -91,16 +82,19 @@ export function NumberInput({
   onChange,
   min,
   max,
+  label,
 }: {
   value: number;
   onChange: (v: number) => void;
   min?: number;
   max?: number;
+  label?: string;
 }) {
   return (
     <input
       type="number"
       className="prop-number-input"
+      aria-label={label}
       value={value}
       min={min}
       max={max}

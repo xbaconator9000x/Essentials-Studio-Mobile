@@ -62,6 +62,7 @@ export function EventEditor({
   const { value: event, set: setEvent, setWithoutHistory, resetHistory, undo, redo, canUndo, canRedo } = useUndoable<RpgEvent>(null);
   const { saveAll: saveProjectAll, unregister: unregisterSavedEvent } = useProjectSave();
   const [activePage, setActivePage] = useState(0);
+  const [pageActionsOpen, setPageActionsOpen] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState(-1);
   const [commandSearch, setCommandSearch] = useState("");
   const commandListRef = useRef<HTMLDivElement>(null);
@@ -117,7 +118,10 @@ export function EventEditor({
   }, [commitActiveInlineDraft]);
   const switchEventPage = useCallback((pageIndex: number) => {
     commitDraftBeforeAction(() => {
+      const current = eventRef.current;
+      if (!current || pageIndex < 0 || pageIndex >= current.pages.length) return;
       setActivePage(pageIndex);
+      setPageActionsOpen(false);
       setSelectedCommand(-1);
       setEditingCommand(null);
     });
@@ -667,6 +671,25 @@ export function EventEditor({
         {/* Page tabs */}
         {event && (
           <div className="event-editor-pages">
+            <div className="event-page-mobile-nav" role="group" aria-label="Quick event page navigation">
+              <button type="button" className="event-page-tab" aria-label="Previous event page"
+                disabled={activePage <= 0} onClick={() => switchEventPage(activePage - 1)}>‹</button>
+              <select aria-label="Select event page" value={activePage}
+                onChange={e => switchEventPage(Number(e.currentTarget.value))}>
+                {event.pages.map((candidate, index) => {
+                  const condition = candidate.condition;
+                  const count = Number(condition.switch1_valid) + Number(condition.switch2_valid) +
+                    Number(condition.variable_valid) + Number(condition.self_switch_valid);
+                  return <option key={index} value={index}>Page {index + 1}/{event.pages.length}
+                    {count ? ` · ${count} condition${count === 1 ? "" : "s"}` : ""}</option>;
+                })}
+              </select>
+              <button type="button" className="event-page-tab" aria-label="Next event page"
+                disabled={activePage >= event.pages.length - 1} onClick={() => switchEventPage(activePage + 1)}>›</button>
+              <button type="button" className="event-page-tab" aria-label="Page actions"
+                aria-expanded={pageActionsOpen} onClick={() => setPageActionsOpen(value => !value)}>Pages</button>
+            </div>
+            <div className="event-page-desktop-tabs">
             {event.pages.map((_p, i) => (
               <button
                 key={i}
@@ -679,6 +702,8 @@ export function EventEditor({
                 Page {i + 1}
               </button>
             ))}
+            </div>
+            <div className={`event-page-actions${pageActionsOpen ? " is-open" : ""}`}>
             <button
               className="event-page-tab event-page-tab-add"
               type="button"
@@ -709,6 +734,7 @@ export function EventEditor({
                 −
               </button>
             )}
+            </div>
           </div>
         )}
 
@@ -745,7 +771,7 @@ export function EventEditor({
                   {propertiesCollapsed ? "Show event properties" : "Hide event properties"}
                 </button>
                 <div id="event-page-properties-content" className="event-page-properties-content" hidden={propertiesCollapsed}>
-                  <PageProperties page={page} onUpdatePage={updatePage} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
+                  <PageProperties page={page} onUpdatePage={updatePage} key={`${projectPath}:${mapId}:${eventId}:${activePage}`} projectPath={projectPath} switchNames={switchNames} variableNames={variableNames} />
                 </div>
               </div>
 

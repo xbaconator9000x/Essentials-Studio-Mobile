@@ -1411,3 +1411,31 @@
   .event-command-search button[aria-label="Find previous command"] { grid-area: previous; }
   .event-command-search button[aria-label="Find next command"] { grid-area: next; }
 }
+
+/* Compact direct page selection and expandable page management. */
+.event-page-mobile-nav { display: none; }
+.event-page-desktop-tabs, .event-page-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.event-condition-toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer; }
+.event-condition-toggle input { accent-color: var(--color-accent); }
+.event-condition-fields { display: flex; flex: 1 1 100%; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.event-condition-fields .prop-select { max-width: 100% !important; }
+.character-picker-pagination { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; padding: 4px 8px; }
+.character-picker-error { padding: 8px; color: var(--color-danger); overflow-wrap: anywhere; }
+.character-tile { color: var(--color-text); font: inherit; min-width: 0; }
+.character-tile:focus-visible, .event-condition-toggle:focus-within, .prop-badge:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 900px) {
+  .event-editor-pages { flex-direction: column; align-items: stretch; overflow: hidden; gap: 0; padding: 0 6px; }
+  .event-page-desktop-tabs { display: none; }
+  .event-page-mobile-nav { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; }
+  .event-page-mobile-nav select { flex: 1; min-width: 0; min-height: 44px; background: var(--color-surface0); color: var(--color-text); border: 1px solid var(--color-surface1); border-radius: 5px; font-size: 14px; }
+  .event-page-mobile-nav button { min-height: 44px; min-width: 44px; padding: 4px 6px; }
+  .event-page-actions { display: none; overflow-x: auto; }
+  .event-page-actions.is-open { display: flex; }
+  .event-page-actions button { min-height: 44px; }
+  .event-page-properties .prop-select, .event-page-properties .prop-number-input { min-height: 44px; font-size: 16px !important; }
+  .event-page-properties .prop-badge, .event-page-properties .event-editor-btn { min-height: 44px; min-width: 44px; }
+  .event-condition-toggle { min-height: 44px; font-size: 14px; }
+  .event-condition-toggle input { width: 22px; height: 22px; }
+  .event-page-properties .condition-item { padding: 4px 0; border-bottom: 1px solid var(--color-surface0); }
+  .character-picker-pagination button { min-height: 44px; }
+}

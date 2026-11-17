@@ -159,6 +159,64 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("commits dialogue before quick page navigation and persists labelled page conditions and graphic fields", async () => {
+    const next = structuredClone(diskEvent.pages[0]);
+    next.source_index = 1;
+    next.list = [{ code: 0, indent: 0, parameters: [], source_index: 0 }];
+    diskEvent.pages.push(next);
+    const original = structuredClone(diskEvent.pages[0].graphic);
+    native.loadSystemData.mockResolvedValue({ switches: ["", "Gate", "Quest"], variables: ["", "Count"] });
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit dialogue" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Show Text dialogue lines" }), {target: {value: "Keep draft during page selection"}});
+    const picker = screen.getByRole("combobox", { name: "Select event page" }) as HTMLSelectElement;
+    fireEvent.change(picker, {target: {value: "1"}});
+    await waitFor(() => expect(picker.value).toBe("1"));
+    fireEvent.click(screen.getByRole("button", {name: "Page properties"}));
+    fireEvent.click(screen.getByRole("checkbox", {name: "Switch 1"}));
+    fireEvent.change(screen.getByRole("combobox", {name: "Switch 1 ID"}), {target: {value: "2"}});
+    fireEvent.click(screen.getByRole("checkbox", {name: "Self Switch"}));
+    fireEvent.change(screen.getByRole("combobox", {name: "Self switch letter"}), {target: {value: "D"}});
+    fireEvent.change(screen.getByRole("combobox", {name: "Character facing direction"}), {target: {value: "8"}});
+    fireEvent.change(screen.getByRole("combobox", {name: "Character animation frame"}), {target: {value: "3"}});
+    fireEvent.click(screen.getByRole("button", {name: "Direction Fix"}));
+    fireEvent.click(screen.getByRole("button", {name: "Save All"}));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].graphic).toEqual(original);
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Keep draft during page selection");
+    expect(diskEvent.pages[1].condition).toMatchObject({switch1_valid: true, switch1_id: 2, self_switch_valid: true, self_switch_ch: "D"});
+    expect(diskEvent.pages[1].graphic).toMatchObject({direction: 8, pattern: 3});
+    expect(diskEvent.pages[1].direction_fix).toBe(true);
+    expect(diskEvent.pages[1].source_index).toBe(1);
+  });
+
+  it("pages the character browser, cancels without mutation and replaces a tile graphic only on explicit selection", async () => {
+    diskEvent.pages[0].graphic.tile_id = 384;
+    native.listAssetFiles.mockResolvedValue(Array.from({length: 100}, (_, index) => `NPC_${String(index).padStart(3, "0")}`));
+    renderProject();
+    fireEvent.click(await screen.findByRole("button", {name: "Page properties"}));
+    fireEvent.click(await screen.findByRole("button", {name: "Browse event character graphics"}));
+    let dialog = await screen.findByRole("dialog", {name: "Select character graphic"});
+    await within(dialog).findByRole("button", {name: "Character NPC_000"});
+    expect(within(dialog).queryByRole("button", {name: "Character NPC_099"})).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", {name: "Next"}));
+    expect(within(dialog).getByRole("button", {name: "Character NPC_048"})).toBeTruthy();
+    fireEvent.change(within(dialog).getByRole("searchbox"), {target: {value: "099"}});
+    fireEvent.click(await within(dialog).findByRole("button", {name: "Character NPC_099"}));
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
+    expect(native.saveEvent).not.toHaveBeenCalled();
+    expect((screen.getByRole("spinbutton", {name: "Event graphic tile ID"}) as HTMLInputElement).value).toBe("384");
+    fireEvent.click(screen.getByRole("button", {name: "Browse event character graphics"}));
+    dialog = await screen.findByRole("dialog", {name: "Select character graphic"});
+    fireEvent.change(within(dialog).getByRole("searchbox"), {target: {value: "099"}});
+    fireEvent.click(await within(dialog).findByRole("button", {name: "Character NPC_099"}));
+    fireEvent.click(within(dialog).getByRole("button", {name: "OK"}));
+    fireEvent.click(screen.getByRole("button", {name: "Save All"}));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages[0].graphic).toMatchObject({tile_id: 0, character_name: "NPC_099", pattern: 0});
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Original dialogue");
+  });
+
   it("duplicates a complete conditional subtree with fresh source identities and persists it", async () => {
     diskEvent.pages[0].list = [
       { code: 111, indent: 0, parameters: [0, 1, 0], source_index: 0 },

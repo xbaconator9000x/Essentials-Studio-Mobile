@@ -28,26 +28,37 @@ export function CharacterPicker({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState(currentName);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const pageSize = 48;
 
   // Load character file list
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setNames([]);
+    setPageIndex(0);
     (async () => {
       try {
         const list = await listAssetFiles(projectPath, "character");
-        if (!cancelled) setNames(list);
+        if (!cancelled) setNames([...new Set(list)].sort((a, b) => a.localeCompare(b)));
       } catch (err) {
-        console.error("Failed to list characters:", err);
+        if (!cancelled) setError(`Could not load character graphics: ${String(err)}`);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [projectPath]);
+  }, [projectPath, retry]);
 
-  const filtered = filter
-    ? names.filter((n) => n.toLowerCase().includes(filter.toLowerCase()))
+  const filtered = filter.trim()
+    ? names.filter((n) => n.toLowerCase().includes(filter.trim().toLowerCase()))
     : names;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const visiblePage = Math.min(pageIndex, pageCount - 1);
+  const visibleNames = filtered.slice(visiblePage * pageSize, (visiblePage + 1) * pageSize);
 
   return (
     <div
@@ -58,21 +69,35 @@ export function CharacterPicker({
         }
       }}
     >
-      <div className="character-picker">
+      <div className="character-picker" role="dialog" aria-modal="true" aria-label="Select character graphic"
+        onKeyDown={e => {
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
+        }}>
         <div className="command-picker-header">
           <h3>Select Character Graphic</h3>
-          <button className="event-editor-close" onClick={onClose}>×</button>
+          <button className="event-editor-close" aria-label="Close character browser" onClick={onClose}>×</button>
         </div>
 
         <div className="command-picker-search">
           <input
-            autoFocus
+            type="search"
+            aria-label="Search character graphics"
             placeholder="Filter characters..."
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => { setFilter(e.target.value); setPageIndex(0); }}
           />
         </div>
 
+        {error && <div className="character-picker-error" role="alert">{error}
+          <button type="button" className="event-editor-btn" onClick={() => setRetry(value => value + 1)}>Retry</button>
+        </div>}
+        {pageCount > 1 && <div className="character-picker-pagination" role="group" aria-label="Character browser pages">
+          <button type="button" className="event-editor-btn" disabled={visiblePage === 0}
+            onClick={() => setPageIndex(visiblePage - 1)}>Previous</button>
+          <span>{visiblePage + 1}/{pageCount}</span>
+          <button type="button" className="event-editor-btn" disabled={visiblePage >= pageCount - 1}
+            onClick={() => setPageIndex(visiblePage + 1)}>Next</button>
+        </div>}
         <div className="character-picker-grid">
           {loading ? (
             <div className="character-picker-loading">Loading...</div>
@@ -87,7 +112,8 @@ export function CharacterPicker({
                 onClick={() => setSelected("")}
                 onDoubleClick={() => { onSelect(""); onClose(); }}
               />
-              {filtered.map((name) => (
+              {!error && filtered.length === 0 && <div role="status">No matching character graphics</div>}
+              {visibleNames.map((name) => (
                 <CharacterTile
                   key={name}
                   projectPath={projectPath}
@@ -109,6 +135,7 @@ export function CharacterPicker({
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="event-editor-btn event-editor-btn-primary"
+              disabled={loading || Boolean(error)}
               onClick={() => { onSelect(selected); onClose(); }}
             >
               OK
@@ -207,10 +234,12 @@ function CharacterTile({
   const shortName = name ? (name.length > 14 ? name.slice(0, 12) + "…" : name) : "(none)";
 
   return (
-    <div
+    <button type="button"
       className={`character-tile ${isSelected ? "selected" : ""}`}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      aria-label={name ? `Character ${name}` : "No character graphic"}
+      aria-pressed={isSelected}
       title={name || "(none)"}
     >
       <div className="character-tile-preview">
@@ -224,6 +253,6 @@ function CharacterTile({
         )}
       </div>
       <span className="character-tile-name">{shortName}</span>
-    </div>
+    </button>
   );
 }

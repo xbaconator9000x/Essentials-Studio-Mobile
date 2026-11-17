@@ -6,11 +6,13 @@ export function SpritePreview({
   projectPath,
   characterName,
   direction,
+  pattern = 1,
   tileId,
 }: {
   projectPath: string;
   characterName: string;
   direction: number;
+  pattern?: number;
   tileId: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,7 +50,7 @@ export function SpritePreview({
 
         const dirRow: Record<number, number> = { 2: 0, 4: 1, 6: 2, 8: 3 };
         const row = isSingle ? 0 : (dirRow[direction] ?? 0);
-        const col = isSingle ? 0 : 1;
+        const col = isSingle ? 0 : Math.max(0, Math.min(3, pattern));
 
         const srcX = col * frameW;
         const srcY = row * frameH;
@@ -71,7 +73,7 @@ export function SpritePreview({
     })();
 
     return () => { cancelled = true; };
-  }, [projectPath, characterName, direction]);
+  }, [projectPath, characterName, direction, pattern]);
 
   if (!characterName) {
     if (tileId > 0) {
