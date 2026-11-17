@@ -267,3 +267,35 @@ describe("scroll-safe tileset touch and return to painting", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 });
+
+describe("magnified mobile tile selection", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("scales hit testing and keeps the same native RMXP tile ID", () => {
+    const image = new Image();
+    image.width = 256;
+    image.height = 64;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      strokeRect: vi.fn(), fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const onSelectTile = vi.fn();
+    const view = render(<TilesetPalette
+      tilesetInfo={{ id: 1, name: "Forest", tileset_name: "Forest", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
+      tilesetImage={image} autotileImages={[]} selectedTileId={384}
+      onSelectTile={onSelectTile} onClose={vi.fn()}
+    />);
+    const canvas = view.container.querySelector("canvas")!;
+    fireEvent.click(screen.getByRole("button", { name: "2× tile size" }));
+    expect(canvas.style.width).toBe("512px");
+    expect(screen.getByRole("button", { name: "2× tile size" }).getAttribute("aria-pressed")).toBe("true");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 512, bottom: 128,
+      width: 512, height: 128, toJSON: () => ({}),
+    });
+    fireEvent.click(canvas, { clientX: 95, clientY: 80 });
+    expect(onSelectTile).toHaveBeenCalledWith(393);
+    fireEvent.click(screen.getByRole("button", { name: "1× tile size" }));
+    expect(canvas.style.width).toBe("256px");
+  });
+});
