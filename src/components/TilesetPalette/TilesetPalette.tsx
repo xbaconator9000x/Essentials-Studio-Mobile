@@ -50,6 +50,7 @@ export function TilesetPalette({
   onClose,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("tiles");
+  const [tileScale, setTileScale] = useState(1); // Visual pixels only; native tile IDs stay fixed.
   const [recentTileIds, setRecentTileIds] = useState<number[]>([]);
   const selectTile = useCallback((id: number) => {
     onSelectTile(id);
@@ -90,11 +91,11 @@ export function TilesetPalette({
     if (activeTab !== "tiles" || !tileIdIsValid(selectedTileId)) return;
     const panel = paletteScrollRef.current;
     if (!panel || panel.clientHeight <= 0) return;
-    const tileTop = Math.floor((selectedTileId - FIRST_REGULAR_TILE) / TILESET_COLUMNS) * TILE_SIZE;
+    const tileTop = Math.floor((selectedTileId - FIRST_REGULAR_TILE) / TILESET_COLUMNS) * TILE_SIZE * tileScale;
     if (tileTop < panel.scrollTop) panel.scrollTop = tileTop;
-    else if (tileTop + TILE_SIZE > panel.scrollTop + panel.clientHeight)
-      panel.scrollTop = tileTop + TILE_SIZE - panel.clientHeight;
-  }, [selectedTileId, activeTab, tileIdIsValid]);
+    else if (tileTop + TILE_SIZE * tileScale > panel.scrollTop + panel.clientHeight)
+      panel.scrollTop = tileTop + TILE_SIZE * tileScale - panel.clientHeight;
+  }, [selectedTileId, activeTab, tileIdIsValid, tileScale]);
 
   const navigateTile = (dx: number, dy: number) => {
     if (!tileCols || lastSelectableRow < 0) return;
@@ -325,11 +326,20 @@ export function TilesetPalette({
               </div>
             </div>
           )}
-          <div className="palette-scroll" ref={paletteScrollRef}>
+          <div className="palette-tile-scale" role="group" aria-label="Tileset picker magnification">
+            <span>Tile size</span>
+            {([1, 1.5, 2] as const).map(scale => (
+              <button type="button" key={scale} aria-label={`${scale}× tile size`}
+                aria-pressed={tileScale === scale} className={tileScale === scale ? "active" : ""}
+                onClick={() => setTileScale(scale)}>{scale}×</button>
+            ))}
+          </div>
+          <div className="palette-scroll palette-scroll--tiles" ref={paletteScrollRef}>
           {tilesetImage ? (
             <canvas
               ref={canvasRef}
               className="tileset-canvas"
+              style={{ width: `${TILESET_COLUMNS * TILE_SIZE * tileScale}px` }}
               tabIndex={0}
               aria-label="Tileset tile picker; use arrow keys to select a tile"
               onKeyDown={handleTilesetKey}
