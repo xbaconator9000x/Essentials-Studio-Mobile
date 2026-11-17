@@ -102,6 +102,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const { updateDirty } = useProjectSave();
   const [names, setNames] = useState<string[]>([]);
   const [spriteSearch, setSpriteSearch] = useState("");
+  const [listedProjectPath, setListedProjectPath] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState("");
   const [importedSpriteName, setImportedSpriteName] = useState<string | null>(null);
   const [targetName, setTargetName] = useState("");
@@ -144,6 +145,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
   const [walkSheetMode, setWalkSheetMode] = useState(false);
   const [walkFrameIndex, setWalkFrameIndex] = useState(0);
+  const [walkPreviewOpen, setWalkPreviewOpen] = useState(false);
+  const [walkPreviewPlaying, setWalkPreviewPlaying] = useState(false);
+  const walkPreviewRef = useRef<HTMLCanvasElement>(null);
   const [controlsCollapsed, setControlsCollapsed] = useState(
     () => readPanelPreference(TOOL_PANEL_PREFERENCE) ??
       (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches),
@@ -201,6 +205,16 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   useEffect(() => {
     // A new project must not inherit an imported image or pending image decode.
+    setListedProjectPath(null);
+    setNames([]);
+    setSpriteSearch("");
+    setWalkPreviewOpen(false);
+    setWalkPreviewPlaying(false);
+    traceLoadId.current += 1;
+    if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
+    traceUrl.current = null;
+    setTraceImage(null);
+    setPositionTraceWithTouch(false);
     spriteImportId.current += 1;
     if (spriteImportUrl.current) {
       URL.revokeObjectURL(spriteImportUrl.current);
@@ -224,6 +238,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (cancelled) return;
         const sorted = files.slice().sort((a, b) => a.localeCompare(b));
         setNames(sorted);
+        setListedProjectPath(projectPath);
         // A project switch must never retain a sprite name from another project.
         // Preserve the current choice only if it exists in this project's assets.
         setSelectedName((current) => sorted.includes(current) ? current : (sorted[0] || ""));
@@ -233,7 +248,12 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             ? current : (source ? `${source}_copy` : "");
         });
       })
-      .catch((cause) => setError(`Could not list character graphics: ${cause}`))
+      .catch((cause) => {
+        if (cancelled) return;
+        setSelectedName("");
+        setTargetName("");
+        setError(`Could not list character graphics: ${cause}`);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -241,7 +261,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   }, [projectPath, updateDirty]);
 
   useEffect(() => {
-    if (!selectedName) return;
+    // Do not ask the new project for a stale character from the old project
+    // while its asset list is still loading (including same-name switches).
+    if (!selectedName || listedProjectPath !== projectPath) return;
     let cancelled = false;
     // An import can supersede this in-flight project image without changing selectedName.
     // Never allow its late resolution to overwrite imported pixels or clear their dirty flag.
@@ -284,7 +306,38 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
         if (!cancelled && importGeneration === spriteImportId.current) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [projectPath, projectSpriteReload, selectedName, updateDirty]);
+  }, [listedProjectPath, projectPath, projectSpriteReload, selectedName, updateDirty]);
+
+  // Preview only the source pixels, not the zoomed canvas or trace overlay.
+  // Playback advances within the chosen facing row without changing selection,
+  // editing history, or the source pixels. Closing the preview stops its timer.
+  useEffect(() => {
+    if (!walkSheetMode || !walkPreviewOpen || loading) return;
+    const source = imageCanvasRef.current;
+    const preview = walkPreviewRef.current;
+    if (!source || !preview) return;
+    const initial = getWalkSpriteFrame(source.width, source.height, walkFrameIndex);
+    const context = preview.getContext("2d");
+    if (!initial || !context) return;
+    preview.width = initial.width;
+    preview.height = initial.height;
+    context.imageSmoothingEnabled = false;
+    let index = walkFrameIndex;
+    const draw = () => {
+      const frame = getWalkSpriteFrame(source.width, source.height, index);
+      if (!frame) return;
+      context.clearRect(0, 0, frame.width, frame.height);
+      context.drawImage(source, frame.x, frame.y, frame.width, frame.height,
+        0, 0, frame.width, frame.height);
+    };
+    draw();
+    if (!walkPreviewPlaying) return;
+    const timer = window.setInterval(() => {
+      index = stepWalkSpritePhase(index, 1) ?? index;
+      draw();
+    }, 160);
+    return () => window.clearInterval(timer);
+  }, [imageRevision, loading, walkFrameIndex, walkPreviewOpen, walkPreviewPlaying, walkSheetMode]);
 
   useEffect(() => {
     if (!selectedName || !tracePreferenceKey) return;
@@ -1274,6 +1327,25 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [copySelection, pasteSelection, redoSprite, undoSprite]);
 
+  const resetTraceAlignment = () => {
+    setTraceOpacity(DEFAULT_SPRITE_TRACE_TRANSFORM.opacity);
+    setTraceScale(DEFAULT_SPRITE_TRACE_TRANSFORM.scale);
+    setTraceOffsetX(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetX);
+    setTraceOffsetY(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetY);
+  };
+
+  const removeTrace = () => {
+    traceLoadId.current += 1;
+    if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
+    traceUrl.current = null;
+    setTraceImage(null);
+    setPositionTraceWithTouch(false);
+    activeTracePan.current = null;
+    if (pinchStart.current?.mode === "trace") pinchStart.current = null;
+    setTraceOffsetX(0);
+    setTraceOffsetY(0);
+  };
+
   const handleTraceFile = (file?: File) => {
     if (!file) return;
     if (file.type && !file.type.startsWith("image/")) {
@@ -1368,6 +1440,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setSpritePalette([]);
       setExportStatus(null);
       setImportedSpriteName(file.name);
+      setWalkPreviewOpen(false);
+      setWalkPreviewPlaying(false);
       setWalkSheetMode(false);
       setWalkFrameIndex(0);
       setTargetName(importedSpriteCopyName(file.name));
@@ -1403,6 +1477,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       spriteImportUrl.current = null;
     }
     setImportedSpriteName(null);
+    setWalkPreviewOpen(false);
+    setWalkPreviewPlaying(false);
     setWalkSheetMode(false);
     setWalkFrameIndex(0);
     setLoading(true);
@@ -1497,14 +1573,20 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               ))}
             </div>
             <div className="sprite-editor-quick-group" role="group" aria-label="Sprite assets" data-mobile-panel="assets">
+              <input type="search" className="sprite-editor-quick-search"
+                aria-label="Quick filter project sprites" placeholder="Find sprite…"
+                value={spriteSearch} disabled={loading || saving}
+                onChange={(event) => setSpriteSearch(event.currentTarget.value)} />
               <select
                 aria-label="Quick select project character sprite"
                 value={selectedName}
                 disabled={!selectedName || importedSpriteName !== null || dirty || loading || saving}
                 onChange={(event) => selectProjectSprite(event.currentTarget.value)}
               >
-                {names.map((name) => <option key={name} value={name}>{name}</option>)}
+                {keepSelectedOption && <option value={selectedName}>{selectedName} (current)</option>}
+                {filteredNames.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
+              {spriteSearch.trim() && !filteredNames.length && <span role="status">No matching sprites</span>}
               <label className={`sprite-editor-quick-import${dirty || saving ? " is-disabled" : ""}`}>
                 Import image
                 <input
@@ -1544,6 +1626,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   disabled={saving}
                   onChange={(event) => setTargetName(event.target.value)}
                 />
+                <button type="button" disabled={saving || loading} onClick={discardImportedSprite}>Discard import</button>
               </label>
             )}
             {traceImage && (
@@ -1581,6 +1664,18 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                     onChange={(event) => setTraceScale(Number(event.target.value))}
                   />
                 </label>
+                <label className="sprite-editor-quick-range" data-mobile-panel="assets">
+                  X {Math.round(traceOffsetX)}
+                  <input type="range" aria-label="Quick trace horizontal alignment" min="-100" max="100"
+                    value={traceOffsetX} onChange={(event) => setTraceOffsetX(Number(event.target.value))} />
+                </label>
+                <label className="sprite-editor-quick-range" data-mobile-panel="assets">
+                  Y {Math.round(traceOffsetY)}
+                  <input type="range" aria-label="Quick trace vertical alignment" min="-100" max="100"
+                    value={traceOffsetY} onChange={(event) => setTraceOffsetY(Number(event.target.value))} />
+                </label>
+                <button type="button" data-mobile-panel="assets" onClick={resetTraceAlignment}>Reset trace</button>
+                <button type="button" data-mobile-panel="assets" onClick={removeTrace}>Remove trace</button>
               </>
             )}
             {importedSpriteName === null && (
@@ -1739,6 +1834,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 const enabled = event.currentTarget.checked;
                 setWalkSheetMode(enabled);
                 if (enabled) selectWalkFrame(walkFrameIndex);
+                else { setWalkPreviewOpen(false); setWalkPreviewPlaying(false); }
               }} />
             4×4 walk frames
           </label>
@@ -1796,6 +1892,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" aria-label="Rotate selected walking sprite frame clockwise 90 degrees" disabled={loading || saving} onClick={() => rotateWalkFrameQuarter("clockwise")}>Rotate frame 90° ↻</button>
               <button type="button" aria-label="Rotate selected walking sprite frame counterclockwise 90 degrees" disabled={loading || saving} onClick={() => rotateWalkFrameQuarter("counterclockwise")}>Rotate frame 90° ↺</button>
               <button type="button" aria-label="Clear selected walking sprite frame" disabled={loading || saving} onClick={clearWalkFrame}>Clear frame</button>
+              <button type="button" aria-expanded={walkPreviewOpen} disabled={loading || saving}
+                onClick={() => { setWalkPreviewOpen(!walkPreviewOpen); setWalkPreviewPlaying(false); }}>Walk preview</button>
+              {walkPreviewOpen && <div className="sprite-editor-walk-preview" role="group" aria-label="Walking animation preview">
+                <canvas ref={walkPreviewRef} role="img" aria-label="Walking frame preview" />
+                <button type="button" aria-pressed={walkPreviewPlaying} disabled={loading || saving}
+                  onClick={() => setWalkPreviewPlaying(value => !value)}>{walkPreviewPlaying ? "Pause preview" : "Play preview"}</button>
+              </div>}
             </>
           )}
         </div>
@@ -2028,23 +2131,11 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 <button
                   type="button"
                   aria-label="Reset trace alignment"
-                  onClick={() => {
-                    setTraceOpacity(DEFAULT_SPRITE_TRACE_TRANSFORM.opacity);
-                    setTraceScale(DEFAULT_SPRITE_TRACE_TRANSFORM.scale);
-                    setTraceOffsetX(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetX);
-                    setTraceOffsetY(DEFAULT_SPRITE_TRACE_TRANSFORM.offsetY);
-                  }}
+                  onClick={resetTraceAlignment}
                 >
                   Reset trace alignment
                 </button>
-                <button onClick={() => {
-                  traceLoadId.current += 1;
-                  if (traceUrl.current) URL.revokeObjectURL(traceUrl.current);
-                  traceUrl.current = null;
-                  setTraceImage(null);
-                  setTraceOffsetX(0);
-                  setTraceOffsetY(0);
-                  }}>
+                <button onClick={removeTrace}>
                     Remove trace
                   </button>
               </>

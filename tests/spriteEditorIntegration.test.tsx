@@ -133,6 +133,97 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("searches large project asset lists from the compact toolbar without changing the active source", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero", "HeroAlt", "NPC"]);
+    renderEditor();
+    const picker = await screen.findByRole("combobox", { name: "Quick select project character sprite" });
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Sprites & trace" }));
+    const search = screen.getByRole("searchbox", { name: "Quick filter project sprites" });
+    fireEvent.change(search, { target: { value: "hero" } });
+    expect(Array.from((picker as HTMLSelectElement).options).map(option => option.value)).toEqual(["Guide", "Hero", "HeroAlt"]);
+    expect((picker as HTMLSelectElement).value).toBe("Guide");
+    fireEvent.change(search, { target: { value: "no match" } });
+    expect(screen.getByText("No matching sprites")).toBeTruthy();
+    expect((picker as HTMLSelectElement).value).toBe("Guide");
+    fireEvent.change(search, { target: { value: "hero" } });
+    fireEvent.change(picker, { target: { value: "Hero" } });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/synthetic-project", "Hero"));
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
+  it("never loads an old-project sprite before the new project asset list resolves", async () => {
+    let resolveNext!: (names: string[]) => void;
+    const nextList = new Promise<string[]>(resolve => { resolveNext = resolve; });
+    editorApi.listAssetFiles.mockImplementation((path: string) => path === "/project-a" ? Promise.resolve(["Guide"]) : nextList);
+    const editor = (path: string) => <ProjectSaveProvider><SpriteEditor projectPath={path} onClose={vi.fn()} onSaved={vi.fn()} /></ProjectSaveProvider>;
+    const view = render(editor("/project-a"));
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/project-a", "Guide"));
+    view.rerender(editor("/project-b"));
+    expect(editorApi.loadCharacterImage).not.toHaveBeenCalledWith("/project-b", "Guide");
+    await act(async () => { resolveNext(["NewHero"]); });
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledWith("/project-b", "NewHero"));
+    expect(editorApi.loadCharacterImage).not.toHaveBeenCalledWith("/project-b", "Guide");
+  });
+
+  it("plays the current RMXP facing row without editing pixels or changing the frame selection", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 8, height: 8 });
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByRole("combobox", { name: "Walking sprite facing direction" }), { target: { value: "Left" } });
+    fireEvent.click(screen.getByRole("button", { name: "Walk preview" }));
+    expect(screen.getByRole("img", { name: "Walking frame preview" })).toBeTruthy();
+    expect(vi.mocked(context.drawImage).mock.calls.some(call => call.length === 9 && call.slice(1).join(",") === "0,2,2,2,0,0,2,2")).toBe(true);
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Play preview" }));
+      act(() => { vi.advanceTimersByTime(160); });
+      expect(vi.mocked(context.drawImage).mock.calls.some(call => call.length === 9 && call.slice(1).join(",") === "2,2,2,2,0,0,2,2")).toBe(true);
+      expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("4");
+      fireEvent.click(screen.getByRole("button", { name: "Walk preview" }));
+      const count = vi.mocked(context.drawImage).mock.calls.length;
+      act(() => { vi.advanceTimersByTime(640); });
+      expect(vi.mocked(context.drawImage).mock.calls.length).toBe(count);
+      expect(screen.queryByRole("img", { name: "Walking frame preview" })).toBeNull();
+      expect(putImageData).not.toHaveBeenCalled();
+      expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adjusts and removes a mobile trace without mutating the sprite", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const urls = { createObjectURL: vi.fn(() => "blob:mobile-trace"), revokeObjectURL: vi.fn() };
+    class TestImage {
+      width = 4;
+      height = 4;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    }
+    vi.stubGlobal("URL", urls);
+    vi.stubGlobal("Image", TestImage as unknown as typeof Image);
+    renderEditor();
+    const picker = await screen.findByRole("combobox", { name: "Quick select project character sprite" });
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Sprites & trace" }));
+    fireEvent.change(screen.getByLabelText("Quick import trace overlay"), { target: { files: [new File(["trace"], "trace.png", { type: "image/png" })] } });
+    const x = await screen.findByRole("slider", { name: "Quick trace horizontal alignment" });
+    fireEvent.change(x, { target: { value: "27" } });
+    expect((x as HTMLInputElement).value).toBe("27");
+    fireEvent.click(screen.getByRole("button", { name: "Reset trace" }));
+    expect((x as HTMLInputElement).value).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: "Position trace with touch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove trace" }));
+    expect(urls.revokeObjectURL).toHaveBeenCalledWith("blob:mobile-trace");
+    expect(screen.queryByRole("slider", { name: "Quick trace horizontal alignment" })).toBeNull();
+    expect(putImageData).not.toHaveBeenCalled();
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+  });
+
   it("copies a 4x4 RMXP walk frame, pastes into the next cell, undoes/redoes, then saves the edited project sprite", async () => {
     editorApi.loadCharacterImage.mockResolvedValue({ width: 8, height: 8 });
     spritePixelFixture = new Uint8ClampedArray(8 * 8 * 4);
