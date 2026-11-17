@@ -159,8 +159,10 @@ describe("sprite editor integration", () => {
     const picker = await screen.findByRole("combobox", { name: "Quick select project character sprite" });
     await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
     const canvas = screen.getByRole("application", { name: "Sprite canvas" });
-    fireEvent.pointerDown(canvas, { pointerId: 92, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
-    fireEvent.pointerUp(canvas, { pointerId: 92, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
+    await waitFor(() => expect(context.drawImage.mock.calls.some((call) => call.length === 5)).toBe(true));
+    fireEvent.pointerDown(canvas, { pointerId: 92, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(canvas, { pointerId: 92, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Save sprite" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Sprites & trace" }));
     const discard = await screen.findByRole("button", { name: "Discard edits" });
     let finishReload!: (image: {width: number; height: number}) => void;
@@ -1856,6 +1858,8 @@ describe("sprite editor integration", () => {
     expect(screen.queryByText("Imported image: Temporary.png — save as a new copy.")).toBeNull();
     expect(screen.queryByText("Unsaved pixel edits")).toBeNull();
     expect(importUrl.revokeObjectURL).toHaveBeenCalledWith("blob:discarded-sprite");
+    expect(screen.getByDisplayValue("Guide_copy")).toBeTruthy();
+    expect(screen.queryByDisplayValue("Temporary")).toBeNull();
   });
 
   it("clears a discarded imported candidate when the project has no character sprites", async () => {

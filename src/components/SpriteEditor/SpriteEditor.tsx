@@ -1047,6 +1047,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     spriteImportId.current += 1;
     if (spriteImportUrl.current) URL.revokeObjectURL(spriteImportUrl.current);
     spriteImportUrl.current = null;
+    if (importedSpriteName !== null) {
+      setTargetName(selectedName ? `${selectedName}_copy` : "");
+      setSaveMode("copy");
+    }
     setImportedSpriteName(null);
     setSpritePalette([]);
     setExportStatus(null);
@@ -1077,7 +1081,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     } else {
       setLoading(false);
     }
-  }, [selectedName, updateDirty]);
+  }, [importedSpriteName, selectedName, updateDirty]);
 
   // Both imported candidates and edited project assets use the cancellable
   // source reload effect; an abandoned asynchronous decode cannot overwrite
@@ -1086,8 +1090,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
 
   const requestDiscardEdits = useCallback(async () => {
     if (!dirty || saving || loading || spriteSaveInFlight.current) return;
+    const generation = spriteImportId.current;
     if (await confirmEditor("Discard unsaved sprite edits and reload the saved graphic?")) {
-      if (!spriteSaveInFlight.current) cancelSprite();
+      if (generation === spriteImportId.current && !spriteSaveInFlight.current) cancelSprite();
     }
   }, [cancelSprite, dirty, loading, saving]);
 
