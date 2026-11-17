@@ -9,7 +9,7 @@ afterEach(cleanup);
 function renderActions(overrides: Partial<Parameters<typeof MobileWorkspaceBar>[0]> = {}) {
   const actions = {
     onShowProjects: vi.fn(), onToggleEditing: vi.fn(), onTogglePalette: vi.fn(),
-    onSaveAll: vi.fn(), onExportZip: vi.fn(),
+    onSaveAll: vi.fn(), onExportZip: vi.fn(), onStartPainting: vi.fn(),
   };
   const view = render(<MobileWorkspaceBar section="maps" projectName="Shattered"
     mapName="Viridian City" dirtyCount={2} busy={false}
@@ -44,6 +44,34 @@ describe("canvas-first mobile workspace commands", () => {
     expect(screen.getByRole("button", { name: "Show map tools" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Open tile palette" })).toBeNull();
     expect(screen.getByRole("button", { name: "Save all changes" })).toBeTruthy();
+  });
+
+  it("enters map painting with one command while keeping existing edit/palette toggles", () => {
+    const { actions, view } = renderActions({ editingEnabled: false, paletteVisible: false });
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start painting tiles" }));
+    expect(actions.onStartPainting).toHaveBeenCalledTimes(1);
+    expect(actions.onToggleEditing).not.toHaveBeenCalled();
+    expect(actions.onTogglePalette).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Start painting tiles" })).toBeNull();
+    view.rerender(<MobileWorkspaceBar section="maps" projectName="Shattered"
+      mapName="Viridian City" dirtyCount={2} busy={false}
+      editingEnabled={true} paletteVisible={true} {...actions} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    expect(screen.queryByRole("button", { name: "Start painting tiles" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Hide tile palette" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Switch map to view mode" })).toBeTruthy();
+  });
+
+  it("does not offer painting during native save operations", () => {
+    const { view, actions } = renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "Show map tools" }));
+    expect(screen.getByRole("button", { name: "Start painting tiles" })).toBeTruthy();
+    view.rerender(<MobileWorkspaceBar section="maps" projectName="Shattered"
+      mapName="Viridian City" dirtyCount={2} busy={true}
+      editingEnabled={false} paletteVisible={false} {...actions} />);
+    expect(screen.queryByRole("button", { name: "Start painting tiles" })).toBeNull();
+    expect(actions.onStartPainting).not.toHaveBeenCalled();
   });
 
   it("dismisses contextual tools with Escape and returns keyboard focus to the disclosure", () => {
