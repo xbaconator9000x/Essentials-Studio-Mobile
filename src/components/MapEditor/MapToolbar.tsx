@@ -298,6 +298,19 @@ export function MapToolbar({
       )}
 
       {toolsCollapsed && compactPanel === "edit" && (
+        <div className="toolbar-group" role="group" aria-label="Drawing viewport">
+          <button type="button" className="toolbar-btn" aria-label="Zoom out while drawing"
+            disabled={zoom <= 0.25} onClick={() => setZoom(Math.max(0.25, Math.round((zoom - 0.25) * 100) / 100))}>−</button>
+          <button type="button" className="toolbar-btn" aria-label="Reset drawing zoom"
+            onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+          <button type="button" className="toolbar-btn" aria-label="Zoom in while drawing"
+            disabled={zoom >= 4} onClick={() => setZoom(Math.min(4, Math.round((zoom + 0.25) * 100) / 100))}>+</button>
+          {onFitMap && <button type="button" className="toolbar-btn"
+            aria-label="Fit map while drawing" onClick={onFitMap}>Fit</button>}
+        </div>
+      )}
+
+      {toolsCollapsed && compactPanel === "edit" && (
         <div className="toolbar-group map-toolbar-paint-workflow" role="group" aria-label="Mobile paint workflow">
           <button type="button" className={`toolbar-btn ${paletteVisible ? "active" : ""}`}
             aria-label={paletteVisible ? "Close tile palette" : "Open tile palette"}

@@ -870,3 +870,36 @@ describe("mobile paint workflow palette and layer focus", () => {
     expect(screen.queryByRole("button", { name: /Isolate tile layer/ })).toBeNull();
   });
 });
+
+describe("portrait drawing viewport", () => {
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
+  it("zooms and fits without leaving Draw or modifying tiles", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const setZoom = vi.fn(), onFitMap = vi.fn(), onUndo = vi.fn();
+    const props = {
+      ...noTileClipboardActions, paintTool: "pencil" as const, setPaintTool: vi.fn(),
+      tileClipboard: null, selectedLayer: 0, setSelectedLayer: vi.fn(),
+      showGrid: true, setShowGrid: vi.fn(), zoom: 1.5, setZoom, onFitMap,
+      onUndo, onRedo: vi.fn(), showEventPins: true, setShowEventPins: vi.fn(),
+      paletteVisible: true, onTogglePalette: vi.fn(), eventCount: 0,
+      eventListVisible: false, onToggleEventList: vi.fn(),
+      canClearTiles: false, onClearTiles: vi.fn(), canTranslateTiles: false,
+      onTranslateTiles: vi.fn(), onSwapSelectedLayers: vi.fn(),
+      preserveEmptyPaste: true, onPreserveEmptyPasteChange: vi.fn(),
+    };
+    const view = render(<MapToolbar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in while drawing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out while drawing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset drawing zoom" }));
+    expect(setZoom.mock.calls).toEqual([[1.75], [1.25], [1]]);
+    fireEvent.click(screen.getByRole("button", { name: "Fit map while drawing" }));
+    expect(onFitMap).toHaveBeenCalledOnce();
+    expect(onUndo).not.toHaveBeenCalled();
+    view.rerender(<MapToolbar {...props} zoom={4} />);
+    expect((screen.getByRole("button", { name: "Zoom in while drawing" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<MapToolbar {...props} zoom={0.25} />);
+    expect((screen.getByRole("button", { name: "Zoom out while drawing" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
