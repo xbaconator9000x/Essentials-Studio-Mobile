@@ -297,6 +297,33 @@ export function MapToolbar({
         </div>
       )}
 
+      {toolsCollapsed && compactPanel === "edit" && (
+        <div className="toolbar-group map-toolbar-paint-workflow" role="group" aria-label="Mobile paint workflow">
+          <button type="button" className={`toolbar-btn ${paletteVisible ? "active" : ""}`}
+            aria-label={paletteVisible ? "Close tile palette" : "Open tile palette"}
+            aria-pressed={paletteVisible} onClick={onTogglePalette}>
+            {paletteVisible ? "Palette open" : "Choose tiles"}
+          </button>
+          {selectedLayer >= 0 && selectedLayer <= 2 && (
+            <>
+              <button type="button" className="toolbar-btn"
+                aria-label={`Isolate tile layer ${selectedLayer + 1}`}
+                disabled={showLayers.every((visible, layer) => visible === (layer === selectedLayer))}
+                onClick={() => ([0, 1, 2] as const).forEach(layer => {
+                  const shouldShow = layer === selectedLayer;
+                  if (showLayers[layer] !== shouldShow) onToggleLayerVisibility(layer, shouldShow);
+                })}>Solo L{selectedLayer + 1}</button>
+              <button type="button" className="toolbar-btn"
+                aria-label="Reveal all tile layers while painting"
+                disabled={showLayers.every(Boolean)}
+                onClick={() => ([0, 1, 2] as const).forEach(layer => {
+                  if (!showLayers[layer]) onToggleLayerVisibility(layer, true);
+                })}>All layers</button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Keep visibility reachable beside the active layer on a phone. This is
           renderer state only; changing it must never mutate RMXP map tiles. */}
       {toolsCollapsed && compactPanel === "edit" && (
@@ -555,7 +582,7 @@ export function MapToolbar({
         {paintTool === "rectangle" ? "Drag to preview a rectangle; release to paint. Two fingers cancel and zoom." : "Long-press a map tile for event actions"}
       </span>}
 
-      {(!toolsCollapsed || compactPanel === "edit") && <button
+      {!toolsCollapsed && <button
         className="toolbar-btn"
         aria-pressed={paletteVisible}
         onClick={onTogglePalette}
