@@ -368,7 +368,7 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
         current = ui_nodes(name + "-disclosure")
         if action(current, "Enable map editing") or action(current, "Switch map to view mode"):
             return current
-        last_labels = [label(node) for node in current if label(node)][-24:]
+        last_labels = [label(node) for node in current if label(node)]
         toggle = action(current, "Show map tools")
         if toggle and attempts < 3:
             tap(toggle)
