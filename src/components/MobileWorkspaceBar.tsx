@@ -14,6 +14,7 @@ interface Props {
   onShowProjects: () => void;
   onToggleEditing: () => void;
   onTogglePalette: () => void;
+  onStartPainting: () => void;
   onSaveAll: () => void;
   onExportZip: () => void;
 }
@@ -25,7 +26,7 @@ interface Props {
  */
 export function MobileWorkspaceBar({
   section, projectName, mapName, dirtyCount, busy, editingEnabled,
-  paletteVisible, onShowProjects, onToggleEditing, onTogglePalette,
+  paletteVisible, onShowProjects, onToggleEditing, onTogglePalette, onStartPainting,
   onSaveAll, onExportZip,
 }: Props) {
   const [expandedSection, setExpandedSection] = useState<MobileWorkspaceSection | null>(null);
@@ -105,6 +106,11 @@ export function MobileWorkspaceBar({
             {onProjectList ? (editingEnabled ? "Editing maps" : "Edit maps")
               : (editingEnabled ? "Editing on" : "View only")}
           </button>
+          {onMap && (!editingEnabled || !paletteVisible) && (
+            <button type="button" className="app-mobile-workspace-primary"
+              aria-label="Start painting tiles" disabled={busy}
+              onClick={() => invokeContextAction(onStartPainting)}>Paint tiles</button>
+          )}
           {onMap && (
             <button type="button" className={paletteVisible ? "is-active" : ""}
               aria-pressed={paletteVisible} aria-label={paletteVisible ? "Hide tile palette" : "Open tile palette"}
