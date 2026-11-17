@@ -356,6 +356,31 @@ try {
       spriteCompactMetrics.paletteVisible === "none",
     "The compact sprite workspace must give the canvas priority: " + JSON.stringify(spriteCompactMetrics));
   await page.screenshot({ path: join(evidence, "browser-sprite-copy-saved.png"), fullPage: true });
+  // Validate the actual compact asset search and source-pixel walking preview.
+  await spriteEditor.getByRole("button", { name: "Sprites & trace" }).click();
+  const quickSpriteSearch = spriteEditor.getByRole("searchbox", { name: "Quick filter project sprites" });
+  await quickSpriteSearch.fill("nonexistent sprite");
+  await spriteEditor.getByText("No matching sprites").waitFor({ state: "visible" });
+  assert.equal(await spriteEditor.getByRole("combobox", { name: "Quick select project character sprite" }).inputValue(), "SyntheticGuide_copy");
+  await quickSpriteSearch.fill("");
+  await spriteEditor.getByRole("button", { name: "Draw", exact: true }).click();
+  await spriteEditor.getByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" }).check();
+  await spriteEditor.getByRole("button", { name: "Walk preview" }).click();
+  const walkPreview = spriteEditor.getByRole("img", { name: "Walking frame preview" });
+  await walkPreview.waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[aria-label="Walking frame preview"]');
+    if (!(canvas instanceof HTMLCanvasElement) || canvas.width !== 32 || canvas.height !== 32) return false;
+    return canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value !== 0);
+  });
+  await spriteEditor.getByRole("button", { name: "Play preview" }).click();
+  assert.equal(await spriteEditor.getByRole("combobox", { name: "Select walking sprite frame" }).inputValue(), "0",
+    "Preview playback must not change the editing frame");
+  await page.screenshot({ path: join(evidence, "browser-mobile-sprite-walk-preview.png"), fullPage: true });
+  await spriteEditor.getByRole("button", { name: "Pause preview" }).click();
+  assert.equal(await spriteEditor.getByRole("button", { name: "Save sprite" }).isEnabled(), false,
+    "Preview must never mark a saved sprite dirty");
+  await spriteEditor.getByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" }).uncheck();
   await spriteEditor.getByRole("button", { name: "Close" }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("button", { name: "Export ZIP..." }).waitFor({ timeout: 15_000 });
@@ -631,6 +656,26 @@ try {
     assert.equal(await workspaceActions.getByRole("button", { name: label }).isVisible(), true,
       label + " must remain visible after landscape rotation");
   }
+  // A visible layout box alone is not proof of a drawn map. The known 2x2
+  // fixture must contain actual opaque, non-background pixels after rotation.
+  const assertRenderedMap = async () => {
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector(".map-editor-canvas");
+      if (!(canvas instanceof HTMLCanvasElement) || canvas.width < 1 || canvas.height < 1) return false;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      if (Math.abs(canvas.width - rect.width * dpr) > 1 || Math.abs(canvas.height - rect.height * dpr) > 1) return false;
+      const context = canvas.getContext("2d");
+      if (!context) return false;
+      const data = context.getImageData(0, 0, Math.min(canvas.width, 64 * dpr), Math.min(canvas.height, 64 * dpr)).data;
+      let opaqueMapPixels = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index + 3] === 255 && (data[index] !== 224 || data[index + 1] !== 226 || data[index + 2] !== 234)) opaqueMapPixels++;
+      }
+      return opaqueMapPixels > 32;
+    }, null, { timeout: 15_000 });
+  };
+  await assertRenderedMap();
   await page.screenshot({ path: join(evidence, "browser-landscape-map-workspace.png"), fullPage: true });
   await workspaceActions.getByRole("button", { name: "Show map tools" }).click();
   assert.equal(await workspaceActions.getByRole("button", { name: "Choose another map" }).isVisible(), true,
@@ -664,6 +709,7 @@ try {
   assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
     "Rotating back to portrait must preserve the mobile Save All path");
   assert.deepEqual(pageErrors, [], "Landscape rotation and editor navigation must not produce uncaught React errors");
+  await assertRenderedMap();
   await page.screenshot({ path: join(evidence, "browser-portrait-after-rotation.png"), fullPage: true });
 
   const receipt = {

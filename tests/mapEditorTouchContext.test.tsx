@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MapEditor } from "../src/components/MapEditor/MapEditor";
 
 const rendererApi = vi.hoisted(() => ({
   screenToTile: vi.fn(() => ({ x: 1, y: 1 })),
+  render: vi.fn(),
 }));
 
 vi.mock("../src/services/mapRenderer", () => ({
@@ -14,7 +15,7 @@ vi.mock("../src/services/mapRenderer", () => ({
     setAutotileImage() {}
     setPriorities() {}
     setPassages() {}
-    render() {}
+    render = rendererApi.render;
     screenToTile = rendererApi.screenToTile;
   },
 }));
@@ -89,10 +90,14 @@ function dispatchTouch(
   fireEvent(canvas, event);
 }
 
+let resizeMapObserver: ResizeObserverCallback | null = null;
+
 beforeEach(() => {
+  resizeMapObserver = null;
+  rendererApi.render.mockClear();
   rendererApi.screenToTile.mockReturnValue({ x: 1, y: 1 });
   globalThis.ResizeObserver = class {
-    constructor(callback: ResizeObserverCallback) { void callback; }
+    constructor(callback: ResizeObserverCallback) { resizeMapObserver = callback; }
     observe() {}
     disconnect() {}
     unobserve() {}
@@ -112,6 +117,31 @@ afterEach(() => {
 });
 
 describe("touch map context actions", () => {
+  it("repaints the actual map bitmap immediately on portrait/landscape resize without dirtying tiles", () => {
+    const tiles = Array(27).fill(0);
+    tiles[4] = 385;
+    const before = [...tiles];
+    const onMapDirty = vi.fn();
+    const view = renderMap({ tiles, onMapDirty });
+    const canvas = view.container.querySelector("canvas")!;
+    const notify = (width: number, height: number) => {
+      act(() => resizeMapObserver?.([{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver));
+    };
+    notify(390, 704);
+    expect(canvas.width).toBe(Math.round(390 * (window.devicePixelRatio || 1)));
+    expect(canvas.height).toBe(Math.round(704 * (window.devicePixelRatio || 1)));
+    expect(rendererApi.render).toHaveBeenCalledTimes(1);
+    expect(rendererApi.render.mock.calls[0][1]).toMatchObject({ viewportX: 0, viewportY: 0, zoom: 1 });
+    notify(844, 240);
+    expect(canvas.width).toBe(Math.round(844 * (window.devicePixelRatio || 1)));
+    expect(canvas.height).toBe(Math.round(240 * (window.devicePixelRatio || 1)));
+    expect(rendererApi.render).toHaveBeenCalledTimes(2);
+    expect(rendererApi.render.mock.calls[1][2]).toEqual([expect.objectContaining({ id: 4, x: 1, y: 1 })]);
+    notify(844, 240);
+    expect(rendererApi.render).toHaveBeenCalledTimes(2);
+    expect(tiles).toEqual(before);
+    expect(onMapDirty).not.toHaveBeenCalled();
+  });
   it("picks the exact topmost tile from All Layers and returns to pencil without dirtying the map", () => {
     const tiles = Array(27).fill(0);
     tiles[4] = 384;

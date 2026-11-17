@@ -374,7 +374,7 @@ export function MapEditor({
   // Mirror the latest render params into a ref every render. The persistent RAF
   // loop below reads from this ref, so pan/zoom/selection changes never tear down
   // and recreate the animation loop (which previously happened on every mousemove).
-  const renderStateRef = useRef<{ options: RenderOptions; events: EventMarker[] } | null>(null);
+  const renderStateRef = useRef<{ options: RenderOptions; events: EventMarker[]; mapBounds: { width: number; height: number } | null } | null>(null);
   const startMarker =
     currentMapId !== undefined && startPosition && currentMapId === startPosition.mapId
       ? { x: startPosition.x, y: startPosition.y }
@@ -407,6 +407,7 @@ export function MapEditor({
       selectionRect: rectanglePreview ?? selectionRect,
     },
     events,
+    mapBounds: mapData ? { width: mapData.width, height: mapData.height } : null,
   };
 
   // Animation loop — started once per map; reads live params from the ref above.
@@ -430,11 +431,33 @@ export function MapEditor({
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
-          setCanvasSize({ width, height });
-          canvas.width = width * window.devicePixelRatio;
-          canvas.height = height * window.devicePixelRatio;
+          const dpr = window.devicePixelRatio || 1;
+          const pixelWidth = Math.max(1, Math.round(width * dpr));
+          const pixelHeight = Math.max(1, Math.round(height * dpr));
+          const bufferChanged = canvas.width !== pixelWidth || canvas.height !== pixelHeight;
+          setCanvasSize(previous => previous.width === width && previous.height === height
+            ? previous : { width, height });
+          // Setting either canvas dimension clears the bitmap even if its
+          // value has not changed. Do not clear it on redundant observations.
+          if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+          if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
           canvas.style.width = `${width}px`;
           canvas.style.height = `${height}px`;
+          const state = renderStateRef.current;
+          if (!state?.mapBounds) continue;
+          const viewport = clampMapViewport(
+            state.options.viewportX, state.options.viewportY,
+            state.mapBounds.width, state.mapBounds.height, width, height, state.options.zoom,
+          );
+          // Commit the actual camera too, so shrinking again cannot resurrect
+          // an out-of-range origin from before orientation/palette changes.
+          setViewportX(viewport.x);
+          setViewportY(viewport.y);
+          const options = { ...state.options, viewportX: viewport.x, viewportY: viewport.y };
+          renderStateRef.current = { ...state, options };
+          // ResizeObserver runs after animation callbacks. Paint the freshly
+          // cleared canvas now rather than exposing a blank landscape frame.
+          if (bufferChanged) rendererRef.current?.render(performance.now(), options, state.events);
         }
       }
     });
