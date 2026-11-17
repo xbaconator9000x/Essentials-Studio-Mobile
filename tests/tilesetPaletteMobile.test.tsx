@@ -79,6 +79,7 @@ describe("touch tile navigation", () => {
       tilesetInfo={{ id: 1, name: "Test", tileset_name: "Test", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }}
       tilesetImage={image} autotileImages={[]} selectedTileId={384} onSelectTile={onSelectTile} onClose={vi.fn()}
     />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile ID and arrow controls" }));
     const tileInput = screen.getByRole("spinbutton", { name: "Jump to tile ID" });
     fireEvent.change(tileInput, { target: { value: "399" } });
     fireEvent.click(screen.getByRole("button", { name: "Select tile ID" }));
@@ -105,6 +106,7 @@ describe("touch tile navigation", () => {
       tilesetImage: image, autotileImages: [], onSelectTile, onClose: vi.fn(),
     };
     const view = render(<TilesetPalette {...props} selectedTileId={384} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile ID and arrow controls" }));
     fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
     expect(onSelectTile).toHaveBeenLastCalledWith(385);
     view.rerender(<TilesetPalette {...props} selectedTileId={385} />);
@@ -135,6 +137,7 @@ describe("recent RMXP tile shortcuts", () => {
     const tileset = { id: 1, name: "Test", tileset_name: "Test", autotile_names: ["Water"], passages: [], priorities: [], terrain_tags: [] };
     const props = { tilesetInfo: tileset, tilesetImage: image, autotileImages: [], selectedTileId: 384, onSelectTile, onClose: vi.fn() };
     const view = render(<TilesetPalette {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile ID and arrow controls" }));
     fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
     expect(screen.getByRole("button", { name: "Select recent tile 385" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Auto" }));
@@ -163,6 +166,7 @@ describe("tileset metadata refresh and RMXP tile-ID limits", () => {
     const tileset = { id: 7, name: "Forest", tileset_name: "Forest", autotile_names: [], passages: [], priorities: [], terrain_tags: [] };
     const props = { tilesetImage: image, autotileImages: [], selectedTileId: 384, onSelectTile: vi.fn(), onClose: vi.fn() };
     const view = render(<TilesetPalette {...props} tilesetInfo={tileset} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tile ID and arrow controls" }));
     fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
     expect(screen.getByRole("button", { name: "Select recent tile 385" })).toBeTruthy();
     view.rerender(<TilesetPalette {...props} tilesetInfo={{ ...tileset, name: "Forest Updated" }} />);
@@ -297,5 +301,25 @@ describe("magnified mobile tile selection", () => {
     expect(onSelectTile).toHaveBeenCalledWith(393);
     fireEvent.click(screen.getByRole("button", { name: "1× tile size" }));
     expect(canvas.style.width).toBe("256px");
+  });
+});
+
+
+describe("compact portrait tile controls", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  it("collapses advanced tile navigation without changing native tile selection", () => {
+    const image = new Image(); image.width = 256; image.height = 64;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), strokeRect: vi.fn(), fillRect: vi.fn() } as unknown as CanvasRenderingContext2D);
+    const select = vi.fn();
+    render(<TilesetPalette tilesetInfo={{ id: 1, name: "Forest", tileset_name: "Forest", autotile_names: [], passages: [], priorities: [], terrain_tags: [] }} tilesetImage={image} autotileImages={[]} selectedTileId={384} onSelectTile={select} onClose={vi.fn()} />);
+    const toggle = screen.getByRole("button", { name: "Tile ID and arrow controls" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("spinbutton", { name: "Jump to tile ID" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Tile right" }));
+    expect(select).toHaveBeenCalledWith(385);
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("spinbutton", { name: "Jump to tile ID" })).toBeNull();
   });
 });
