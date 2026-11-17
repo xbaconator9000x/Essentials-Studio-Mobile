@@ -127,6 +127,7 @@ export function EventEditor({
   const inlineDraftActiveRef = useRef(false);
   const dirtyBeforeInlineDraftRef = useRef(false);
   const pageActionPendingRef = useRef(false);
+  const pageRemovalPendingRef = useRef(false);
   const persistRef = useRef<(closeOnSuccess: boolean, propagateErrors?: boolean) => Promise<void>>(
     async () => {},
   );
@@ -140,7 +141,7 @@ export function EventEditor({
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }, []);
   const commitDraftBeforeAction = useCallback((action: () => void) => {
-    if (pageActionPendingRef.current) return;
+    if (pageActionPendingRef.current || pageRemovalPendingRef.current) return;
     if (!activeInlineDraftCommitRef.current) {
       action();
       return;
@@ -240,6 +241,16 @@ export function EventEditor({
     return () => { cancelled = true; };
   }, [projectPath, mapId, eventId, setWithoutHistory, resetHistory]);
 
+  // Undoing page creation or redoing deletion can shrink the page array.
+  // Reconcile the navigation cursor with that snapshot before any subsequent
+  // property/command edit can target a nonexistent page.
+  useEffect(() => {
+    if (!event || !event.pages.length || activePage < event.pages.length) return;
+    setActivePage(event.pages.length - 1);
+    setSelectedCommand(-1);
+    setEditingCommand(null);
+    setPageActionsOpen(false);
+  }, [event, activePage]);
   const page: EventPage | null =
     event && event.pages[activePage] ? event.pages[activePage] : null;
 
@@ -260,12 +271,13 @@ export function EventEditor({
 
   const updatePage = useCallback(
     (updater: (page: EventPage) => EventPage) => {
-      if (!event) return;
+      if (!event || !event.pages[activePage]) return;
       revisionRef.current += 1;
       setSaveNotice(null);
       setSaveError(null);
       setEvent((prev) => {
         if (!prev) return prev;
+        if (!prev.pages[activePage]) return prev;
         const pages = [...prev.pages];
         pages[activePage] = updater(pages[activePage]);
         return { ...prev, pages };
@@ -532,20 +544,33 @@ export function EventEditor({
     });
   }, [commitDraftBeforeAction, setEvent]);
   const handleRemoveEventPage = useCallback(() => {
+    if (pageActionPendingRef.current || pageRemovalPendingRef.current || savingRef.current) return;
     commitDraftBeforeAction(() => {
       const current = eventRef.current;
-      if (!current || current.pages.length <= 1) return;
-      setEvent((previous) => {
-        if (!previous || previous.pages.length <= 1) return previous;
-        const pages = previous.pages.filter((_, index) => index !== activePage);
-        return { ...previous, pages };
-      });
-      setActivePage(Math.min(activePage, current.pages.length - 2));
-      setSelectedCommand(-1);
-      revisionRef.current += 1;
-      setSaveNotice(null);
-      setSaveError(null);
-      setDirty(true);
+      if (!current || current.pages.length <= 1 || !current.pages[activePage]) return;
+      const revision = revisionRef.current;
+      const target = current.pages[activePage];
+      pageRemovalPendingRef.current = true;
+      void confirmEditor(`Remove event page ${activePage + 1} and its commands? You can undo this change.`)
+        .then(confirmed => {
+          // A confirmation from a prior event or revision is never permission
+          // to remove a page from a different snapshot.
+          const latest = eventRef.current;
+          if (!confirmed || revision !== revisionRef.current || latest?.pages[activePage] !== target || savingRef.current) return;
+          setEvent(previous => {
+            if (!previous || previous.pages.length <= 1 || previous.pages[activePage] !== target) return previous;
+            return { ...previous, pages: previous.pages.filter((_, index) => index !== activePage) };
+          });
+          setActivePage(Math.min(activePage, latest.pages.length - 2));
+          setSelectedCommand(-1);
+          setEditingCommand(null);
+          revisionRef.current += 1;
+          setSaveNotice(null);
+          setSaveError(null);
+          setDirty(true);
+        })
+        .catch(cause => setSaveError(`Could not confirm page removal: ${String(cause)}`))
+        .finally(() => { pageRemovalPendingRef.current = false; });
     });
   }, [activePage, commitDraftBeforeAction, setEvent]);
 

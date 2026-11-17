@@ -159,6 +159,38 @@ afterEach(() => {
 });
 
 describe("rendered event editor Save All integration", () => {
+  it("keeps the compact page selector on a valid page after undoing page creation", async () => {
+    renderProject();
+    const add = await screen.findByRole("button", {name: "Add event page"});
+    fireEvent.click(add);
+    const selector = screen.getByRole("combobox", {name: "Select event page"}) as HTMLSelectElement;
+    await waitFor(() => expect(selector.value).toBe("1"));
+    fireEvent.click(screen.getByRole("button", {name: "Undo event edit"}));
+    await waitFor(() => expect(selector.value).toBe("0"));
+    expect(screen.queryByText("No pages defined")).toBeNull();
+    expect(screen.getByText("Original dialogue")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Page properties"}));
+    fireEvent.click(screen.getByRole("checkbox", {name: "Self Switch"}));
+    fireEvent.click(screen.getByRole("button", {name: "Save All"}));
+    await screen.findByText("Save All succeeded");
+    expect(diskEvent.pages).toHaveLength(1);
+    expect(diskEvent.pages[0].condition.self_switch_valid).toBe(true);
+    expect(diskEvent.pages[0].list[1].parameters[0]).toBe("Original dialogue");
+  });
+
+  it("requires explicit confirmation before removing an event page", async () => {
+    diskEvent.pages.push({...structuredClone(diskEvent.pages[0]), source_index: 1});
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      renderProject();
+      fireEvent.click(await screen.findByRole("button", {name: "Event page 2"}));
+      fireEvent.click(screen.getByRole("button", {name: "Remove event page"}));
+      await waitFor(() => expect(confirmation).toHaveBeenCalledWith(expect.stringContaining("Remove event page 2")));
+      expect(screen.getByRole("button", {name: "Event page 2"})).toBeTruthy();
+      expect(native.saveEvent).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+
   it("shrinks the mobile event workspace to the visual keyboard viewport, preserving multiline drafts", async () => {
     Object.defineProperty(window, "innerWidth", {configurable: true, value: 390});
     const viewport = Object.assign(new EventTarget(), {height: window.innerHeight, scale: 1, offsetTop: 0});
@@ -482,6 +514,7 @@ describe("rendered event editor Save All integration", () => {
   });
 
   it("commits a page draft before removal so undo can restore it", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
     const event = importedEvent();
     const secondPage = structuredClone(event.pages[0]);
     secondPage.list[1].parameters[0] = "Second page dialogue";
@@ -506,6 +539,8 @@ describe("rendered event editor Save All integration", () => {
     expect(diskEvent.pages).toHaveLength(2);
     expect(diskEvent.pages[1].list.find((command) => command.code === 401)?.parameters[0])
       .toBe("Draft restored by undo");
+    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining("Remove event page 2"));
+    confirmation.mockRestore();
   });
 
   it("edits dialogue on another event page and persists only that page through Save All", async () => {
