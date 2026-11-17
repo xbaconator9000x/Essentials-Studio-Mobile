@@ -326,3 +326,11 @@
 .palette-tile-scale button { min-width: 44px; min-height: 40px; border-radius: 6px; border: 1px solid var(--color-surface1); background: var(--color-surface0); color: var(--color-text); }
 .palette-tile-scale button.active { border-color: var(--color-accent); color: var(--color-accent); }
 @media (max-width: 900px) { .palette-tile-scale button { min-height: 44px; } }
+
+/* Precise tile navigation is available on demand, keeping the picker compact. */
+.palette-navigation-toggle { width: 100%; flex: 0 0 auto; min-height: 40px; padding: 6px 12px; text-align: left; border: 0; border-bottom: 1px solid var(--color-surface0); background: var(--color-mantle); color: var(--color-subtext1); font: inherit; font-size: 12px; }
+.palette-navigation-toggle::after { content: "⌄"; float: right; }
+.palette-navigation-toggle[aria-expanded="true"]::after { content: "⌃"; }
+@media (max-width: 900px) { .palette-navigation-toggle { min-height: 44px; } }
+/* At 1.5× and 2×, permit horizontal as well as vertical finger scrolling. */
+.palette-scroll--tiles .tileset-canvas { touch-action: pan-x pan-y; }
