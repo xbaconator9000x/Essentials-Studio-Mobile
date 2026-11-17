@@ -133,6 +133,49 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("deduplicates a direct sprite save and Save All while the write is outstanding", async () => {
+    let finishSave!: (name: string) => void;
+    editorApi.savePrivateProjectSprite.mockImplementationOnce(() => new Promise<string>(resolve => { finishSave = resolve; }));
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    const canvas = screen.getByRole("application", { name: "Sprite canvas" });
+    fireEvent.pointerDown(canvas, { pointerId: 91, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
+    fireEvent.pointerUp(canvas, { pointerId: 91, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
+    const save = screen.getByRole("button", { name: "Save sprite" });
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(save);
+    fireEvent.click(screen.getByRole("button", { name: "Save All" }));
+    await act(async () => { await Promise.resolve(); });
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1);
+    await act(async () => { finishSave("Guide_copy"); });
+    await waitFor(() => expect(screen.getByDisplayValue("Guide_copy")).toBeTruthy());
+    expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards a dirty mobile sprite and reloads its saved pixels before editing can resume", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    renderEditor();
+    const picker = await screen.findByRole("combobox", { name: "Quick select project character sprite" });
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    const canvas = screen.getByRole("application", { name: "Sprite canvas" });
+    fireEvent.pointerDown(canvas, { pointerId: 92, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
+    fireEvent.pointerUp(canvas, { pointerId: 92, pointerType: "mouse", button: 0, clientX: 90, clientY: 90 });
+    fireEvent.click(screen.getByRole("button", { name: "Sprites & trace" }));
+    const discard = await screen.findByRole("button", { name: "Discard edits" });
+    let finishReload!: (image: {width: number; height: number}) => void;
+    editorApi.loadCharacterImage.mockImplementationOnce(() => new Promise(resolve => { finishReload = resolve; }));
+    fireEvent.click(discard);
+    await waitFor(() => expect(editorApi.loadCharacterImage).toHaveBeenCalledTimes(2));
+    expect(canvas.getAttribute("aria-busy")).toBe("true");
+    expect((picker as HTMLSelectElement).disabled).toBe(true);
+    await act(async () => { finishReload({width: 4, height: 4}); });
+    await waitFor(() => expect(canvas.getAttribute("aria-busy")).toBe("false"));
+    expect((picker as HTMLSelectElement).disabled).toBe(false);
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Discard edits" })).toBeNull();
+  });
+
   it("searches large project asset lists from the compact toolbar without changing the active source", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     editorApi.listAssetFiles.mockResolvedValue(["Guide", "Hero", "HeroAlt", "NPC"]);

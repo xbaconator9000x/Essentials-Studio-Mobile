@@ -190,6 +190,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const spriteImportId = useRef(0);
   const fitViewportOnResize = useRef(true);
   const spriteEditRevision = useRef(0);
+  const spriteSaveInFlight = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -981,55 +982,65 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setImageRevision((value) => value + 1);
   }, [updateDirty]);
 
-  const saveSprite = useCallback(async () => {
-    const source = imageCanvasRef.current;
-    const importedCandidate = importedSpriteName !== null;
-    if (!source || (!selectedName && !importedCandidate)) {
-      throw new Error("No character sprite is selected");
-    }
-    if (importedCandidate && saveMode !== "copy") {
-      throw new Error("Imported sprites must be saved as a new copy");
-    }
-    if (saveMode === "original" &&
-        !(await confirmEditor(`Replace the original ${selectedName}.png character graphic?`))) {
-      throw new Error("Original sprite replacement cancelled; edits remain unsaved");
-    }
-    const savedRevision = spriteEditRevision.current;
-    setSaving(true);
-    setError(null);
-    try {
-      const imageData = source.toDataURL("image/png");
-      const savedName = importedCandidate
-        ? await importPrivateProjectSprite(projectPath, targetName.trim(), imageData)
-        : await savePrivateProjectSprite(
-            projectPath,
-            selectedName,
-            saveMode === "copy" ? targetName.trim() : selectedName,
-            saveMode,
-            imageData,
-          );
-      setNames((current) => current.includes(savedName) ? current : [...current, savedName].sort((a, b) => a.localeCompare(b)));
-      const hasNewerEdits = spriteEditRevision.current !== savedRevision;
-      if (!hasNewerEdits && activePaintPointer.current === null) {
-        setSelectedName(savedName);
-        setImportedSpriteName(null);
-        setTargetName(`${savedName}_copy`);
-        setSaveMode("original");
-        setDirty(false);
-        updateDirty("sprite-editor", false);
-      } else {
-        if (saveMode === "copy") setTargetName(`${savedName}_copy`);
-        setDirty(hasNewerEdits);
-        updateDirty("sprite-editor", hasNewerEdits);
+  const saveSprite = useCallback((): Promise<void> => {
+    // The editor button and global Save All share one write transaction.
+    // In particular, concurrent copy requests must never create duplicates.
+    if (spriteSaveInFlight.current) return spriteSaveInFlight.current;
+    const run = async () => {
+      const source = imageCanvasRef.current;
+      const importedCandidate = importedSpriteName !== null;
+      if (!source || (!selectedName && !importedCandidate)) {
+        throw new Error("No character sprite is selected");
       }
-      clearImageCache();
-      onSaved();
-    } catch (cause) {
-      setError(`Sprite save failed: ${cause}`);
-      throw cause;
-    } finally {
-      setSaving(false);
-    }
+      if (importedCandidate && saveMode !== "copy") {
+        throw new Error("Imported sprites must be saved as a new copy");
+      }
+      if (saveMode === "original" &&
+          !(await confirmEditor(`Replace the original ${selectedName}.png character graphic?`))) {
+        throw new Error("Original sprite replacement cancelled; edits remain unsaved");
+      }
+      const savedRevision = spriteEditRevision.current;
+      setSaving(true);
+      setError(null);
+      try {
+        const imageData = source.toDataURL("image/png");
+        const savedName = importedCandidate
+          ? await importPrivateProjectSprite(projectPath, targetName.trim(), imageData)
+          : await savePrivateProjectSprite(
+              projectPath,
+              selectedName,
+              saveMode === "copy" ? targetName.trim() : selectedName,
+              saveMode,
+              imageData,
+            );
+        setNames((current) => current.includes(savedName) ? current : [...current, savedName].sort((a, b) => a.localeCompare(b)));
+        const hasNewerEdits = spriteEditRevision.current !== savedRevision;
+        if (!hasNewerEdits && activePaintPointer.current === null) {
+          setSelectedName(savedName);
+          setImportedSpriteName(null);
+          setTargetName(`${savedName}_copy`);
+          setSaveMode("original");
+          setDirty(false);
+          updateDirty("sprite-editor", false);
+        } else {
+          if (saveMode === "copy") setTargetName(`${savedName}_copy`);
+          setDirty(hasNewerEdits);
+          updateDirty("sprite-editor", hasNewerEdits);
+        }
+        clearImageCache();
+        onSaved();
+      } catch (cause) {
+        setError(`Sprite save failed: ${cause}`);
+        throw cause;
+      } finally {
+        setSaving(false);
+      }
+    };
+    const operation = run().finally(() => {
+      if (spriteSaveInFlight.current === operation) spriteSaveInFlight.current = null;
+    });
+    spriteSaveInFlight.current = operation;
+    return operation;
   }, [importedSpriteName, onSaved, projectPath, saveMode, selectedName, targetName, updateDirty]);
 
   const discardImportedSprite = useCallback(() => {
@@ -1043,40 +1054,42 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     updateDirty("sprite-editor", false);
     setSelection(null);
     setClipboard(null);
+    setWalkSheetMode(false);
+    setWalkFrameIndex(0);
+    setWalkPreviewOpen(false);
+    setWalkPreviewPlaying(false);
+    setError(null);
+    imageCanvasRef.current = null;
+    imageDataRef.current = null;
+    historyRef.current.clear();
+    pointerPositions.current.clear();
+    activePaintPointer.current = null;
+    pendingTouchPaint.current = null;
+    lastPaintPixel.current = null;
+    activePan.current = null;
+    activeTracePan.current = null;
+    activeSelection.current = null;
+    pinchStart.current = null;
+    setImageRevision(value => value + 1);
     if (selectedName) {
       setLoading(true);
       setProjectSpriteReload((value) => value + 1);
     } else {
-      imageCanvasRef.current = null;
-      imageDataRef.current = null;
-      historyRef.current.clear();
       setLoading(false);
-      setImageRevision((value) => value + 1);
     }
   }, [selectedName, updateDirty]);
 
-  const cancelSprite = useCallback(() => {
-    if (importedSpriteName !== null) {
-      discardImportedSprite();
-      return;
+  // Both imported candidates and edited project assets use the cancellable
+  // source reload effect; an abandoned asynchronous decode cannot overwrite
+  // a subsequently selected sprite or project.
+  const cancelSprite = discardImportedSprite;
+
+  const requestDiscardEdits = useCallback(async () => {
+    if (!dirty || saving || loading || spriteSaveInFlight.current) return;
+    if (await confirmEditor("Discard unsaved sprite edits and reload the saved graphic?")) {
+      if (!spriteSaveInFlight.current) cancelSprite();
     }
-    setDirty(false);
-    updateDirty("sprite-editor", false);
-    if (selectedName) {
-      void loadCharacterImage(projectPath, selectedName).then((image) => {
-        if (!image) return;
-        const source = document.createElement("canvas");
-        source.width = image.width;
-        source.height = image.height;
-        const context = source.getContext("2d");
-        context?.drawImage(image, 0, 0);
-        imageCanvasRef.current = source;
-        imageDataRef.current = context?.getImageData(0, 0, source.width, source.height) ?? null;
-        historyRef.current.clear();
-        setImageRevision((value) => value + 1);
-      });
-    }
-  }, [discardImportedSprite, importedSpriteName, projectPath, selectedName, updateDirty]);
+  }, [cancelSprite, dirty, loading, saving]);
 
   useEditorRegistration("sprite-editor", saveSprite, cancelSprite, dirty);
 
@@ -1551,7 +1564,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               </>
             )}
             <button aria-label="Fit sprite to view" onClick={fitSprite}>Fit</button>
-            <button disabled={!dirty || saving} onClick={() => void saveSprite().catch(() => {})}>
+            <button disabled={!dirty || saving || loading} onClick={() => void saveSprite().catch(() => {})}
+              title={saveMode === "original" ? `Replace ${selectedName}.png` : `Save new copy ${targetName || "(name required)"}.png`}>
               {saving ? "Saving…" : "Save sprite"}
             </button>
             <button type="button" disabled={loading || saving || exporting || (!selectedName && !importedSpriteName)}
@@ -1626,9 +1640,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   disabled={saving}
                   onChange={(event) => setTargetName(event.target.value)}
                 />
-                <button type="button" disabled={saving || loading} onClick={discardImportedSprite}>Discard import</button>
               </label>
             )}
+            {importedSpriteName !== null && <button type="button" data-mobile-panel="assets"
+              disabled={saving || loading} onClick={discardImportedSprite}>Discard import</button>}
             {traceImage && (
               <button
                 type="button"
@@ -1685,6 +1700,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                   <option value="copy">Save copy</option>
                   <option value="original">Replace original</option>
                 </select>
+                {dirty && <button type="button" disabled={saving || loading}
+                  onClick={() => void requestDiscardEdits()}>Discard edits</button>}
                 {saveMode === "copy" && <label className="sprite-editor-quick-copy-name">
                   Copy name
                   <input aria-label="Quick sprite copy name" value={targetName} maxLength={128}
@@ -2164,6 +2181,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 <input value={targetName} onChange={(event) => setTargetName(event.target.value)} maxLength={128} />
               </label>
             )}
+            {dirty && importedSpriteName === null && !controlsCollapsed && <button type="button"
+              disabled={saving || loading} onClick={() => void requestDiscardEdits()}>Discard sprite edits</button>}
             {loading && <span role="status">Loading sprite…</span>}
             {dirty && (
               <span className="sprite-editor-dirty">
