@@ -50,6 +50,10 @@ const context = {
   stroke: vi.fn(),
   strokeRect: vi.fn(),
   setLineDash: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  rect: vi.fn(),
+  clip: vi.fn(),
 } as unknown as CanvasRenderingContext2D;
 
 function renderEditor(onSaved = vi.fn()) {
@@ -133,6 +137,63 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("focuses a non-first walking frame, clips a mirrored brush, and saves the full sheet", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 16, height: 16 });
+    spritePixelFixture = new Uint8ClampedArray(16 * 16 * 4);
+    spritePixelFixture.set([33, 44, 55, 255], 0);
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByRole("combobox", { name: "Select walking sprite frame" }), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Focus frame" }));
+    expect(screen.getByRole("button", { name: "Whole sheet" }).getAttribute("aria-pressed")).toBe("true");
+    // 4x4 frame at (4,4), 32x zoom, centered at CSS (36,36).
+    expect(context.rect).toHaveBeenCalledWith(36, 36, 128, 128);
+    const canvas = screen.getByRole("application", { name: "Sprite canvas" });
+    const tap = (x: number, y: number) => {
+      fireEvent.pointerDown(canvas, { pointerId: 77, pointerType: "touch", button: 0, clientX: x, clientY: y });
+      fireEvent.pointerUp(canvas, { pointerId: 77, pointerType: "touch", button: 0, clientX: x, clientY: y });
+    };
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mirror sprite brush horizontally" }));
+    tap(20, 100); // lies in a neighboring sheet cell, but outside focus
+    expect(putImageData).not.toHaveBeenCalled();
+    tap(52, 52);
+    const pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...pixels.slice((4 * 16 + 4) * 4, (4 * 16 + 4) * 4 + 4)]).toEqual([255, 255, 255, 255]);
+    expect([...pixels.slice((4 * 16 + 7) * 4, (4 * 16 + 7) * 4 + 4)]).toEqual([255, 255, 255, 255]);
+    expect([...pixels.slice(0, 4)]).toEqual([33, 44, 55, 255]);
+    expect(pixels.filter((_, i) => i % 4 === 3 && pixels[i] !== 0)).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "Save sprite" }));
+    await waitFor(() => expect(editorApi.savePrivateProjectSprite).toHaveBeenCalledTimes(1));
+    expect(serializedCanvases.at(-1)?.width).toBe(16);
+    expect(serializedCanvases.at(-1)?.height).toBe(16);
+  });
+
+  it("confines fill and bulk transforms to the focused cell even after clearing selection", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 16, height: 16 });
+    spritePixelFixture = new Uint8ClampedArray(16 * 16 * 4);
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByRole("combobox", { name: "Select walking sprite frame" }), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Focus frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fill (G)" }));
+    const canvas = screen.getByRole("application", { name: "Sprite canvas" });
+    fireEvent.pointerDown(canvas, { pointerId: 78, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(canvas, { pointerId: 78, pointerType: "touch", button: 0, clientX: 100, clientY: 100 });
+    const pixels = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      expect(pixels[(y * 16 + x) * 4 + 3]).toBe(x >= 8 && x < 12 && y >= 8 && y < 12 ? 255 : 0);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(putImageData.mock.calls.at(-1)?.[0].data.every((v: number) => v === 0)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Whole sheet" }));
+    expect(screen.getByRole("button", { name: "Focus frame" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("deduplicates a direct sprite save and Save All while the write is outstanding", async () => {
     let finishSave!: (name: string) => void;
     editorApi.savePrivateProjectSprite.mockImplementationOnce(() => new Promise<string>(resolve => { finishSave = resolve; }));

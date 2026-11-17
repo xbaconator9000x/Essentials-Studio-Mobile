@@ -185,3 +185,13 @@ export function zoomSpriteTraceTransform(
     )),
   };
 }
+
+/** Fit a region while retaining the original sheet coordinate system. */
+export function fitSpriteRegionViewport(
+  region: { x: number; y: number; width: number; height: number },
+  viewportWidth: number, viewportHeight: number,
+): SpriteViewport {
+  const fit = fitSpriteViewport(region.width, region.height, viewportWidth, viewportHeight, 32);
+  return { zoom: fit.zoom, offsetX: fit.offsetX - region.x * fit.zoom,
+    offsetY: fit.offsetY - region.y * fit.zoom };
+}

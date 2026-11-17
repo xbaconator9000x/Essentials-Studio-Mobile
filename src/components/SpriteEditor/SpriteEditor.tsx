@@ -9,6 +9,7 @@ import {
 import { useEditorRegistration, useProjectSave } from "../../context/ProjectSaveContext";
 import {
   fitSpriteViewport,
+  fitSpriteRegionViewport,
   rasterizeSpriteLine,
   spritePixelAt,
   zoomSpriteTraceTransform,
@@ -144,6 +145,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
   const [walkSheetMode, setWalkSheetMode] = useState(false);
+  const [walkFrameFocus, setWalkFrameFocus] = useState(false);
   const [walkFrameIndex, setWalkFrameIndex] = useState(0);
   const [walkPreviewOpen, setWalkPreviewOpen] = useState(false);
   const [walkPreviewPlaying, setWalkPreviewPlaying] = useState(false);
@@ -191,6 +193,13 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const fitViewportOnResize = useRef(true);
   const spriteEditRevision = useRef(0);
   const spriteSaveInFlight = useRef<Promise<void> | null>(null);
+  // A frame is a viewport/edit constraint, not a second image or save target.
+  const focusedFrame = useMemo(() => {
+    const source = imageCanvasRef.current;
+    return walkFrameFocus && walkSheetMode && source
+      ? getWalkSpriteFrame(source.width, source.height, walkFrameIndex) : null;
+  }, [walkFrameFocus, walkSheetMode, walkFrameIndex, imageRevision]);
+  const editArea = selection ?? focusedFrame;
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -226,6 +235,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     historyRef.current.clear();
     setImportedSpriteName(null);
     setWalkSheetMode(false);
+    setWalkFrameFocus(false);
     setWalkFrameIndex(0);
     setDirty(false);
     updateDirty("sprite-editor", false);
@@ -374,12 +384,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const canvas = canvasRef.current;
     if (!source || !canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const viewport = fitSpriteViewport(source.width, source.height, rect.width, rect.height);
+    const viewport = focusedFrame
+      ? fitSpriteRegionViewport(focusedFrame, rect.width, rect.height)
+      : fitSpriteViewport(source.width, source.height, rect.width, rect.height);
     fitViewportOnResize.current = true;
     setZoom(viewport.zoom);
     setOffsetX(viewport.offsetX);
     setOffsetY(viewport.offsetY);
-  }, []);
+  }, [focusedFrame]);
 
   const zoomViewportAt = useCallback((scale: number, point?: PointerPoint) => {
     const canvas = canvasRef.current;
@@ -441,13 +453,23 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       context.fillRect(0, 0, rect.width, rect.height);
       const source = imageCanvasRef.current;
       if (source) {
+        const region = focusedFrame ?? { x: 0, y: 0, width: source.width, height: source.height };
         const viewport = fitViewportOnResize.current && rect.width > 0 && rect.height > 0
-          ? fitSpriteViewport(source.width, source.height, rect.width, rect.height)
+          ? (focusedFrame ? fitSpriteRegionViewport(region, rect.width, rect.height)
+            : fitSpriteViewport(source.width, source.height, rect.width, rect.height))
           : { zoom, offsetX, offsetY };
         if (fitViewportOnResize.current) {
           if (viewport.zoom !== zoom) setZoom(viewport.zoom);
           if (viewport.offsetX !== offsetX) setOffsetX(viewport.offsetX);
           if (viewport.offsetY !== offsetY) setOffsetY(viewport.offsetY);
+        }
+        if (focusedFrame) {
+          context.save();
+          context.beginPath();
+          context.rect(viewport.offsetX + region.x * viewport.zoom,
+            viewport.offsetY + region.y * viewport.zoom,
+            region.width * viewport.zoom, region.height * viewport.zoom);
+          context.clip();
         }
         context.drawImage(
           source,
@@ -470,10 +492,10 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           context.globalAlpha = 1;
         }
         if (showPixelGrid && viewport.zoom >= 4) {
-          const left = Math.max(0, Math.floor(-viewport.offsetX / viewport.zoom));
-          const top = Math.max(0, Math.floor(-viewport.offsetY / viewport.zoom));
-          const right = Math.min(source.width, Math.ceil((rect.width - viewport.offsetX) / viewport.zoom));
-          const bottom = Math.min(source.height, Math.ceil((rect.height - viewport.offsetY) / viewport.zoom));
+          const left = Math.max(region.x, Math.floor(-viewport.offsetX / viewport.zoom));
+          const top = Math.max(region.y, Math.floor(-viewport.offsetY / viewport.zoom));
+          const right = Math.min(region.x + region.width, Math.ceil((rect.width - viewport.offsetX) / viewport.zoom));
+          const bottom = Math.min(region.y + region.height, Math.ceil((rect.height - viewport.offsetY) / viewport.zoom));
           context.strokeStyle = "rgba(255,255,255,0.2)";
           context.lineWidth = 1;
           context.beginPath();
@@ -494,14 +516,14 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           context.lineWidth = 1;
           context.beginPath();
           if (mirrorHorizontal) {
-            const centerX = viewport.offsetX + source.width * viewport.zoom / 2;
-            context.moveTo(centerX, viewport.offsetY);
-            context.lineTo(centerX, viewport.offsetY + source.height * viewport.zoom);
+            const centerX = viewport.offsetX + (region.x + region.width / 2) * viewport.zoom;
+            context.moveTo(centerX, viewport.offsetY + region.y * viewport.zoom);
+            context.lineTo(centerX, viewport.offsetY + (region.y + region.height) * viewport.zoom);
           }
           if (mirrorVertical) {
-            const centerY = viewport.offsetY + source.height * viewport.zoom / 2;
-            context.moveTo(viewport.offsetX, centerY);
-            context.lineTo(viewport.offsetX + source.width * viewport.zoom, centerY);
+            const centerY = viewport.offsetY + (region.y + region.height / 2) * viewport.zoom;
+            context.moveTo(viewport.offsetX + region.x * viewport.zoom, centerY);
+            context.lineTo(viewport.offsetX + (region.x + region.width) * viewport.zoom, centerY);
           }
           context.stroke();
         }
@@ -517,58 +539,64 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           );
           context.setLineDash([]);
         }
+        if (focusedFrame) context.restore();
       }
     };
     const observer = new ResizeObserver(draw);
     observer.observe(container);
     draw();
     return () => observer.disconnect();
-  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY, selection, showPixelGrid, mirrorHorizontal, mirrorVertical]);
+  }, [imageRevision, offsetX, offsetY, zoom, traceImage, traceOpacity, traceScale, traceOffsetX, traceOffsetY, selection, showPixelGrid, mirrorHorizontal, mirrorVertical, focusedFrame]);
 
   const pixelAtClient = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const source = imageCanvasRef.current;
     if (!canvas || !source) return null;
     const rect = canvas.getBoundingClientRect();
-    return spritePixelAt(
+    const pixel = spritePixelAt(
       clientX - rect.left,
       clientY - rect.top,
       { zoom, offsetX, offsetY },
       source.width,
       source.height,
     );
-  }, [offsetX, offsetY, zoom]);
+    if (pixel && focusedFrame && (pixel.x < focusedFrame.x || pixel.y < focusedFrame.y ||
+        pixel.x >= focusedFrame.x + focusedFrame.width || pixel.y >= focusedFrame.y + focusedFrame.height)) return null;
+    return pixel;
+  }, [offsetX, offsetY, zoom, focusedFrame]);
 
   const clampedPixelAtClient = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const source = imageCanvasRef.current;
     if (!canvas || !source) return null;
     const rect = canvas.getBoundingClientRect();
+    const area = focusedFrame ?? { x: 0, y: 0, width: source.width, height: source.height };
     return {
-      x: Math.max(0, Math.min(source.width - 1, Math.floor((clientX - rect.left - offsetX) / zoom))),
-      y: Math.max(0, Math.min(source.height - 1, Math.floor((clientY - rect.top - offsetY) / zoom))),
+      x: Math.max(area.x, Math.min(area.x + area.width - 1, Math.floor((clientX - rect.left - offsetX) / zoom))),
+      y: Math.max(area.y, Math.min(area.y + area.height - 1, Math.floor((clientY - rect.top - offsetY) / zoom))),
     };
-  }, [offsetX, offsetY, zoom]);
+  }, [offsetX, offsetY, zoom, focusedFrame]);
 
   const selectEntireSprite = useCallback(() => {
     const source = imageCanvasRef.current;
     if (!source || loading || saving) return;
-    setSelection({ x: 0, y: 0, width: source.width, height: source.height });
+    setSelection(focusedFrame ?? { x: 0, y: 0, width: source.width, height: source.height });
     setTool("select");
-  }, [loading, saving]);
+  }, [loading, saving, focusedFrame]);
 
   /** Opt-in RMXP walk-sheet navigation; changing frame never changes pixels. */
   const selectWalkFrame = useCallback((index: number) => {
     const source = imageCanvasRef.current;
-    if (!source || loading || saving || activePaintPointer.current !== null) return;
+    if (!source || loading || saving || activePaintPointer.current !== null || activeSelection.current !== null || pointerPositions.current.size > 0) return;
     const frame = getWalkSpriteFrame(source.width, source.height, index);
     if (!frame) return;
     setWalkFrameIndex(index);
     setSelection({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
     setMoveSelectedPixels(false);
-    setTool("select");
+    if (walkFrameFocus) fitViewportOnResize.current = true;
+    else setTool("select");
     setError(null);
-  }, [loading, saving]);
+  }, [loading, saving, walkFrameFocus]);
 
   const copyWalkFrame = useCallback(() => {
     const source = imageCanvasRef.current;
@@ -591,6 +619,9 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     if (!source || !image || !selection || loading || saving || activePaintPointer.current !== null) return;
     const next = moveSpriteSelection(selection, dx, dy, source.width, source.height);
     if (!next || (next.x === selection.x && next.y === selection.y)) return;
+    if (focusedFrame && (next.x < focusedFrame.x || next.y < focusedFrame.y ||
+        next.x + next.width > focusedFrame.x + focusedFrame.width ||
+        next.y + next.height > focusedFrame.y + focusedFrame.height)) return;
     if (moveSelectedPixels) {
       const action = moveSpritePixels(image.data, source.width, source.height,
         selection, next.x - selection.x, next.y - selection.y,
@@ -610,7 +641,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setError(null);
     }
     setSelection(next);
-  }, [duplicateSelectedPixels, loading, moveSelectedPixels, saving, selection, updateDirty]);
+  }, [duplicateSelectedPixels, loading, moveSelectedPixels, saving, selection, updateDirty, focusedFrame]);
 
   const copySelection = useCallback((cut = false) => {
     const source = imageCanvasRef.current;
@@ -643,11 +674,17 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const pasteSelection = useCallback((targetSelection?: SpriteSelection, requireExactSize = false) => {
     const source = imageCanvasRef.current;
     const imageData = imageDataRef.current;
-    const destination = targetSelection ?? selection;
+    const destination = targetSelection ?? editArea;
     if (!source || !imageData || !clipboard || !destination) return false;
     // Whole-frame paste must not overflow into an adjacent animation frame.
     if (requireExactSize && (clipboard.width !== destination.width || clipboard.height !== destination.height)) {
       setError("Clipboard dimensions must match the selected walk frame");
+      return false;
+    }
+    if (focusedFrame && (destination.x < focusedFrame.x || destination.y < focusedFrame.y ||
+        destination.x + clipboard.width > focusedFrame.x + focusedFrame.width ||
+        destination.y + clipboard.height > focusedFrame.y + focusedFrame.height)) {
+      setError("Clipboard would extend beyond the focused walking frame");
       return false;
     }
     const action = pasteSpriteSelection(
@@ -677,7 +714,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setError(null);
     setImageRevision((value) => value + 1);
     return true;
-  }, [clipboard, preserveTransparentPaste, selection, updateDirty]);
+  }, [clipboard, preserveTransparentPaste, editArea, updateDirty, focusedFrame]);
 
   const pasteWalkFrame = useCallback(() => {
     const source = imageCanvasRef.current;
@@ -802,7 +839,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     const source = imageCanvasRef.current;
     const image = imageDataRef.current;
     if (!source || !image || loading || saving || activePaintPointer.current !== null) return;
-    const area = selection ?? { x: 0, y: 0, width: source.width, height: source.height };
+    const area = editArea ?? { x: 0, y: 0, width: source.width, height: source.height };
     if (area.width * area.height > 1_000_000) {
       setError("Select at most one million pixels for a bulk edit");
       return;
@@ -837,7 +874,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     updateDirty("sprite-editor", true);
     setImageRevision((value) => value + 1);
     setError(null);
-  }, [alphaCutoff, brushColor, loading, posterizeLevels, replaceFrom, replaceTolerance, saving, selection, updateDirty]);
+  }, [alphaCutoff, brushColor, loading, posterizeLevels, replaceFrom, replaceTolerance, saving, editArea, updateDirty]);
 
   const exportCurrentSprite = useCallback(async () => {
     const source = imageCanvasRef.current;
@@ -874,8 +911,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       if (tool === "fill" || tool === "match-fill") {
         historyRef.current.begin();
         action = tool === "match-fill"
-          ? fillMatchingSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection)
-          : fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, selection);
+          ? fillMatchingSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, editArea)
+          : fillSpritePixels(imageData.data, source.width, source.height, pixel.x, pixel.y, brushColor, editArea);
         if (action) {
           if (!historyRef.current.push(action)) {
             applySpritePixelAction(imageData.data, action, "before");
@@ -895,7 +932,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
           tool === "eraser",
           mirrorHorizontal,
           mirrorVertical,
-          selection,
+          editArea,
+          focusedFrame,
         );
         if (action && !historyRef.current.record(action)) {
           applySpritePixelAction(imageData.data, action, "before");
@@ -917,7 +955,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setImageRevision((value) => value + 1);
     }
     return true;
-  }, [brushColor, brushSize, pixelAtClient, tool, updateDirty, mirrorHorizontal, mirrorVertical]);
+  }, [brushColor, brushSize, pixelAtClient, tool, updateDirty, mirrorHorizontal, mirrorVertical, editArea, focusedFrame]);
 
   const paintStrokeTo = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -1059,6 +1097,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setSelection(null);
     setClipboard(null);
     setWalkSheetMode(false);
+    setWalkFrameFocus(false);
     setWalkFrameIndex(0);
     setWalkPreviewOpen(false);
     setWalkPreviewPlaying(false);
@@ -1183,6 +1222,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (loading) return;
     const point = { x: event.clientX, y: event.clientY };
+    if (!pointerPositions.current.has(event.pointerId)) return;
     pointerPositions.current.set(event.pointerId, point);
     const points = [...pointerPositions.current.values()];
     const pinch = pinchStart.current;
@@ -1461,6 +1501,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setWalkPreviewOpen(false);
       setWalkPreviewPlaying(false);
       setWalkSheetMode(false);
+    setWalkFrameFocus(false);
       setWalkFrameIndex(0);
       setTargetName(importedSpriteCopyName(file.name));
       setSaveMode("copy");
@@ -1498,6 +1539,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setWalkPreviewOpen(false);
     setWalkPreviewPlaying(false);
     setWalkSheetMode(false);
+    setWalkFrameFocus(false);
     setWalkFrameIndex(0);
     setLoading(true);
     imageCanvasRef.current = null;
@@ -1856,12 +1898,29 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 const enabled = event.currentTarget.checked;
                 setWalkSheetMode(enabled);
                 if (enabled) selectWalkFrame(walkFrameIndex);
-                else { setWalkPreviewOpen(false); setWalkPreviewPlaying(false); }
+                else {
+                  setWalkPreviewOpen(false);
+                  setWalkPreviewPlaying(false);
+                  if (walkFrameFocus) {
+                    setWalkFrameFocus(false);
+                    setSelection(null);
+                    fitViewportOnResize.current = true;
+                  }
+                }
               }} />
             4×4 walk frames
           </label>
           {walkSheetMode && (
             <>
+              <button type="button" aria-pressed={walkFrameFocus} disabled={loading || saving}
+                onClick={() => {
+                  if (activePaintPointer.current !== null || activeSelection.current !== null || pointerPositions.current.size > 0) return;
+                  setWalkFrameFocus(value => !value);
+                  fitViewportOnResize.current = true;
+                  setSelection(walkFrameFocus ? null : getWalkSpriteFrame(imageCanvasRef.current!.width, imageCanvasRef.current!.height, walkFrameIndex));
+                  setMoveSelectedPixels(false);
+                  setTool("brush");
+                }}>{walkFrameFocus ? "Whole sheet" : "Focus frame"}</button>
               <button type="button" aria-label="Previous walk frame" disabled={loading || saving}
                 onClick={() => { const index = stepWalkSpriteFrame(walkFrameIndex, -1); if (index !== null) selectWalkFrame(index); }}>‹</button>
               <select aria-label="Select walking sprite frame" value={walkFrameIndex} disabled={loading || saving}

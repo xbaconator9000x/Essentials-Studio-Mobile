@@ -709,6 +709,10 @@ try {
   assert.equal(await workspaceActions.getByRole("button", { name: "Save all changes" }).isVisible(), true,
     "Rotating back to portrait must preserve the mobile Save All path");
   assert.deepEqual(pageErrors, [], "Landscape rotation and editor navigation must not produce uncaught React errors");
+  // Settings was the active section before rotation. A hidden map canvas
+  // correctly has no layout bounds until the user returns to Maps.
+  await navigation.getByRole("button", { name: "Maps", exact: true }).click();
+  await page.locator(".map-editor-canvas").waitFor({ state: "visible" });
   await assertRenderedMap();
   await page.screenshot({ path: join(evidence, "browser-portrait-after-rotation.png"), fullPage: true });
 

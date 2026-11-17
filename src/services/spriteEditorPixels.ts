@@ -526,6 +526,7 @@ export function paintSpritePixels(
   mirrorHorizontal = false,
   mirrorVertical = false,
   selection?: SpriteSelection | null,
+  mirrorBounds?: SpriteSelection | null,
 ): SpritePixelAction | null {
   const packedColor = erase ? 0 : parseColor(color);
   if (!isValidImage(data, width, height) || packedColor === null
@@ -533,9 +534,11 @@ export function paintSpritePixels(
       || !Number.isInteger(size) || size < 1 || size > 32
       || typeof mirrorHorizontal !== "boolean" || typeof mirrorVertical !== "boolean"
       || (selection != null && !isValidSpriteSelection(selection, width, height))
+      || (mirrorBounds != null && !isValidSpriteSelection(mirrorBounds, width, height))
       || x < 0 || y < 0 || x >= width || y >= height) return null;
 
   const area = selection ?? { x: 0, y: 0, width, height };
+  const mirror = mirrorBounds ?? { x: 0, y: 0, width, height };
   const changes = new Map<number, { before: number; after: number }>();
   const left = x - Math.floor(size / 2);
   const top = y - Math.floor(size / 2);
@@ -550,11 +553,15 @@ export function paintSpritePixels(
   };
   for (let py = Math.max(0, top); py < Math.min(height, top + size); py++) {
     for (let px = Math.max(0, left); px < Math.min(width, left + size); px++) {
+      // In frame focus, an oversized brush must not sample a neighboring
+      // cell and reflect that sample back into the active frame.
+      if (px < mirror.x || py < mirror.y || px >= mirror.x + mirror.width || py >= mirror.y + mirror.height) continue;
+      const reflectedX = mirror.x * 2 + mirror.width - 1 - px;
+      const reflectedY = mirror.y * 2 + mirror.height - 1 - py;
       addPixel(px, py);
-      if (mirrorHorizontal) addPixel(width - 1 - px, py);
-      if (mirrorVertical) addPixel(px, height - 1 - py);
-      if (mirrorHorizontal && mirrorVertical)
-        addPixel(width - 1 - px, height - 1 - py);
+      if (mirrorHorizontal) addPixel(reflectedX, py);
+      if (mirrorVertical) addPixel(px, reflectedY);
+      if (mirrorHorizontal && mirrorVertical) addPixel(reflectedX, reflectedY);
     }
   }
   const action = createAction(changes);
