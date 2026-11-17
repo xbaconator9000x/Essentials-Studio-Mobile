@@ -317,3 +317,12 @@
     touch-action: manipulation;
   }
 }
+
+/* Magnification changes display size only, never native RMXP tile coordinates. */
+.palette-scroll--tiles { overflow-x: auto; overscroll-behavior: contain; }
+.palette-scroll--tiles .tileset-canvas { max-width: none; }
+.palette-tile-scale { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--color-surface0); }
+.palette-tile-scale span { font-size: 12px; color: var(--color-subtext1); margin-right: auto; }
+.palette-tile-scale button { min-width: 44px; min-height: 40px; border-radius: 6px; border: 1px solid var(--color-surface1); background: var(--color-surface0); color: var(--color-text); }
+.palette-tile-scale button.active { border-color: var(--color-accent); color: var(--color-accent); }
+@media (max-width: 900px) { .palette-tile-scale button { min-height: 44px; } }
