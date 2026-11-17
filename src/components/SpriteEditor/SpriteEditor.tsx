@@ -52,6 +52,7 @@ import {
 import { resolveSpriteShortcut } from "../../services/spriteEditorShortcuts";
 import { exportSpritePng } from "../../services/spriteExport";
 import { getWalkSpriteFrame, getWalkSpriteFrameByDirection, stepWalkSpriteFrame, stepWalkSpritePhase, WALK_FRAME_COUNT, WALK_FRAME_DIRECTIONS } from "../../services/spriteSheetFrames";
+import { WalkFramePicker } from "./WalkFramePicker";
 import "./SpriteEditor.css";
 
 interface Props {
@@ -146,6 +147,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
   const [mobilePanel, setMobilePanel] = useState<"draw" | "assets" | "transform">("draw");
   const [walkSheetMode, setWalkSheetMode] = useState(false);
   const [walkFrameFocus, setWalkFrameFocus] = useState(false);
+  const [walkFramePickerOpen, setWalkFramePickerOpen] = useState(false);
+  const walkFramePickerButton = useRef<HTMLButtonElement>(null);
   const [walkFrameIndex, setWalkFrameIndex] = useState(0);
   const [walkPreviewOpen, setWalkPreviewOpen] = useState(false);
   const [walkPreviewPlaying, setWalkPreviewPlaying] = useState(false);
@@ -236,6 +239,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setImportedSpriteName(null);
     setWalkSheetMode(false);
     setWalkFrameFocus(false);
+    setWalkFramePickerOpen(false);
     setWalkFrameIndex(0);
     setDirty(false);
     updateDirty("sprite-editor", false);
@@ -1098,6 +1102,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setClipboard(null);
     setWalkSheetMode(false);
     setWalkFrameFocus(false);
+    setWalkFramePickerOpen(false);
     setWalkFrameIndex(0);
     setWalkPreviewOpen(false);
     setWalkPreviewPlaying(false);
@@ -1501,7 +1506,8 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
       setWalkPreviewOpen(false);
       setWalkPreviewPlaying(false);
       setWalkSheetMode(false);
-    setWalkFrameFocus(false);
+      setWalkFrameFocus(false);
+      setWalkFramePickerOpen(false);
       setWalkFrameIndex(0);
       setTargetName(importedSpriteCopyName(file.name));
       setSaveMode("copy");
@@ -1540,6 +1546,7 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
     setWalkPreviewPlaying(false);
     setWalkSheetMode(false);
     setWalkFrameFocus(false);
+    setWalkFramePickerOpen(false);
     setWalkFrameIndex(0);
     setLoading(true);
     imageCanvasRef.current = null;
@@ -1895,14 +1902,17 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
                 || !getWalkSpriteFrame(imageCanvasRef.current.width, imageCanvasRef.current.height, 0)}
               checked={walkSheetMode}
               onChange={(event) => {
+                if (pointerPositions.current.size > 0 || activePaintPointer.current !== null) return;
                 const enabled = event.currentTarget.checked;
                 setWalkSheetMode(enabled);
                 if (enabled) selectWalkFrame(walkFrameIndex);
                 else {
                   setWalkPreviewOpen(false);
                   setWalkPreviewPlaying(false);
+                  setWalkFramePickerOpen(false);
                   if (walkFrameFocus) {
                     setWalkFrameFocus(false);
+                    setWalkFramePickerOpen(false);
                     setSelection(null);
                     fitViewportOnResize.current = true;
                   }
@@ -1915,12 +1925,17 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
               <button type="button" aria-pressed={walkFrameFocus} disabled={loading || saving}
                 onClick={() => {
                   if (activePaintPointer.current !== null || activeSelection.current !== null || pointerPositions.current.size > 0) return;
+                  const source = imageCanvasRef.current;
+                  if (!source) return;
                   setWalkFrameFocus(value => !value);
                   fitViewportOnResize.current = true;
-                  setSelection(walkFrameFocus ? null : getWalkSpriteFrame(imageCanvasRef.current!.width, imageCanvasRef.current!.height, walkFrameIndex));
+                  setSelection(walkFrameFocus ? null : getWalkSpriteFrame(source.width, source.height, walkFrameIndex));
                   setMoveSelectedPixels(false);
                   setTool("brush");
                 }}>{walkFrameFocus ? "Whole sheet" : "Focus frame"}</button>
+              <button type="button" ref={walkFramePickerButton} aria-expanded={walkFramePickerOpen}
+                aria-label="Choose walking frame" disabled={loading || saving}
+                onClick={() => setWalkFramePickerOpen(value => !value)}>Frames</button>
               <button type="button" aria-label="Previous walk frame" disabled={loading || saving}
                 onClick={() => { const index = stepWalkSpriteFrame(walkFrameIndex, -1); if (index !== null) selectWalkFrame(index); }}>‹</button>
               <select aria-label="Select walking sprite frame" value={walkFrameIndex} disabled={loading || saving}
@@ -2259,6 +2274,15 @@ export function SpriteEditor({ projectPath, onClose, onSaved }: Props) {
             </span>
           </aside>
           <div className="sprite-editor-canvas-wrap">
+            {walkSheetMode && walkFramePickerOpen && imageCanvasRef.current && !loading && (
+              <WalkFramePicker source={imageCanvasRef.current} revision={imageRevision} selected={walkFrameIndex}
+                onChoose={index => {
+                  selectWalkFrame(index);
+                  setWalkFramePickerOpen(false);
+                  walkFramePickerButton.current?.focus();
+                }}
+                onClose={() => { setWalkFramePickerOpen(false); walkFramePickerButton.current?.focus(); }} />
+            )}
             <canvas
               ref={canvasRef}
               className="sprite-editor-canvas"

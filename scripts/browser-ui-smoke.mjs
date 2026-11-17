@@ -333,7 +333,7 @@ try {
   const copiedSpritePath = join(root, "Graphics/Characters/SyntheticGuide_copy.png");
   assert.equal(sha(sourceSpritePath), sourceSpriteHash,
     "Saving a sprite copy through the mobile editor must not change its source PNG");
-  const copiedSpriteInfo = inspectSpritePng(copiedSpritePath, sourceSpritePath);
+  let copiedSpriteInfo = inspectSpritePng(copiedSpritePath, sourceSpritePath);
   assert.deepEqual(
     { width: copiedSpriteInfo.width, height: copiedSpriteInfo.height },
     { width: sourceSpriteInfo.width, height: sourceSpriteInfo.height },
@@ -380,6 +380,40 @@ try {
   await spriteEditor.getByRole("button", { name: "Pause preview" }).click();
   assert.equal(await spriteEditor.getByRole("button", { name: "Save sprite" }).isEnabled(), false,
     "Preview must never mark a saved sprite dirty");
+  // Edit a non-first frame on the saved copy using the real mobile thumbnail picker.
+  const beforeFocusedEdit = join(temp, "before-focused-sprite.png");
+  writeFileSync(beforeFocusedEdit, readFileSync(copiedSpritePath));
+  await spriteEditor.getByRole("button", { name: "Focus frame" }).click();
+  await spriteEditor.getByRole("button", { name: "Choose walking frame" }).click();
+  await spriteEditor.getByRole("region", { name: "Walking frame picker" }).waitFor({ state: "visible" });
+  await page.screenshot({ path: join(evidence, "browser-mobile-sprite-frame-picker.png"), fullPage: true });
+  await spriteEditor.getByRole("button", { name: "Choose Left frame 2 of 4" }).click();
+  await spriteEditor.getByRole("button", { name: "Select #e64553" }).click();
+  const focusedBounds = await spriteCanvas.boundingBox();
+  assert.ok(focusedBounds && focusedBounds.width > 0 && focusedBounds.height > 0);
+  await spriteCanvas.tap({ position: { x: focusedBounds.width / 2, y: focusedBounds.height / 2 } });
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ timeout: 10_000 });
+  await page.screenshot({ path: join(evidence, "browser-mobile-sprite-focused-frame.png"), fullPage: true });
+  page.once("dialog", dialog => dialog.accept());
+  await spriteEditor.getByRole("button", { name: "Save sprite" }).click();
+  await spriteEditor.getByText("Unsaved pixel edits").waitFor({ state: "hidden", timeout: 15_000 });
+  const changedPixels = JSON.parse(execFileSync("python3", ["-c", [
+    "import importlib.util, json, sys",
+    "from pathlib import Path",
+    "spec = importlib.util.spec_from_file_location('sprite_smoke', sys.argv[1])",
+    "module = importlib.util.module_from_spec(spec)",
+    "spec.loader.exec_module(module)",
+    "w,h,a = module.png_rgba_rows(Path(sys.argv[2]).read_bytes())",
+    "w2,h2,b = module.png_rgba_rows(Path(sys.argv[3]).read_bytes())",
+    "assert (w,h) == (w2,h2)",
+    "changed = [(x,y) for y in range(h) for x in range(w) if a[y][x*4:x*4+4] != b[y][x*4:x*4+4]]",
+    "assert changed and all(w//4 <= x < w//2 and h//4 <= y < h//2 for x,y in changed), changed",
+    "print(json.dumps(changed))",
+  ].join("\n"), resolve("scripts/android-emulator-sprite-smoke.py"), beforeFocusedEdit, copiedSpritePath], { encoding: "utf8" }));
+  assert.ok(changedPixels.length > 0, "A focused edit must modify only the intended frame on disk");
+  copiedSpriteInfo = inspectSpritePng(copiedSpritePath, sourceSpritePath);
+  assert.equal(sha(sourceSpritePath), sourceSpriteHash, "Focused writeback must preserve the original asset");
+  await spriteEditor.getByRole("button", { name: "Whole sheet" }).click();
   await spriteEditor.getByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" }).uncheck();
   await spriteEditor.getByRole("button", { name: "Close" }).click();
   await page.setViewportSize({ width: 1440, height: 900 });

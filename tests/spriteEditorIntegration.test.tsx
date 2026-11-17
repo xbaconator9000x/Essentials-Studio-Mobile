@@ -137,6 +137,27 @@ afterEach(() => {
 });
 
 describe("sprite editor integration", () => {
+  it("shows actual sheet thumbnails and selects a different focused frame without a write", async () => {
+    editorApi.loadCharacterImage.mockResolvedValue({ width: 16, height: 16 });
+    renderEditor();
+    const toggle = await screen.findByRole("checkbox", { name: "Navigate 4 by 4 walking sprite frames" });
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Focus frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose walking frame" }));
+    const region = screen.getByRole("region", { name: "Walking frame picker" });
+    expect(region.querySelectorAll("canvas")).toHaveLength(16);
+    expect(context.drawImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), 12, 12, 4, 4, 0, 0, 4, 4);
+    expect(screen.getByRole("button", { name: "Choose Down frame 1 of 4" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Choose Up frame 4 of 4" }));
+    expect(screen.queryByRole("region", { name: "Walking frame picker" })).toBeNull();
+    expect((screen.getByRole("combobox", { name: "Select walking sprite frame" }) as HTMLSelectElement).value).toBe("15");
+    expect(screen.getByRole("button", { name: "Whole sheet" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Brush (B)" }).getAttribute("aria-pressed")).toBe("true");
+    expect(editorApi.savePrivateProjectSprite).not.toHaveBeenCalled();
+    expect(putImageData).not.toHaveBeenCalled();
+  });
+
   it("focuses a non-first walking frame, clips a mirrored brush, and saves the full sheet", async () => {
     editorApi.loadCharacterImage.mockResolvedValue({ width: 16, height: 16 });
     spritePixelFixture = new Uint8ClampedArray(16 * 16 * 4);
@@ -188,6 +209,11 @@ describe("sprite editor integration", () => {
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
       expect(pixels[(y * 16 + x) * 4 + 3]).toBe(x >= 8 && x < 12 && y >= 8 && y < 12 ? 255 : 0);
     }
+    fireEvent.click(screen.getByRole("button", { name: "Invert" }));
+    const inverted = putImageData.mock.calls.at(-1)?.[0].data as Uint8ClampedArray;
+    expect([...inverted.slice((8 * 16 + 8) * 4, (8 * 16 + 8) * 4 + 4)]).toEqual([0, 0, 0, 255]);
+    expect([...inverted.slice(0, 4)]).toEqual([0, 0, 0, 0]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(putImageData.mock.calls.at(-1)?.[0].data.every((v: number) => v === 0)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Whole sheet" }));
