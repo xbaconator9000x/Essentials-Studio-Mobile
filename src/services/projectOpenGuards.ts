@@ -16,6 +16,7 @@ export async function prepareProjectBeforeOpen(
     loadMap: (projectPath: string, mapId: number) => Promise<MapRenderData>;
     loadTileset: (projectPath: string, tilesetId: number) => Promise<TilesetRenderInfo>;
   },
+  preferredMapId?: number | null,
 ): Promise<{ project: ProjectInfo; initialMap: MapRenderData | null; initialTileset: TilesetRenderInfo | null }> {
   const candidate = await io.openProject(path);
   if (typeof candidate.path !== "string" || !candidate.path.trim()) {
@@ -24,11 +25,15 @@ export async function prepareProjectBeforeOpen(
   if (!Number.isSafeInteger(candidate.edit_map_id) || candidate.edit_map_id < 0) {
     throw new Error("Project returned an invalid initial XP map ID");
   }
+  const preferredMapExists = Number.isSafeInteger(preferredMapId) &&
+    preferredMapId! > 0 &&
+    Object.prototype.hasOwnProperty.call(candidate.map_infos, preferredMapId!);
+  const openingMapId = preferredMapExists ? preferredMapId! : candidate.edit_map_id;
   let initialMap: MapRenderData | null = null;
   let initialTileset: TilesetRenderInfo | null = null;
-  if (candidate.edit_map_id > 0) {
-    const map = await io.loadMap(candidate.path, candidate.edit_map_id);
-    assertValidXpMap(map, candidate.edit_map_id);
+  if (openingMapId > 0) {
+    const map = await io.loadMap(candidate.path, openingMapId);
+    assertValidXpMap(map, openingMapId);
     const tileset = await io.loadTileset(candidate.path, map.tileset_id);
     if (!tileset || tileset.id !== map.tileset_id) {
       throw new Error("Project's initial XP map refers to a mismatched tileset");

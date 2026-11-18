@@ -172,7 +172,19 @@ if await_guest_idle "pre-launch"; then
 else
   printf 'guest_idle_before_launch=overloaded\n' >> "$evidence/receipt.txt"
 fi
-adb logcat -c
+for attempt in 1 2 3; do
+  if adb logcat -c; then
+    if [[ "$attempt" != 1 ]]; then
+      echo "Cleared Android logcat buffer after retry attempt $attempt."
+    fi
+    break
+  fi
+  if [[ "$attempt" == 3 ]]; then
+    echo "Could not clear Android logcat buffer after three attempts." >&2
+    exit 1
+  fi
+  sleep 2
+done
 adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 | tee "$evidence/launch-command.txt"
 
 # Wait for the application process, then give its WebView time to initialise.

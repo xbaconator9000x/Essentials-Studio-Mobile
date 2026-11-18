@@ -75,13 +75,23 @@ def archive_files(data: bytes) -> dict[str, bytes]:
         return result
 
 
-def assert_preserved(original: bytes, exported: bytes, edited_map_sha: str) -> int:
+def assert_preserved(
+    original: bytes,
+    exported: bytes,
+    edited_map_sha: str,
+    expected_new_files: dict[str, str] | None = None,
+) -> int:
     old = archive_files(original)
     new = archive_files(exported)
-    if old.keys() != new.keys():
+    expected_new_files = expected_new_files or {}
+    if old.keys() & expected_new_files.keys():
+        raise AssertionError("Expected new ZIP member already exists in the source archive")
+    expected_members = old.keys() | expected_new_files.keys()
+    if new.keys() != expected_members:
         raise AssertionError(
             f"ZIP member loss/addition: removed={sorted(old.keys()-new.keys())}, "
-            f"added={sorted(new.keys()-old.keys())}"
+            f"unexpected={sorted(new.keys()-expected_members)}, "
+            f"missing_expected={sorted(expected_new_files.keys()-new.keys())}"
         )
     map_name = "Data/Map001.rxdata"
     if map_name not in old or map_name not in new:
@@ -93,6 +103,9 @@ def assert_preserved(original: bytes, exported: bytes, edited_map_sha: str) -> i
     for name, contents in old.items():
         if name != map_name and new[name] != contents:
             raise AssertionError(f"Untouched project member changed: {name}")
+    for name, expected_sha in expected_new_files.items():
+        if sha(new[name]) != expected_sha:
+            raise AssertionError(f"New project member differs from its saved editor bytes: {name}")
     return len(new)
 
 
@@ -155,10 +168,24 @@ def save_button(nodes: list[dict[str, str]]) -> tuple[int, int]:
 def run(evidence: Path) -> None:
     imported = json.loads((evidence / "import-receipt.json").read_text())
     painted = json.loads((evidence / "map-edit-receipt.json").read_text())
+    sprite = json.loads((evidence / "sprite-edit-receipt.json").read_text())
     if imported.get("result") != "emulator_zip_import_open_pass":
         raise AssertionError("Android ZIP import must pass before export")
     if painted.get("result") != "emulator_map_touch_save_pass":
         raise AssertionError("Android touch and Save All must pass before export")
+    sprite_path = Path(str(sprite.get("saved_copy", "")))
+    if (
+        sprite.get("result") != "android_sprite_edit_copy_pass"
+        or sprite.get("save_mode") != "copy"
+        or sprite.get("original_sha256_unchanged") is not True
+        or sprite_path.parts[-3:-1] != ("Graphics", "Characters")
+        or sprite_path.name != "SyntheticGuide_copy.png"
+        or not isinstance(sprite.get("saved_copy_sha256"), str)
+    ):
+        raise AssertionError("Expected a verified safe-copy sprite edit before export")
+    expected_new_files = {
+        "Graphics/Characters/SyntheticGuide_copy.png": sprite["saved_copy_sha256"]
+    }
     receipt = {"result": "failed", "source_sha": imported["source_sha"]}
     try:
         original = read_remote(ORIGINAL_REMOTE)
@@ -195,7 +222,7 @@ def run(evidence: Path) -> None:
         exported = read_remote(EXPORTED_REMOTE)
         receipt["exported_sha256"] = sha(exported)
         receipt["members_preserved"] = assert_preserved(
-            original, exported, painted["map_sha256_after"]
+            original, exported, painted["map_sha256_after"], expected_new_files
         )
         if sha(read_remote(ORIGINAL_REMOTE)) != imported["fixture_sha256"]:
             raise AssertionError("Original ZIP changed during SAF export")
@@ -247,6 +274,43 @@ def selftest() -> None:
         "Graphics/Empty": b"",
     })
     assert assert_preserved(old, new, sha(b"\x04\x08" + b"b" * 100)) == 4
+    sprite = b"edited synthetic sprite"
+    with_sprite = zip_of({
+        "Game.rxproj": b"synthetic",
+        "Data/Map001.rxdata": b"\x04\x08" + b"b" * 100,
+        "PBS/pokemon.txt": b"synthetic PBS\n",
+        "Graphics/Empty": b"",
+        "Graphics/Characters/SyntheticGuide_copy.png": sprite,
+    })
+    expected_sprite = {"Graphics/Characters/SyntheticGuide_copy.png": sha(sprite)}
+    assert assert_preserved(
+        old, with_sprite, sha(b"\x04\x08" + b"b" * 100), expected_sprite
+    ) == 5
+    extra_file = zip_of({
+        "Game.rxproj": b"synthetic",
+        "Data/Map001.rxdata": b"\x04\x08" + b"b" * 100,
+        "PBS/pokemon.txt": b"synthetic PBS\n",
+        "Graphics/Empty": b"",
+        "Graphics/Characters/SyntheticGuide_copy.png": sprite,
+        "Scripts/Unexpected.rxdata": b"not expected",
+    })
+    try:
+        assert_preserved(
+            old, extra_file, sha(b"\x04\x08" + b"b" * 100), expected_sprite
+        )
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("Unexpected ZIP member addition was accepted")
+    wrong_sprite = {"Graphics/Characters/SyntheticGuide_copy.png": sha(b"wrong sprite")}
+    try:
+        assert_preserved(
+            old, with_sprite, sha(b"\x04\x08" + b"b" * 100), wrong_sprite
+        )
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("Changed saved sprite bytes were accepted")
     try:
         assert_preserved(old, new, sha(b"wrong"))
     except AssertionError:
@@ -288,7 +352,7 @@ def main() -> int:
     except Exception as exc:
         print(f"Android native SAF export NOT verified: {exc}")
         return 1
-    print("Android emulator SAF export verified with map/PBS/asset byte preservation")
+    print("Android emulator SAF export verified with saved sprite and original-member byte preservation")
     return 0
 
 

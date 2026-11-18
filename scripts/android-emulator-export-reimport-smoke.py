@@ -142,7 +142,17 @@ def current_picker_location(xml: str) -> str:
         for node in root.iter("node")
         if picker.documents_ui_id(node.get("resource-id", ""), "breadcrumb_text")
     ]
-    return names[-1] if names else ""
+    if names:
+        return names[-1]
+    for node in root.iter("node"):
+        if not picker.documents_ui_id(node.get("resource-id", ""), "toolbar"):
+            continue
+        for child in node.iter("node"):
+            if child.get("class") == "android.widget.TextView":
+                location = child.get("text", "").strip()
+                if location:
+                    return location
+    return ""
 
 
 def reimport_picker_snapshot(evidence: Path, label: str):
@@ -151,6 +161,21 @@ def reimport_picker_snapshot(evidence: Path, label: str):
         raise AssertionError("Native DocumentsUI disappeared before ZIP selection")
     xml = (evidence / f"{label}.xml").read_text(encoding="utf-8")
     return nodes, xml
+
+
+def exact_zip_is_disabled(xml: str, filename: str) -> bool:
+    start = xml.find("<?xml")
+    root = ET.fromstring(xml[start:] if start >= 0 else xml)
+    for node in root.iter("node"):
+        if not picker.documents_ui_id(node.get("resource-id", ""), "item_root"):
+            continue
+        if any(
+            child.get("resource-id") == "android:id/title"
+            and child.get("text", "").casefold() == filename.casefold()
+            for child in node.iter("node")
+        ):
+            return node.get("enabled") == "false"
+    return False
 
 
 def select_exported_zip(evidence: Path, filename: str) -> bool:
@@ -234,9 +259,22 @@ def select_exported_zip(evidence: Path, filename: str) -> bool:
             raise AssertionError(
                 f"DocumentsUI did not return after selecting exact ZIP {filename!r}"
             )
+        if exact_zip_is_disabled(xml, filename):
+            raise AssertionError(
+                f"Exported ZIP {filename!r} is visible but disabled by DocumentsUI; "
+                "the destination document was not exposed as a selectable ZIP"
+            )
         time.sleep(2)
     raise AssertionError(
         f"Exported ZIP {filename!r} absent from external storage Download list"
+    )
+
+
+def native_import_control(nodes: list[dict[str, str]]) -> tuple[int, int] | None:
+    """Use the unrestricted Android SAF importer for generic-MIME exports."""
+    return (
+        picker.locate(nodes, "Use native Android document picker")
+        or picker.locate(nodes, "Import ZIP (native)")
     )
 
 
@@ -263,10 +301,9 @@ def run(package: str, evidence: Path) -> None:
         nodes = picker.dump_ui(evidence, "reimport-editor-before")
         if not picker.editor_visible(nodes):
             raise AssertionError("Editor not open before re-import")
-        target = (picker.locate(nodes, "Import ZIP...")
-                  or picker.locate(nodes, "Choose Essentials Project ZIP"))
+        target = native_import_control(nodes)
         if target is None:
-            raise AssertionError("Loaded editor has no Android ZIP import control")
+            raise AssertionError("Loaded editor has no native Android ZIP import control")
         picker.tap(target)
         picker.wait_for_document_picker(evidence, 20)
         if not select_exported_zip(evidence, export_helper.EXPORT_FILENAME):
@@ -336,6 +373,17 @@ def run(package: str, evidence: Path) -> None:
 
 
 def selftest() -> None:
+    native_import_nodes = [{
+        "text": "Import ZIP (native)",
+        "content-desc": "Use native Android document picker",
+        "bounds": "[20,30][120,80]",
+    }]
+    assert native_import_control(native_import_nodes) == (70, 55)
+    assert native_import_control([{
+        "text": "Import ZIP...",
+        "content-desc": "Choose Essentials Project ZIP",
+        "bounds": "[20,30][120,80]",
+    }]) is None
     xml = ('<?xml version="1.0"?><hierarchy>'
            '<node resource-id="com.google.android.documentsui:id/breadcrumb_text" '
            'text="sdk_gphone_x86_64" />'
@@ -353,6 +401,16 @@ def selftest() -> None:
                      'bounds="[189,685][557,742]" /></node></hierarchy>')
     assert current_picker_location(downloads_xml).casefold() in {"download", "downloads"}
     assert picker.picker_file_card(downloads_xml, "Synthetic_RMXP.zip") == (897, 735)
+    toolbar_downloads_xml = ('<?xml version="1.0"?><hierarchy>'
+                             '<node resource-id="com.android.documentsui:id/toolbar">'
+                             '<node class="android.widget.TextView" text="Downloads"/></node>'
+                             '<node resource-id="com.android.documentsui:id/item_root">'
+                             '<node resource-id="android:id/title" text="Synthetic_RMXP.zip" '
+                             'bounds="[50,100][300,150]"/></node></hierarchy>')
+    assert current_picker_location(toolbar_downloads_xml) == "Downloads"
+    assert current_picker_location(toolbar_downloads_xml).casefold() in {
+        "download", "downloads",
+    }
     assert current_picker_location('<hierarchy/>') == ""
     # A neighbouring original ZIP must never be selected instead of the SAF
     # export. In list mode picker_file_card returns the exact matching row.
@@ -367,6 +425,12 @@ def selftest() -> None:
                 'bounds="[50,220][320,260]" /></node></hierarchy>')
     assert picker.picker_file_card(list_xml, "Synthetic_RMXP.zip") == (255, 260)
     assert picker.picker_file_card(list_xml, "not-present.zip") is None
+    disabled_xml = ('<?xml version="1.0"?><hierarchy>'
+                    '<node resource-id="com.android.documentsui:id/item_root" '
+                    'enabled="false"><node resource-id="android:id/title" '
+                    'text="Synthetic_RMXP.zip"/></node></hierarchy>')
+    assert exact_zip_is_disabled(disabled_xml, "Synthetic_RMXP.zip")
+    assert not exact_zip_is_disabled(disabled_xml, "Other.zip")
     assert expected_member_paths("./projects/import-1", {
         "Game.rxproj": b"", "Data/Map001.rxdata": b"",
         "PBS/pokemon.txt": b"", "Graphics/Empty": b"",

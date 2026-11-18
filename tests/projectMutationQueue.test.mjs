@@ -21,6 +21,8 @@ test('all map/event/script/PBS mutations and ZIP creation use the same project q
     'save_map_properties', 'create_map', 'delete_map', 'rename_map',
     'save_all_scripts', 'create_script', 'delete_script', 'save_database',
     'save_system', 'save_pbs_file', 'write_raw_pbs_file',
+    'save_private_project_sprite',
+    'import_private_project_sprite',
     'begin_project_archive_export', 'export_browser_project_archive',
   ];
   for (const command of commands) {

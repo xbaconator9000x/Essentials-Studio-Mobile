@@ -29,6 +29,14 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
     }));
   };
 
+  const chooseCharacter = (name: string) => {
+    // RMXP tile and character graphics are mutually exclusive. Preserve
+    // existing tile graphics until the user explicitly chooses a character.
+    onUpdatePage(current => ({ ...current, graphic: {
+      ...current.graphic, character_name: name, tile_id: 0,
+    } }));
+  };
+
   return (
     <>
       {/* Conditions */}
@@ -43,7 +51,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
             value={page.condition.switch1_id}
             onChange={(v) => updateCondition("switch1_id", v)}
             names={switchNames}
-            label="Switch"
+            label="Switch 1 ID"
           />
         </EditableCondition>
         <EditableCondition
@@ -55,7 +63,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
             value={page.condition.switch2_id}
             onChange={(v) => updateCondition("switch2_id", v)}
             names={switchNames}
-            label="Switch"
+            label="Switch 2 ID"
           />
         </EditableCondition>
         <EditableCondition
@@ -67,10 +75,10 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
             value={page.condition.variable_id}
             onChange={(v) => updateCondition("variable_id", v)}
             names={variableNames}
-            label="Variable"
+            label="Variable ID"
           />
           <span style={{ color: "#8c8fa1", fontSize: 10 }}>&gt;=</span>
-          <NumberInput value={page.condition.variable_value} onChange={(v) => updateCondition("variable_value", v)} />
+          <NumberInput label="Minimum variable value" value={page.condition.variable_value} onChange={(v) => updateCondition("variable_value", v)} />
         </EditableCondition>
         <EditableCondition
           active={page.condition.self_switch_valid}
@@ -79,6 +87,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
         >
           <select
             className="prop-select"
+            aria-label="Self switch letter"
             value={page.condition.self_switch_ch}
             onChange={(e) => updateCondition("self_switch_ch", e.target.value)}
           >
@@ -93,26 +102,28 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
       <div className="prop-section">
         <div className="prop-section-title">Graphic</div>
         <div className="prop-row">
-          <div
+          <button type="button"
             className="event-graphic-preview"
             onClick={() => setShowCharPicker(true)}
-            style={{ cursor: "pointer" }}
-            title="Click to change graphic"
+            aria-label="Browse event character graphics"
+            title="Browse event character graphics"
           >
             <SpritePreview
               projectPath={projectPath}
               characterName={page.graphic.character_name}
               direction={page.graphic.direction}
+              pattern={page.graphic.pattern}
               tileId={page.graphic.tile_id}
             />
-          </div>
+          </button>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
               <AssetPicker
                 projectPath={projectPath}
                 assetType="character"
                 value={page.graphic.character_name}
-                onChange={(v) => updateGraphic("character_name", v)}
+                label="Event character graphic"
+                onChange={chooseCharacter}
                 noneLabel="(no graphic)"
                 className="prop-select"
               />
@@ -121,14 +132,16 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
                 style={{ padding: "2px 6px", fontSize: 10 }}
                 onClick={() => setShowCharPicker(true)}
                 title="Browse characters"
+                aria-label="Open character browser"
               >
-                …
+                Browse
               </button>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <span style={{ fontSize: 10, color: "#8c8fa1" }}>Dir:</span>
               <select
                 className="prop-select"
+                aria-label="Character facing direction"
                 value={page.graphic.direction}
                 onChange={(e) => updateGraphic("direction", Number(e.target.value))}
               >
@@ -138,16 +151,41 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
                 <option value={8}>Up</option>
               </select>
               <span style={{ fontSize: 10, color: "#8c8fa1" }}>Opacity:</span>
-              <NumberInput value={page.graphic.opacity} onChange={(v) => updateGraphic("opacity", v)} min={0} max={255} />
+              <NumberInput label="Character opacity" value={page.graphic.opacity} onChange={(v) => updateGraphic("opacity", v)} min={0} max={255} />
             </div>
           </div>
         </div>
+        <div className="prop-row">
+          <span className="prop-label">Frame</span>
+          <select className="prop-select" aria-label="Character animation frame" value={page.graphic.pattern}
+            onChange={e => updateGraphic("pattern", Number(e.currentTarget.value))}>
+            {Array.from({length: 4}, (_, index) => <option value={index} key={index}>{index + 1}/4</option>)}
+          </select>
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">Hue</span>
+          <NumberInput label="Character hue" min={0} max={360} value={page.graphic.character_hue}
+            onChange={value => updateGraphic("character_hue", value)} />
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">Blend</span>
+          <select className="prop-select" aria-label="Character blend mode" value={page.graphic.blend_type}
+            onChange={e => updateGraphic("blend_type", Number(e.currentTarget.value))}>
+            <option value={0}>Normal</option><option value={1}>Additive</option><option value={2}>Subtractive</option>
+          </select>
+        </div>
+        {page.graphic.tile_id > 0 && <div className="prop-row">
+          <span className="prop-label">Tile graphic</span>
+          <NumberInput label="Event graphic tile ID" min={0} value={page.graphic.tile_id}
+            onChange={value => onUpdatePage(current => ({...current, graphic: {...current.graphic,
+              tile_id: value, character_name: value > 0 ? "" : current.graphic.character_name}}))} />
+        </div>}
         {showCharPicker && (
           <CharacterPicker
             projectPath={projectPath}
             currentName={page.graphic.character_name}
             currentDirection={page.graphic.direction}
-            onSelect={(name) => updateGraphic("character_name", name)}
+            onSelect={chooseCharacter}
             onClose={() => setShowCharPicker(false)}
           />
         )}
@@ -160,6 +198,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
           <span className="prop-label">Type</span>
           <select
             className="prop-select"
+            aria-label="Event movement type"
             value={page.move_type}
             onChange={(e) => onUpdatePage((p) => ({ ...p, move_type: Number(e.target.value) }))}
           >
@@ -171,6 +210,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
         <div className="prop-row">
           <span className="prop-label">Speed</span>
           <NumberInput
+            label="Event movement speed"
             value={page.move_speed}
             onChange={(v) => onUpdatePage((p) => ({ ...p, move_speed: v }))}
             min={1} max={6}
@@ -179,6 +219,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
         <div className="prop-row">
           <span className="prop-label">Frequency</span>
           <NumberInput
+            label="Event movement frequency"
             value={page.move_frequency}
             onChange={(v) => onUpdatePage((p) => ({ ...p, move_frequency: v }))}
             min={1} max={6}
@@ -237,6 +278,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
           <div className="prop-row" key={field}>
             <span className="prop-label">{label}</span>
             <ToggleBadge
+              label={label}
               on={page[field] as boolean}
               onToggle={() => onUpdatePage((p) => ({ ...p, [field]: !p[field] }))}
             />
@@ -250,6 +292,7 @@ export function PageProperties({ page, onUpdatePage, projectPath, switchNames, v
         <div className="prop-row">
           <select
             className="prop-select prop-select-wide"
+            aria-label="Event trigger"
             value={page.trigger}
             onChange={(e) => onUpdatePage((p) => ({ ...p, trigger: Number(e.target.value) }))}
           >

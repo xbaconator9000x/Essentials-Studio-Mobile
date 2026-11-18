@@ -24,6 +24,12 @@ src-tauri/target
 # Local env files
 *.local
 
+# Android release signing material
+*.jks
+*.keystore
+*.p12
+*.pfx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

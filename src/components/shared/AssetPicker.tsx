@@ -65,6 +65,7 @@ interface Props {
   audioPreview?: boolean;
   /** Extra inline style applied to the <select> (e.g. the database editor's look). */
   selectStyle?: React.CSSProperties;
+  label?: string;
 }
 
 /**
@@ -83,6 +84,7 @@ export function AssetPicker({
   showPreview = false,
   audioPreview = true,
   selectStyle,
+  label,
 }: Props) {
   const backendType = resolveAssetType(assetType);
   const graphicsDir = resolveGraphicsDir(assetType);
@@ -166,6 +168,7 @@ export function AssetPicker({
     <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
       <select
         className={className}
+        aria-label={label}
         style={{ flex: 1, minWidth: 0, ...selectStyle }}
         value={value}
         onChange={(e) => onChange(e.target.value)}

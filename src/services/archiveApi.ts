@@ -5,6 +5,8 @@
 import { invoke } from "./tauriApi";
 import { save } from "@tauri-apps/plugin-dialog";
 import { exportAndroidDocument } from "./androidDocumentExport";
+import { getUnsupportedArchiveMessage, validateZipSignature } from "./archiveFormat";
+import { readBlobArrayBuffer } from "./archiveBlob";
 import {
   ARCHIVE_CHUNK_BYTES,
   decodeArchiveChunk,
@@ -14,18 +16,29 @@ import {
   verifyImportChunkAcknowledgement,
 } from "./archiveChunks";
 
+export interface AndroidDocumentImportProgress {
+  stage: "reading" | "validating" | "ready";
+  bytesRead: number;
+}
+
 export async function importProjectZip(
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<string> {
+  const unsupportedFormat = getUnsupportedArchiveMessage(file.name);
+  if (unsupportedFormat) throw new Error(unsupportedFormat);
+  const header = new Uint8Array(await readBlobArrayBuffer(file.slice(0, 8)));
+  const signatureFormat = getUnsupportedArchiveMessage(file.name, header);
+  if (signatureFormat) throw new Error(signatureFormat);
   if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Choose a .zip project archive");
+  validateZipSignature(header);
   validateArchiveSize(file.size);
   const id = await invoke<string>("begin_project_archive_import");
   try {
     let offset = 0;
     while (offset < file.size) {
       const expectedLength = expectedArchiveChunkLength(file.size, offset);
-      const buffer = await file.slice(offset, offset + expectedLength).arrayBuffer();
+      const buffer = await readBlobArrayBuffer(file.slice(offset, offset + expectedLength));
       const bytes = new Uint8Array(buffer);
       if (bytes.length !== expectedLength) {
         throw new Error("Project ZIP source became truncated during import");
@@ -52,12 +65,19 @@ export async function importProjectZip(
 export async function importProjectZipFromAndroidDocument(
   documentUri: string,
   onProgress?: (percent: number) => void,
+  onTransferProgress?: (progress: AndroidDocumentImportProgress) => void,
 ): Promise<string> {
   if (!documentUri.startsWith("content://")) {
     throw new Error("Android document picker must return a scoped content URI");
   }
+  const { Channel } = await import("@tauri-apps/api/core");
+  const progress = new Channel<AndroidDocumentImportProgress>();
+  progress.onmessage = (update) => onTransferProgress?.(update);
   onProgress?.(0);
-  const projectPath = await invoke<string>("import_project_archive_from_document", { documentUri });
+  const projectPath = await invoke<string>("import_project_archive_from_document", {
+    documentUri,
+    progress,
+  });
   onProgress?.(100);
   return projectPath;
 }
@@ -115,6 +135,8 @@ export async function exportProjectZip(
         }),
         writeAndVerify: (exportId, documentUri) =>
           invoke<number>("save_project_archive_to_document", { exportId, documentUri }),
+        discardDestination: (exportId, documentUri) =>
+          invoke<void>("discard_incomplete_project_archive_document", { exportId, documentUri }),
       }, onProgress);
     }
 

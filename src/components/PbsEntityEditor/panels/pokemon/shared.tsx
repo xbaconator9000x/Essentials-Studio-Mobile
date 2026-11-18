@@ -1,13 +1,13 @@
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+    <div className="pbs-field" style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label style={{ fontSize: 11, fontWeight: 600, color: "#5c5f77" }}>{label}</label>
       {children}
     </div>
   );
 }
 export function Row2({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="pbs-field-row" style={{ display: "flex", gap: 12 }}>{children}</div>;
 }
 export const inp: React.CSSProperties = {
   padding: "4px 8px", fontSize: 12, border: "1px solid #ccd0da", borderRadius: 4,

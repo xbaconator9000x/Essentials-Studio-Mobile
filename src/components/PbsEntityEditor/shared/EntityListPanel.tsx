@@ -30,7 +30,7 @@ export function EntityListPanel<T>({
     : items;
 
   return (
-    <div style={{
+    <div className="pbs-entity-list" style={{
       width: 220, flexShrink: 0,
       display: "flex", flexDirection: "column",
       borderRight: "1px solid #ccd0da",

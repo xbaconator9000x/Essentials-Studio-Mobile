@@ -65,12 +65,19 @@ pub async fn open_project(path: String) -> Result<ProjectInfo, String> {
         return Err("Not a valid RMXP project: Game.rxproj not found".to_string());
     }
 
-    // Read Game.ini for project name
+    // Game.ini is only used for display metadata. XP projects may contain
+    // legacy Windows-encoded titles, so a decoding issue must not block opening
+    // the actual Marshal project data.
     let ini_path = project_path.join("Game.ini");
     let name = if ini_path.exists() {
-        let ini_content = std::fs::read_to_string(&ini_path)
-            .map_err(|e| format!("Failed to read Game.ini: {}", e))?;
-        parse_ini_title(&ini_content).unwrap_or_else(|| "Untitled Project".to_string())
+        match std::fs::read(&ini_path) {
+            Ok(ini_content) => parse_ini_title(&ini_content)
+                .unwrap_or_else(|| "Untitled Project".to_string()),
+            Err(error) => {
+                eprintln!("[open_project] Could not read optional Game.ini title: {error}");
+                "Untitled Project".to_string()
+            }
+        }
     } else {
         "Untitled Project".to_string()
     };
@@ -85,7 +92,7 @@ pub async fn open_project(path: String) -> Result<ProjectInfo, String> {
 
     // Count tilesets
     let tilesets_path = project_path.join("Data").join("Tilesets.rxdata");
-    let tileset_count = count_tilesets(&tilesets_path).unwrap_or(0);
+    let tileset_count = count_tilesets(&tilesets_path)?;
 
     eprintln!("[open_project] Loaded: '{}', {} maps, {} tilesets, edit_map_id={}",
         name, map_infos.len(), tileset_count, system.edit_map_id);
@@ -224,7 +231,7 @@ pub async fn load_tileset(
         .collect();
 
     Ok(TilesetRenderInfo {
-        id: tileset.id,
+        id: tileset_id,
         name: tileset.name,
         tileset_name: tileset.tileset_name,
         autotile_names: tileset.autotile_names,
@@ -902,6 +909,10 @@ fn replace_map_tile_data(
         obj.get_int("height") != Some(height) {
         return Err("Map dimensions differ from saved XP map; reload before editing".into());
     }
+    let data_fields = obj.instance_vars.iter().filter(|(name, _)| name == "@data").count();
+    if data_fields != 1 {
+        return Err("Map must contain exactly one @data Table".into());
+    }
     let (_, raw) = obj.instance_vars.iter_mut()
         .find(|(name, _)| name == "@data")
         .ok_or("Map has no @data Table")?;
@@ -912,11 +923,12 @@ fn replace_map_tile_data(
         return Err("Map @data has an unexpected Ruby class".into());
     }
     let table = Table::from_bytes(data).ok_or("Map Table binary is invalid")?;
-    if table.x_size as usize != w ||
+    if table.dim_count != 3 ||
+        table.x_size as usize != w ||
         table.y_size as usize != h ||
         table.z_size != 3 ||
         table.data.len() != expected {
-        return Err("Map Table dimensions/count disagree with the map header".into());
+        return Err("Map Table dimensions/count disagree with the map header or three-layer XP format".into());
     }
     // XP Table's i16 cells begin at byte 20 in z/y/x order. Mutating only
     // those cells preserves the original header and any extension payload.
@@ -937,6 +949,11 @@ pub async fn save_map(
     width: i64,
     height: i64,
 ) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[android-map-save] started map={map_id} tiles={} dimensions={width}x{height}",
+        tiles.len()
+    );
     let path = PathBuf::from(&project_path);
     let map_file = path.join("Data").join(format!("Map{:03}.rxdata", map_id));
     if !map_file.exists() {
@@ -952,6 +969,8 @@ pub async fn save_map(
             && existing.height == height
             && existing.data.data == tiles
         {
+            #[cfg(debug_assertions)]
+            eprintln!("[android-map-save] unchanged map={map_id}");
             return Ok(());
         }
     }
@@ -984,6 +1003,8 @@ pub async fn save_map(
     }
     marshal::writer::write_bytes_file_atomic(&map_file, &patched)
         .map_err(|e| format!("Failed to save map: {e}"))?;
+    #[cfg(debug_assertions)]
+    eprintln!("[android-map-save] completed map={map_id}");
     Ok(())
 }
 
@@ -1073,6 +1094,53 @@ mod map_tile_fidelity_tests {
                            changed, 2, 2).await.unwrap_err();
         assert!(err.contains("ambiguous"), "{err}");
         assert_eq!(std::fs::read(&map_file).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn save_map_rejects_ambiguous_or_non_three_dimensional_data_without_writing() {
+        let nonce = std::time::SystemTime::now().duration_since(
+            std::time::UNIX_EPOCH,
+        ).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "essentials-invalid-map-table-{}-{nonce}", std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("Data")).unwrap();
+        let map_file = root.join("Data/Map001.rxdata");
+
+        for malformed in ["duplicate_data", "wrong_dimension_count"] {
+            let mut raw = RpgMap::new_blank(2, 2, 1).to_ruby_value();
+            let marshal::types::RubyValue::Object(ref mut obj) = raw else { panic!("map") };
+            if malformed == "duplicate_data" {
+                let duplicate = obj.get("data").unwrap().clone();
+                obj.instance_vars.push(("@data".into(), duplicate));
+            } else {
+                let (_, value) = obj.instance_vars.iter_mut()
+                    .find(|(name, _)| name == "@data").unwrap();
+                let marshal::types::RubyValue::UserDefined { data, .. } = value else {
+                    panic!("Table")
+                };
+                data[..4].copy_from_slice(&1i32.to_le_bytes());
+            }
+
+            let before = marshal::dump(&raw).unwrap();
+            std::fs::write(&map_file, &before).unwrap();
+            let error = save_map(
+                root.to_string_lossy().into_owned(),
+                1,
+                vec![384; 12],
+                2,
+                2,
+            ).await.unwrap_err();
+            assert!(
+                error.contains("@data")
+                    || error.contains("three-layer")
+                    || error.contains("invalid"),
+                "{malformed}: {error}"
+            );
+            assert_eq!(std::fs::read(&map_file).unwrap(), before, "{malformed}");
+        }
+
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1672,14 +1740,91 @@ fn event_infos(map: &RpgMap) -> Vec<EventInfo> {
         .collect()
 }
 
-fn parse_ini_title(content: &str) -> Option<String> {
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with("Title=") {
-            return Some(line[6..].to_string());
+fn parse_ini_title(content: &[u8]) -> Option<String> {
+    let decoded = String::from_utf8_lossy(content);
+    for line in decoded.lines() {
+        let line = line.trim().trim_start_matches('\u{feff}').trim();
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim().eq_ignore_ascii_case("Title") {
+                return Some(value.trim().to_string());
+            }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod project_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn game_ini_title_accepts_bom_spacing_and_case_insensitive_key() {
+        assert_eq!(
+            parse_ini_title(b"\xef\xbb\xbf[Game]\r\n tItLe =  Essentials Project  \r\n"),
+            Some("Essentials Project".into()),
+        );
+    }
+
+    #[test]
+    fn game_ini_title_tolerates_legacy_non_utf8_bytes() {
+        assert_eq!(
+            parse_ini_title(b"[Game]\r\nTitle=Caf\xe9 Project\r\n"),
+            Some("Caf\u{fffd} Project".into()),
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_game_ini_bytes_do_not_block_opening_rmxp_data() {
+        use crate::marshal::types::{RubyObject, RubyValue};
+        use std::fs;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xp-game-ini-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("Data")).unwrap();
+        fs::write(root.join("Game.rxproj"), b"RPGXP 1.02").unwrap();
+        let ini_bytes = b"[Game]\r\nTitle=Caf\xe9 Project\r\n";
+        fs::write(root.join("Game.ini"), ini_bytes).unwrap();
+
+        let map_info = MapInfo {
+            name: "Synthetic Map".into(),
+            parent_id: 0,
+            order: 1,
+            expanded: true,
+            scroll_x: 0,
+            scroll_y: 0,
+        };
+        marshal::dump_file(
+            &root.join("Data/MapInfos.rxdata"),
+            &RubyValue::Hash(vec![(RubyValue::Integer(1), map_info.to_ruby_value())]),
+        )
+        .unwrap();
+        let mut system = RubyObject::new("RPG::System".into());
+        system
+            .instance_vars
+            .push(("@edit_map_id".into(), RubyValue::Integer(1)));
+        marshal::dump_file(&root.join("Data/System.rxdata"), &RubyValue::Object(system))
+            .unwrap();
+        marshal::dump_file(
+            &root.join("Data/Tilesets.rxdata"),
+            &RubyValue::Array(vec![RubyValue::Nil]),
+        )
+        .unwrap();
+
+        let project = super::open_project(root.to_string_lossy().into_owned())
+            .await
+            .expect("legacy INI encoding is optional metadata, not a project-open failure");
+        assert_eq!(project.name, "Caf\u{fffd} Project");
+        assert_eq!(project.map_infos.get(&1).unwrap().name, "Synthetic Map");
+        assert_eq!(fs::read(root.join("Game.ini")).unwrap(), ini_bytes);
+
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn load_map_infos(path: &Path) -> Result<HashMap<i64, MapInfo>, String> {
@@ -1710,10 +1855,58 @@ fn load_system(path: &Path) -> Result<RpgSystem, String> {
         .ok_or_else(|| "Failed to interpret System data".to_string())
 }
 
-fn count_tilesets(path: &Path) -> Option<usize> {
-    let value = marshal::load_file(path).ok()?;
-    let arr = value.as_array()?;
-    Some(arr.len().saturating_sub(1)) // First element is nil
+fn count_tilesets(path: &Path) -> Result<usize, String> {
+    let value = marshal::load_file(path)
+        .map_err(|e| format!("Failed to parse Tilesets.rxdata: {}", e))?;
+    let arr = value
+        .as_array()
+        .ok_or_else(|| "Tilesets.rxdata is not an array".to_string())?;
+    Ok(arr.len().saturating_sub(1)) // First element is nil
+}
+
+#[cfg(test)]
+mod tileset_metadata_tests {
+    use super::count_tilesets;
+    use crate::marshal::types::RubyValue;
+    use std::fs;
+
+    fn temporary_path() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "xp-tilesets-{}-{unique}.rxdata",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn tileset_count_rejects_missing_malformed_and_wrong_shape_metadata() {
+        let path = temporary_path();
+        assert!(count_tilesets(&path)
+            .unwrap_err()
+            .contains("Failed to parse Tilesets.rxdata"));
+
+        fs::write(&path, b"not Ruby Marshal").unwrap();
+        assert!(count_tilesets(&path)
+            .unwrap_err()
+            .contains("Failed to parse Tilesets.rxdata"));
+
+        crate::marshal::dump_file(&path, &RubyValue::Integer(1)).unwrap();
+        assert_eq!(
+            count_tilesets(&path).unwrap_err(),
+            "Tilesets.rxdata is not an array"
+        );
+
+        crate::marshal::dump_file(
+            &path,
+            &RubyValue::Array(vec![RubyValue::Nil, RubyValue::Nil]),
+        )
+        .unwrap();
+        assert_eq!(count_tilesets(&path).unwrap(), 1);
+        fs::remove_file(path).unwrap();
+    }
 }
 
 /// List all tileset names (id → name).

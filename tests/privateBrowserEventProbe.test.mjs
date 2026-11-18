@@ -4,7 +4,8 @@ import { findEditableShowText, findProjectShowText, mapTreeAncestors, expectedDi
 
 const fixture = {
   id: 7, name: 'Synthetic', pages: [
-    { list: [{ code: 101, indent: 0, parameters: ['Original'] },
+    { list: [{ code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+      { code: 401, indent: 0, parameters: ['Original'] },
       { code: 401, indent: 0, parameters: ['Continuation'] },
       { code: 0, indent: 0, parameters: [] }], condition: { switch1_valid: true } },
   ], unknown_metadata: { preserve: true },
@@ -20,8 +21,9 @@ test('finds existing multi-line Show Text and does not modify original', async (
   assert.equal(selection.commandIndex, 0);
   assert.equal(selection.hasContinuation, true);
   const edited = expectedDialogueEdit(selection.event, 0, 0, 'React probe');
-  assert.equal(edited.pages[0].list[0].parameters[0], 'React probe');
-  assert.equal(edited.pages[0].list[1].parameters[0], 'Continuation');
+  assert.deepEqual(edited.pages[0].list[0].parameters, ['', 0, 0, 2]);
+  assert.equal(edited.pages[0].list[1].parameters[0], 'React probe');
+  assert.equal(edited.pages[0].list[2].parameters[0], 'Continuation');
   assert.deepEqual(fixture, before);
   assert.deepEqual(edited.unknown_metadata, fixture.unknown_metadata);
 });
@@ -29,10 +31,11 @@ test('finds existing multi-line Show Text and does not modify original', async (
 test('supports later event pages and single-line text', async () => {
   const selection = await findEditableShowText([{ id: 2, x: 0, y: 0 }], async () => ({
     pages: [{ list: [{ code: 0, parameters: [] }] },
-      { list: [{ code: 101, parameters: ['Second page'] }] }],
+      { list: [{ code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+        { code: 401, indent: 0, parameters: ['Second page'] }] }],
   }));
   assert.equal(selection.pageIndex, 1);
-  assert.equal(selection.hasContinuation, false);
+  assert.equal(selection.hasContinuation, true);
 });
 
 test('returns null when no existing dialogue and respects bounded event scan', async () => {
@@ -47,7 +50,16 @@ test('rejects unsafe selection and invalid replacement without mutation', async 
   await assert.rejects(() => findEditableShowText(null, async () => {}), TypeError);
   assert.throws(() => expectedDialogueEdit(fixture, 0, 0, 'bad\nline'), TypeError);
   assert.throws(() => expectedDialogueEdit(fixture, 0, 2, 'valid'), TypeError);
-  assert.equal(fixture.pages[0].list[0].parameters[0], 'Original');
+  assert.equal(fixture.pages[0].list[0].parameters[0], '');
+  assert.equal(fixture.pages[0].list[1].parameters[0], 'Original');
+});
+
+test('ignores a Show Text header without XP text continuation lines', async () => {
+  const result = await findEditableShowText([{ id: 3, x: 0, y: 0 }], async () => ({
+    pages: [{ list: [{ code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+      { code: 0, indent: 0, parameters: [] }] }],
+  }));
+  assert.equal(result, null);
 });
 
 test('searches other real maps when initial map has no dialogue, without modifying any map', async () => {

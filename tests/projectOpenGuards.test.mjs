@@ -121,6 +121,28 @@ test("preparing the first map returns its validated render data without duplicat
   assert.deepEqual(calls, ["project", "map", "tileset"]);
 });
 
+test("project reopen restores the remembered map only when it still exists", async () => {
+  const { prepareProjectBeforeOpen } = await import("../src/services/projectOpenGuards.ts");
+  const project = { ...candidate, map_infos: { 1: { name: "System map" }, 2: { name: "Last map" } } };
+  const loadedIds = [];
+  const io = {
+    openProject: async () => project,
+    loadMap: async (_path, id) => {
+      loadedIds.push(id);
+      return { ...map, id };
+    },
+    loadTileset: async () => ({ id: 3, tileset_name: "Synthetic", autotile_names: [] }),
+  };
+
+  const restored = await prepareProjectBeforeOpen("/candidate", io, 2);
+  assert.equal(restored.initialMap.id, 2);
+  assert.deepEqual(loadedIds, [2]);
+
+  const fallback = await prepareProjectBeforeOpen("/candidate", io, 99);
+  assert.equal(fallback.initialMap.id, 1);
+  assert.deepEqual(loadedIds, [2, 1]);
+});
+
 test("preparing a corrupt project never returns partial initial render state", async () => {
   const { prepareProjectBeforeOpen } = await import("../src/services/projectOpenGuards.ts");
   let previous = "/private/working-project";

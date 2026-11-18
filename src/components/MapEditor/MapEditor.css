@@ -77,6 +77,25 @@
   accent-color: var(--color-accent);
 }
 
+.toolbar-pin-toggle {
+  min-height: 40px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-surface0);
+}
+
+.toolbar-collision-toggle {
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-surface0);
+}
+
+.toolbar-collision-toggle input {
+  width: 20px;
+  height: 20px;
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;
@@ -97,6 +116,196 @@
   position: relative;
   overflow: hidden;
   min-height: 0;
+}
+
+.map-event-list {
+  position: absolute;
+  z-index: 6;
+  top: 8px;
+  right: 8px;
+  width: min(360px, calc(100% - 16px));
+  max-height: min(52%, 420px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-surface1);
+  border-radius: 6px;
+  background: var(--color-base);
+  box-shadow: var(--shadow);
+}
+
+.map-event-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-surface0);
+}
+
+.map-event-list-header h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.map-event-list-header button,
+.map-event-list-item,
+.map-event-list-copy {
+  min-height: 44px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+
+.map-event-list-header button {
+  padding: 6px 10px;
+}
+
+.map-event-list-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-surface0);
+}
+
+.map-event-list-search-label {
+  grid-column: 1 / -1;
+  color: var(--color-subtext1);
+  font-size: 11px;
+}
+
+.map-event-list-search input,
+.map-event-list-search button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-mantle);
+  color: var(--color-text);
+}
+
+.map-event-list-search button {
+  background: var(--color-surface0);
+}
+
+.map-event-list-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-surface0);
+  color: var(--color-subtext1);
+  font-size: 11px;
+}
+
+.map-event-list-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-event-list-controls select {
+  min-height: 40px;
+  max-width: 150px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-mantle);
+  color: var(--color-text);
+  padding: 4px 6px;
+}
+
+@media (max-width: 900px) {
+  .map-event-list-controls select { min-height: 44px; font-size: 14px; }
+}
+
+.map-event-list ul {
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+
+.map-event-list li {
+  margin: 2px 0;
+}
+
+.map-event-list-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.map-event-list-item {
+  flex: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.map-event-list-focus {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 4px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+
+.map-event-list-copy {
+  min-width: 60px;
+  min-height: 44px;
+  padding: 6px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+
+.map-event-list-item:disabled {
+  opacity: 0.65;
+}
+
+.map-event-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-event-list-position,
+.map-event-list-pages,
+.map-event-list-empty {
+  color: var(--color-subtext1);
+  font-size: 11px;
+}
+
+.map-event-list-pages {
+  grid-column: 1 / -1;
+}
+
+.map-event-list-empty {
+  padding: 12px;
+}
+
+@media (max-width: 900px) {
+  .map-event-list-search input,
+  .map-event-list-search button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .map-event-list-focus {
+    min-width: 72px;
+  }
 }
 
 .map-editor-canvas {
@@ -181,7 +390,7 @@
   background: rgba(30, 102, 245, 0.5);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .map-editor-toolbar {
     flex-wrap: wrap;
     gap: 8px;
@@ -194,12 +403,54 @@
 
   .toolbar-btn {
     min-width: 40px;
-    min-height: 40px;
+    min-height: 44px;
     padding: 8px;
+  }
+
+  .map-toolbar-quick-tools,
+  .map-toolbar-quick-layers,
+  .map-toolbar-selection-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-block: 2px;
+    scrollbar-width: thin;
+  }
+
+  .map-toolbar-quick-tools .toolbar-btn,
+  .map-toolbar-quick-layers .toolbar-btn,
+  .map-toolbar-selection-actions .toolbar-btn {
+    flex: 0 0 auto;
+  }
+
+  .map-toolbar-quick-grid {
+    min-height: 44px;
+    padding: 4px 8px;
+    background: var(--color-surface0);
+    border-radius: 4px;
+  }
+
+  .map-toolbar-quick-grid input {
+    min-width: 22px;
+    min-height: 22px;
+  }
+
+  .toolbar-pin-toggle {
+    min-height: 44px;
   }
 
   .toolbar-label {
     font-size: 11px;
+  }
+
+  .map-touch-hint {
+    flex-basis: 100%;
+  }
+}
+
+@media (min-width: 901px) {
+  .map-touch-hint {
+    display: none;
   }
 
   .map-editor-status {
@@ -211,5 +462,383 @@
 
   .map-editor-status .toolbar-right {
     margin-left: 0;
+  }
+}
+
+.map-layer-visibility .toolbar-check {
+  min-height: 32px;
+  padding: 4px 8px;
+  background: var(--color-surface0);
+  border-radius: 4px;
+}
+@media (max-width: 900px) {
+  .map-layer-visibility .toolbar-check { min-height: 44px; }
+  .map-layer-visibility input { width: 20px; height: 20px; }
+}
+
+/* Single-handed map/event controls on portrait phones. */
+.map-toolbar-event-actions {
+  gap: 6px;
+}
+.map-toolbar-event-actions .toolbar-btn {
+  min-height: 44px;
+  min-width: 82px;
+}
+.map-event-placement-hint {
+  flex-basis: 100%;
+  color: var(--color-accent);
+}
+.map-event-placement-message {
+  color: var(--color-red, #e64553);
+}
+.map-zoom-slider {
+  width: clamp(72px, 16vw, 140px);
+  min-height: 34px;
+  accent-color: var(--color-accent);
+}
+.map-event-list-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 900px) {
+  .map-editor-toolbar { column-gap: 8px; row-gap: 6px; padding: 6px 8px; }
+  .map-toolbar-event-actions .toolbar-btn { min-height: 48px; }
+  .map-event-list-header-actions button { min-height: 44px; }
+  .map-editor-toolbar .toolbar-right { margin-left: 0; }
+  .map-zoom-slider { width: 90px; }
+}
+
+/* The expanded phone toolbar may contain several rows of controls.
+   Keep the canvas usable while letting those rows scroll independently. */
+@media (max-width: 900px) {
+  .map-editor-toolbar {
+    max-height: min(36vh, 232px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-content: flex-start;
+    scrollbar-width: thin;
+  }
+  .map-editor-canvas-container { min-height: 120px; }
+  .map-editor-status {
+    gap: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+}
+
+/* Precise coordinate navigation for long/wide Essentials maps. */
+.map-coordinate-navigator {
+  position: absolute;
+  z-index: 7;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100% - 16px));
+  max-height: min(80%, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 8px;
+  background: var(--color-base);
+  color: var(--color-text);
+  box-shadow: var(--shadow);
+}
+.map-coordinate-navigator header,
+.map-coordinate-navigator form,
+.map-navigator-actions,
+.map-navigator-event {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.map-coordinate-navigator header { justify-content: space-between; }
+.map-coordinate-navigator form label {
+  flex: 1;
+  min-width: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.map-coordinate-navigator input {
+  width: 100%;
+  min-width: 0;
+}
+.map-coordinate-navigator button,
+.map-coordinate-navigator input,
+.map-coordinate-navigator select {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-surface1);
+  border-radius: 5px;
+  background: var(--color-surface0);
+  color: var(--color-text);
+}
+.map-coordinate-navigator button:disabled { opacity: .55; }
+.map-navigator-actions button { flex: 1; }
+.map-navigator-range { margin: 0; color: var(--color-subtext1); font-size: 12px; }
+.map-navigator-event { font-size: 12px; }
+.map-navigator-event-picker { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.map-navigator-event-picker select { width: 100%; }
+.map-coordinate-navigator [role="alert"] { color: var(--color-red, #e64553); }
+@media (max-width: 900px) {
+  .map-coordinate-navigator {
+    top: 4px; left: 4px;
+    width: calc(100% - 8px);
+    max-height: min(76%, 460px);
+  }
+  .map-coordinate-navigator input { font-size: 16px; }
+}
+
+/* Portrait canvas-first layout. In compact mode the tool rail scrolls
+   horizontally rather than using a third of the screen for multiple rows.
+   Expand "Tools" for the complete desktop-style controls. */
+.map-toolbar-native-tool-select { display: none; }
+
+@media (max-width: 900px) {
+  .map-editor-toolbar--compact {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 7px;
+    max-height: none;
+    min-height: 56px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 7px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    touch-action: pan-x;
+  }
+
+  .map-editor-toolbar--compact > * {
+    flex: 0 0 auto;
+  }
+
+  .map-editor-toolbar--compact > button:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--color-base);
+    border-color: var(--color-accent);
+    min-height: 44px;
+  }
+
+  .map-editor-toolbar--compact .toolbar-separator,
+  .map-editor-toolbar--compact .map-touch-hint {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    width: auto;
+    flex: 0 0 auto;
+    overflow: visible;
+    flex-wrap: nowrap;
+    padding: 0;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-quick-tools > button {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--color-subtext1);
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    height: 44px;
+    min-width: 94px;
+    max-width: 120px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    border: 1px solid var(--color-surface1);
+    background: var(--color-surface0);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 16px;
+  }
+
+  .map-editor-toolbar--compact .map-zoom-slider {
+    display: none;
+  }
+
+  .map-editor-toolbar--compact .toolbar-right {
+    margin-left: 0;
+    flex-wrap: nowrap;
+  }
+
+  .map-editor-toolbar--compact .toolbar-label {
+    white-space: nowrap;
+  }
+
+  .map-editor-toolbar--compact .toolbar-check {
+    white-space: nowrap;
+  }
+
+  .map-editor-toolbar--compact .map-toolbar-event-actions {
+    flex-wrap: nowrap;
+  }
+}
+
+/* Task-focused portrait workspace: one toolbar row for navigation, the active
+   editor panel below it. Desktop keeps the original full command surface. */
+@media (max-width: 900px) {
+  .map-editor-toolbar--compact {
+    max-height: min(28vh, 190px);
+    gap: 6px;
+    padding: 6px;
+    align-content: flex-start;
+  }
+  .map-toolbar-compact-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 4px;
+  }
+  .map-toolbar-compact-tabs .toolbar-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 1 1 125px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-selection-actions > .toolbar-group {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .map-editor-toolbar--compact .toolbar-separator { display: none; }
+}
+@media (min-width: 901px) {
+  .map-toolbar-compact-tabs { display: none; }
+}
+
+/* The task-based mobile toolbar supersedes the legacy single-line rail.
+   In particular, never hide its Pan/More buttons: the previous selector
+   .map-toolbar-quick-tools > button made those commands unreachable. */
+@media (max-width: 900px) {
+  .map-editor-toolbar.map-editor-toolbar--compact {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    align-content: start;
+    gap: 6px;
+    max-height: min(30dvh, 220px);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  .map-editor-toolbar--compact > button:first-child {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+  }
+  .map-editor-toolbar--compact > :not(button:first-child):not(.map-toolbar-compact-tabs) {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 1 1 120px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    width: 100%;
+    max-width: none;
+  }
+  .map-editor-toolbar--compact .toolbar-right {
+    flex-wrap: wrap;
+  }
+  .map-editor-toolbar--compact .map-zoom-slider {
+    display: block;
+  }
+}
+
+/* Browser-verified canvas-first constraint: the compact toolbar must never
+   consume a 220px vertical panel on a 390px portrait viewport. Keep task tabs
+   and active controls in a single horizontally scrollable command rail. */
+@media (max-width: 900px) {
+  .map-editor-toolbar.map-editor-toolbar--compact {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    align-content: center;
+    gap: 6px;
+    min-height: 0;
+    height: auto;
+    max-height: 92px;
+    padding: 4px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+  }
+  .map-editor-toolbar--compact > *,
+  .map-editor-toolbar--compact > :not(button:first-child):not(.map-toolbar-compact-tabs) {
+    grid-column: auto;
+    grid-row: auto;
+    flex: 0 0 auto;
+    min-width: 0;
+    width: auto;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs {
+    flex: 0 0 auto;
+    width: auto;
+    gap: 3px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-compact-tabs .toolbar-btn {
+    flex: 0 0 auto;
+    padding-inline: 7px;
+  }
+  .map-editor-toolbar--compact .map-toolbar-quick-tools,
+  .map-editor-toolbar--compact .map-toolbar-quick-layers,
+  .map-editor-toolbar--compact .map-toolbar-selection-actions,
+  .map-editor-toolbar--compact .toolbar-right {
+    width: auto;
+    flex-wrap: nowrap;
+    overflow: visible;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select {
+    flex: 0 0 auto;
+  }
+  .map-editor-toolbar--compact .map-toolbar-native-tool-select select {
+    width: auto;
+    min-width: 90px;
+    max-width: 125px;
   }
 }

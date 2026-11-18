@@ -96,6 +96,39 @@ class ProjectRoundtripTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "added files"):
             verify_roundtrip(original, exported, {"PBS/new.txt"})
 
+    def test_explicit_sprite_copy_addition_is_verified_without_allowing_other_files(self):
+        original = self.make_zip("original.zip", self.sample())
+        copy_path = "Graphics/Characters/Guide_copy.png"
+        sprite = b"\x89PNG synthetic edited copy"
+        exported = self.make_zip("export.zip", self.sample() + [(copy_path, sprite)])
+
+        with self.assertRaisesRegex(ValueError, "added files"):
+            verify_roundtrip(original, exported)
+
+        report = verify_roundtrip(original, exported, allowed_added_files={copy_path})
+        self.assertEqual(report["approved_added_files"], [copy_path])
+        self.assertEqual(report["approved_changed_files"], [])
+        self.assertEqual(report["unchanged_files"], 5)
+
+        unexpected = self.make_zip(
+            "unexpected.zip",
+            self.sample() + [(copy_path, sprite), ("PBS/unreviewed.txt", b"unexpected")],
+        )
+        with self.assertRaisesRegex(ValueError, "added files"):
+            verify_roundtrip(original, unexpected, allowed_added_files={copy_path})
+
+    def test_approved_added_path_must_exist_and_use_a_safe_project_path(self):
+        original = self.make_zip("original.zip", self.sample())
+        exported = self.make_zip("export.zip", self.sample())
+        with self.assertRaisesRegex(ValueError, "missing approved additions"):
+            verify_roundtrip(
+                original,
+                exported,
+                allowed_added_files={"Graphics/Characters/Guide_copy.png"},
+            )
+        with self.assertRaisesRegex(ValueError, "Invalid --allow-changed"):
+            verify_roundtrip(original, exported, allowed_added_files={"../Guide.png"})
+
     def test_duplicate_zip_names_and_outside_root_are_rejected(self):
         original = self.make_zip("original.zip", self.sample())
         duplicate = self.make_zip("duplicate.zip", self.sample() + [("Data/Map001.rxdata", b"duplicate")])

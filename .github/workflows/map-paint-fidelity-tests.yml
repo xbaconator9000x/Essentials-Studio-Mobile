@@ -5,8 +5,26 @@ on:
     paths:
       - 'src/services/mapEditor.ts'
       - 'src/services/mapGestures.ts'
+      - 'src/services/mapEventGraphics.ts'
+      - 'tests/mapEventGraphics.test.mjs'
+      - 'src/services/mapEventPlacement.ts'
+      - 'src/services/mapCoordinateNavigation.ts'
+      - 'src/components/MapEditor/MapNavigator.tsx'
+      - 'tests/mapCoordinateNavigation.test.mjs'
+      - 'tests/mapNavigator.test.tsx'
+      - 'src/components/MapEditor/MapContextMenu.tsx'
+      - 'src/components/MapEditor/MapEventList.tsx'
+      - 'tests/mapEventPlacement.test.mjs'
       - 'src/components/MapEditor/MapEditor.tsx'
+      - 'src/components/MapTree/MapTreePanel.tsx'
+      - 'src/components/MapTree/MapTreePanel.css'
+      - 'tests/mapTreePanel.test.tsx'
       - 'src/components/MapEditor/MapEditor.css'
+      - 'src/components/MapEditor/MapToolbar.tsx'
+      - 'src/components/TilesetPalette/**'
+      - 'tests/mapEditorTouchContext.test.tsx'
+      - 'tests/mapToolbar.test.tsx'
+      - 'tests/tilesetPaletteMobile.test.tsx'
       - 'src/types/index.ts'
       - 'src/services/autotileData.ts'
       - 'tests/mapEditorFidelity.test.mjs'
@@ -17,8 +35,26 @@ on:
     paths:
       - 'src/services/mapEditor.ts'
       - 'src/services/mapGestures.ts'
+      - 'src/services/mapEventGraphics.ts'
+      - 'tests/mapEventGraphics.test.mjs'
+      - 'src/services/mapEventPlacement.ts'
+      - 'src/services/mapCoordinateNavigation.ts'
+      - 'src/components/MapEditor/MapNavigator.tsx'
+      - 'tests/mapCoordinateNavigation.test.mjs'
+      - 'tests/mapNavigator.test.tsx'
+      - 'src/components/MapEditor/MapContextMenu.tsx'
+      - 'src/components/MapEditor/MapEventList.tsx'
+      - 'tests/mapEventPlacement.test.mjs'
       - 'src/components/MapEditor/MapEditor.tsx'
+      - 'src/components/MapTree/MapTreePanel.tsx'
+      - 'src/components/MapTree/MapTreePanel.css'
+      - 'tests/mapTreePanel.test.tsx'
       - 'src/components/MapEditor/MapEditor.css'
+      - 'src/components/MapEditor/MapToolbar.tsx'
+      - 'src/components/TilesetPalette/**'
+      - 'tests/mapEditorTouchContext.test.tsx'
+      - 'tests/mapToolbar.test.tsx'
+      - 'tests/tilesetPaletteMobile.test.tsx'
       - 'src/types/index.ts'
       - 'src/services/autotileData.ts'
       - 'tests/mapEditorFidelity.test.mjs'
@@ -37,4 +73,8 @@ jobs:
         with:
           node-version: '22'
       - name: Verify map fidelity and touch gestures
-        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs
+        run: node --experimental-strip-types --test tests/mapEditorFidelity.test.mjs tests/mapGestures.test.mjs tests/mapEdgeEditing.test.mjs tests/mapPassability.test.mjs tests/mapEventPlacement.test.mjs tests/mapCoordinateNavigation.test.mjs tests/mapEventGraphics.test.mjs
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Verify rendered map and tileset editing
+        run: npx vitest run tests/mapEditorTouchContext.test.tsx tests/mapToolbar.test.tsx tests/tilesetPaletteMobile.test.tsx tests/mapRendererEdges.test.ts tests/mapEventList.test.tsx tests/mapNavigator.test.tsx tests/mapTreePanel.test.tsx

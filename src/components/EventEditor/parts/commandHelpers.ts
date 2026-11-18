@@ -25,7 +25,7 @@ export function toVisualBlocks(list: EventCommand[]): VisualBlock[] {
         contCmds.push(list[j]);
         j++;
       }
-      if (contIndices.length > 0) {
+      if (contIndices.length > 0 || cmd.code === 101) {
         blocks.push({ kind: "multi", rawIndex: i, cmd, contIndices, contCmds });
         i = j;
         continue;
@@ -46,10 +46,287 @@ export function getBlockEnd(list: EventCommand[], index: number): number {
   return j - 1;
 }
 
+export function getCommandBlockRange(
+  list: EventCommand[],
+  index: number,
+): { start: number; end: number } | null {
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+  for (const block of toVisualBlocks(list)) {
+    const end = block.kind === "multi" ? block.contIndices.at(-1) ?? block.rawIndex : block.rawIndex;
+    if (index >= block.rawIndex && index <= end) {
+      return { start: block.rawIndex, end };
+    }
+  }
+  return null;
+}
+
+/** Select an entire balanced conditional or loop when its opening marker is
+ * selected. A malformed structure is never modified. Nested structures and
+ * Else markers are retained as part of the parent's subtree.
+ */
+export function getStructuralCommandRange(
+  list: EventCommand[], index: number,
+): { start: number; end: number } | null {
+  const parent = list[index];
+  if (!parent || (parent.code !== 111 && parent.code !== 112)) return null;
+  // Track the exact opener depth and type. RMXP branch markers have their
+  // own indentation; accepting merely matching code numbers can silently
+  // transplant an incorrectly nested Else/End/Repeat into another event.
+  const stack: { close: number; indent: number; elseSeen: boolean; terminated: boolean }[] = [
+    { close: parent.code === 111 ? 412 : 413, indent: parent.indent, elseSeen: false, terminated: false },
+  ];
+  for (let i = index + 1; i < list.length; i++) {
+    const cmd = list[i];
+    const current = stack[stack.length - 1];
+    if (cmd.indent < parent.indent) return null;
+    if (cmd.code === 111 || cmd.code === 112) {
+      if (cmd.indent !== current.indent + 1 || current.terminated) return null;
+      stack.push({ close: cmd.code === 111 ? 412 : 413, indent: cmd.indent, elseSeen: false, terminated: false });
+    } else if (cmd.code === 411) {
+      // Each Then child list must end in its own code-zero terminator.
+      // A balanced 412 alone does not make an RMXP branch serializable.
+      const previous = list[i - 1];
+      if (current.close !== 412 || current.elseSeen || cmd.indent !== current.indent
+        || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
+      current.elseSeen = true;
+      current.terminated = false;
+    } else if (cmd.code === 412 || cmd.code === 413) {
+      const previous = list[i - 1];
+      if (current.close !== cmd.code || current.indent !== cmd.indent
+        || previous?.code !== 0 || previous.indent !== current.indent + 1) return null;
+      stack.pop();
+      if (!stack.length) return { start: index, end: i };
+    } else if (cmd.indent !== current.indent + 1 || current.terminated) {
+      // A code-zero child-list terminator must be the final command of its arm.
+      // Every ordinary command and child-list terminator belongs exactly one
+      // level below its current opener. Deeper jumps are malformed RMXP trees.
+      return null;
+    } else if (cmd.code === 0) {
+      current.terminated = true;
+    }
+  }
+  return null;
+}
+
+/** Add an Else arm to an existing complete RMXP conditional, without touching
+ * the Then arm or reusing Marshal source indices. Reject nested/malformed
+ * selections and existing Else arms rather than producing duplicate markers.
+ */
+export function addConditionalElseArm(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  if (list[index]?.code !== 111) return null;
+  const range = getStructuralCommandRange(list, index);
+  if (!range) return null;
+  const depth = list[index].indent;
+  let nestedDepth = 0;
+  for (let i = index + 1; i < range.end; i++) {
+    const code = list[i].code;
+    if (code === 111 || code === 112) nestedDepth++;
+    else if (code === 412 || code === 413) nestedDepth--;
+    else if (code === 411 && nestedDepth === 0) return null;
+  }
+  const close = range.end;
+  // RMXP conditional branches terminate their Then child list with a code-zero
+  // command at exactly one deeper indentation. Without that marker, adding an
+  // Else would serialize an invalid branch even if its 412 marker is balanced.
+  const thenTerminator = list[close - 1];
+  if (thenTerminator?.code !== 0 || thenTerminator.indent !== depth + 1) return null;
+  const insertion: EventCommand[] = [
+    { code: 411, indent: depth, parameters: [] },
+    { code: 0, indent: depth + 1, parameters: [] },
+  ];
+  return {
+    list: [...list.slice(0, close), ...insertion, ...list.slice(close)],
+    selectedIndex: close,
+  };
+}
+
+/** Remove only an empty Else arm. Nonempty Else bodies must be edited
+ * explicitly so a toolbar action cannot silently discard event commands.
+ * Preserve all original Then commands and their Marshal source identities.
+ */
+export function removeEmptyConditionalElseArm(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  if (list[index]?.code !== 111) return null;
+  const range = getStructuralCommandRange(list, index);
+  if (!range) return null;
+  const depth = list[index].indent;
+  let nested = 0;
+  for (let i = index + 1; i < range.end; i++) {
+    const cmd = list[i];
+    if (cmd.code === 111 || cmd.code === 112) nested++;
+    else if (cmd.code === 412 || cmd.code === 413) nested--;
+    else if (cmd.code === 411 && nested === 0) {
+      // Only an immediately adjacent child-list terminator is an empty arm.
+      const empty = list[i + 1];
+      if (empty?.code !== 0 || empty.indent !== depth + 1 || i + 2 !== range.end) return null;
+      return {
+        list: [...list.slice(0, i), ...list.slice(i + 2)],
+        selectedIndex: index,
+      };
+    }
+  }
+  return null;
+}
+
+export function getEditableCommandRange(
+  list: EventCommand[], index: number,
+): { start: number; end: number } | null {
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+  const structural = getStructuralCommandRange(list, index);
+  if (structural) return structural;
+  if (STRUCTURAL_EVENT_CODES.has(list[index].code)) return null;
+  return getCommandBlockRange(list, index);
+}
+
+export function getCommandInsertionIndex(list: EventCommand[], selectedIndex: number): number {
+  // RMXP uses code 0 inside nested branches as well as at the end of a page.
+  // Only the final top-level terminator bounds insertion; the first code 0
+  // can occur halfway through a valid conditional/loop script.
+  const last = list.length - 1;
+  const endIndex = last >= 0 && list[last].code === 0 && list[last].indent === 0
+    ? last : -1;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) {
+    return endIndex === -1 ? list.length : endIndex;
+  }
+  if (list[selectedIndex].code === 0) {
+    // The final page sentinel is always a legal insertion boundary. A nested
+    // child-list terminator is only legal when it belongs to a fully balanced
+    // enclosing conditional/loop. Otherwise a paste can silently extend a
+    // malformed RMXP branch and make its corruption harder to repair.
+    if (selectedIndex === endIndex) return selectedIndex;
+    if (list[selectedIndex].indent === 0) return -1;
+    for (let start = selectedIndex - 1; start >= 0; start--) {
+      const candidate = list[start];
+      if (candidate.indent >= list[selectedIndex].indent) continue;
+      if (candidate.code !== 111 && candidate.code !== 112) return -1;
+      const range = getStructuralCommandRange(list, start);
+      return range && range.end > selectedIndex ? selectedIndex : -1;
+    }
+    return -1;
+  }
+  // Nested ordinary commands also require a valid enclosing control-flow tree.
+  // Previously selecting a child (rather than its opener or terminator) could
+  // bypass structural validation and splice into an incomplete Then/Else/loop.
+  if (list[selectedIndex].indent > 0) {
+    let enclosing = false;
+    for (let start = selectedIndex - 1; start >= 0; start--) {
+      if (list[start].indent >= list[selectedIndex].indent) continue;
+      if (list[start].code !== 111 && list[start].code !== 112) return -1;
+      const parentRange = getStructuralCommandRange(list, start);
+      if (!parentRange || parentRange.end < selectedIndex) return -1;
+      enclosing = true;
+      break;
+    }
+    if (!enclosing) return -1;
+  }
+  // Never fall back to a single-command range for an incomplete control-flow
+  // opener or an isolated branch marker: that would splice into an invalid tree.
+  if (STRUCTURAL_EVENT_CODES.has(list[selectedIndex].code)
+    && !getStructuralCommandRange(list, selectedIndex)) return -1;
+  // Insert after the entire balanced subtree, never between its opener and
+  // child list. A malformed opener remains non-editable until repaired.
+  const range = getStructuralCommandRange(list, selectedIndex) ?? getCommandBlockRange(list, selectedIndex);
+  const insertionIndex = range ? range.end + 1 : selectedIndex + 1;
+  return endIndex !== -1 ? Math.min(insertionIndex, endIndex) : insertionIndex;
+}
+
+export type CommandMoveDirection = "up" | "down";
+
+/** Move only complete sibling statements. Structural openers own their balanced
+ * subtree; nested child commands cannot be moved across Else/End boundaries.
+ * This preserves RMXP branch and loop control flow without rewriting markers.
+ */
+function getAdjacentCommandRanges(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { selected: { start: number; end: number }; adjacent: { start: number; end: number } } | null {
+  const selected = getEditableCommandRange(list, index);
+  if (!selected) return null;
+  const depth = list[selected.start].indent;
+  const structural = list[selected.start].code === 111 || list[selected.start].code === 112;
+  if (structural && !getStructuralCommandRange(list, selected.start)) return null;
+
+  if (direction === "down") {
+    const start = selected.end + 1;
+    if (start >= list.length || list[start].indent !== depth) return null;
+    const adjacent = getEditableCommandRange(list, start);
+    if (!adjacent || adjacent.start !== start || list[adjacent.start].indent !== depth) return null;
+    return { selected, adjacent };
+  }
+
+  // Find the preceding statement ending exactly where the selected one starts.
+  // A nested child or structural closing marker cannot be treated as a sibling.
+  for (let start = selected.start - 1; start >= 0; start--) {
+    if (list[start].indent < depth) break;
+    if (list[start].indent !== depth) continue;
+    const adjacent = getEditableCommandRange(list, start);
+    if (adjacent?.start === start && adjacent.end === selected.start - 1) {
+      return { selected, adjacent };
+    }
+  }
+  return null;
+}
+
+export function canMoveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): boolean {
+  return getAdjacentCommandRanges(list, index, direction) !== null;
+}
+
+export function moveCommandBlock(
+  list: EventCommand[],
+  index: number,
+  direction: CommandMoveDirection,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  const ranges = getAdjacentCommandRanges(list, index, direction);
+  if (!ranges) return null;
+  const { selected, adjacent } = ranges;
+  const selectedCommands = list.slice(selected.start, selected.end + 1);
+  const adjacentCommands = list.slice(adjacent.start, adjacent.end + 1);
+
+  if (direction === "up") {
+    return {
+      list: [
+        ...list.slice(0, adjacent.start),
+        ...selectedCommands,
+        ...adjacentCommands,
+        ...list.slice(selected.end + 1),
+      ],
+      selectedIndex: adjacent.start,
+    };
+  }
+
+  return {
+    list: [
+      ...list.slice(0, selected.start),
+      ...adjacentCommands,
+      ...selectedCommands,
+      ...list.slice(adjacent.end + 1),
+    ],
+    selectedIndex: selected.start + adjacentCommands.length,
+  };
+}
+
+export function cloneCommandBlock(list: EventCommand[], index: number): EventCommand[] {
+  const range = getEditableCommandRange(list, index);
+  if (!range) return [];
+  return list.slice(range.start, range.end + 1).map((command) => {
+    const copy = { ...command, parameters: structuredClone(command.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
+
 /** Get default parameters for a new command */
 export function getDefaultParams(code: number): unknown[] {
   switch (code) {
-    case 101: return [""];
+    case 101: return ["", 0, 0, 2];
     case 108: return [""];
     case 111: return [0, 1, 0]; // Conditional: Switch [1] == ON
     case 117: return [1]; // Call Common Event 1
@@ -81,4 +358,105 @@ export function getCommandIcon(code: number): string {
   if (code === 355 || code === 655) return "{}";
   if (code >= 301 && code <= 340) return "⚔";
   return "•";
+}
+
+/** Paste a copied visual block at the destination indentation without sharing
+ * mutable parameter objects or stale source Marshal indices with its origin.
+ * Preserve relative indentation inside the copied block.
+ */
+export function prepareCommandBlockPaste(block: EventCommand[], destinationIndent: number): EventCommand[] {
+  if (!block.length || !Number.isInteger(destinationIndent) || destinationIndent < 0) return [];
+  const baseIndent = block[0].indent;
+  if (!Number.isInteger(baseIndent) || baseIndent < 0) return [];
+  if (block.some((cmd) => !Number.isInteger(cmd.indent) || cmd.indent < baseIndent)) return [];
+  // A clipboard must represent exactly one complete RMXP statement. Never
+  // reintroduce orphan continuations, child terminators or partial control-flow
+  // trees through paste, even if a caller supplies a malformed clipboard.
+  if ([0, 401, 408, 655, 411, 412, 413].includes(block[0].code)) return [];
+  const range = getEditableCommandRange(block, 0);
+  if (!range || range.start !== 0 || range.end !== block.length - 1) return [];
+  return block.map((cmd) => {
+    const copy = { ...cmd, indent: destinationIndent + cmd.indent - baseIndent, parameters: structuredClone(cmd.parameters) };
+    delete copy.source_index;
+    return copy;
+  });
+}
+
+/** Cut an entire RMXP visual block, never an isolated continuation or terminator.
+ * Returns null without mutating the list for invalid indices.
+ */
+export function cutCommandBlock(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; clipboard: EventCommand[]; selectedIndex: number } | null {
+  const range = getEditableCommandRange(list, index);
+  if (!range) return null;
+  const clipboard = cloneCommandBlock(list, range.start);
+  if (!clipboard.length) return null;
+  return {
+    list: [...list.slice(0, range.start), ...list.slice(range.end + 1)],
+    clipboard,
+    selectedIndex: Math.max(0, range.start - 1),
+  };
+}
+
+/** Construct a fresh command for an event page. Command picker definitions are
+ * shared across editor instances; never hand their parameter objects directly
+ * to a mutable event list. RMXP continuation commands are owned by parents.
+ */
+export function createEventCommand(
+  code: number, indent: number, defaultParams?: unknown[],
+): EventCommand | null {
+  if (!Number.isInteger(code) || code <= 0 || !Number.isInteger(indent) || indent < 0) return null;
+  if ((STRUCTURAL_EVENT_CODES.has(code) && code !== 111 && code !== 112) || code === 401 || code === 408 || code === 655) return null;
+  return {
+    code,
+    indent,
+    parameters: structuredClone(defaultParams ?? getDefaultParams(code)),
+  };
+}
+
+/** Insertion at the final page terminator always uses top-level indentation.
+ * Selecting a nested code-zero marker inserts before that marker at its depth.
+ */
+export function getCommandInsertionIndent(list: EventCommand[], selectedIndex: number): number {
+  const index = getCommandInsertionIndex(list, selectedIndex);
+  const last = list.length - 1;
+  if (index === last && list[last]?.code === 0 && list[last].indent === 0) return 0;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= list.length) return 0;
+  return list[selectedIndex].indent;
+}
+
+/** RMXP branch/loop markers are structural, not independent visual commands.
+ * Reject edits that would leave orphaned Else/End/Repeat or branch bodies.
+ * A future tree-aware editor can replace this guard with whole-structure edits.
+ */
+export const STRUCTURAL_EVENT_CODES = new Set([0, 111, 112, 411, 412, 413]);
+
+export function deleteEditableCommandBlock(
+  list: EventCommand[], index: number,
+): { list: EventCommand[]; selectedIndex: number } | null {
+  const range = getEditableCommandRange(list, index);
+  if (!range) return null;
+  return {
+    list: [...list.slice(0, range.start), ...list.slice(range.end + 1)],
+    selectedIndex: Math.max(0, range.start - 1),
+  };
+}
+
+/** Construct a balanced RMXP conditional or loop at insertion time.
+ * The nested code-zero command closes the child list, while 412/413 closes
+ * the outer control-flow construct. Orphan markers are never offered alone.
+ */
+export function createEventCommandInsertion(
+  code: number, indent: number, defaultParams?: unknown[],
+): EventCommand[] {
+  if ([0, 411, 412, 413].includes(code)) return [];
+  const parent = createEventCommand(code, indent, defaultParams);
+  if (!parent) return [];
+  if (code !== 111 && code !== 112) return [parent];
+  return [
+    parent,
+    { code: 0, indent: indent + 1, parameters: [] },
+    { code: code === 111 ? 412 : 413, indent, parameters: [] },
+  ];
 }

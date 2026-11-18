@@ -8,8 +8,11 @@ export async function saveSequentially(jobs: readonly SaveJob[]): Promise<void> 
   const failures: string[] = [];
   for (const job of jobs) {
     try {
+      console.info("[save-all] editor started", job.id);
       await job.save();
+      console.info("[save-all] editor completed", job.id);
     } catch (error) {
+      console.warn("[save-all] editor failed", job.id, String(error));
       failures.push(`${job.id}: ${String(error)}`);
     }
   }

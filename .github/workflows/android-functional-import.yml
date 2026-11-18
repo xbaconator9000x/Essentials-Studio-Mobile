@@ -1,23 +1,9 @@
 name: Android emulator functional ZIP import
 
 on:
-  # Run the KVM acceptance path on functional PRs and integrated main candidates.
+  # Emulator UI acceptance is deferred to user-operated physical Android phones.
+  # Keep the synthetic KVM diagnostic available only when explicitly requested.
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'scripts/android-emulator-*.py'
-      - 'scripts/android-emulator-*.sh'
-      - '.github/workflows/android-functional-import.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'scripts/android-emulator-*.py'
-      - 'scripts/android-emulator-*.sh'
-      - '.github/workflows/android-functional-import.yml'
 
 permissions:
   contents: read
@@ -95,7 +81,9 @@ jobs:
         run: |
           bash -n scripts/android-emulator-smoke.sh
           python3 scripts/android-emulator-import-smoke.py --self-test
+          python3 scripts/android-emulator-preview-smoke.py --self-test
           python3 scripts/android-emulator-map-save-smoke.py --self-test
+          python3 scripts/android-emulator-sprite-smoke.py --self-test
           python3 scripts/android-emulator-saf-export-smoke.py --self-test
           python3 scripts/android-emulator-export-reimport-smoke.py --self-test
           bash -n scripts/android-emulator-functional-smoke.sh
@@ -125,25 +113,31 @@ jobs:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: npm run tauri android init -- --ci
+      - name: Cache Gradle wrapper distribution and build state
+        uses: gradle/actions/setup-gradle@v6.1.0
+        with:
+          cache-provider: basic
       - name: Compile x86_64 Android debug APK
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          # Maven Central can return HTTP 429 while resolving Gradle's Kotlin
-          # buildSrc dependencies. Retry only that transient infrastructure
-          # failure; do not mask compiler, source or Android packaging errors.
+          # Gradle distribution and Maven mirrors can transiently return 429 or
+          # 5xx responses. Retry only those network failures; do not mask
+          # compiler, source or Android packaging errors.
           for attempt in 1 2 3; do
             log="${RUNNER_TEMP}/android-x86-build-${attempt}.log"
             if npm run tauri android build -- --ci --apk --debug --target x86_64 2>&1 | tee "$log"; then
               exit 0
             fi
-            if [[ "$attempt" == 3 ]] || ! grep -Eiq 'Received status code 429|Too Many Requests|HTTP 429' "$log"; then
+            if [[ "$attempt" == 3 ]] || ! grep -Eiq \
+              'Received status code (429|502|503|504)|Too Many Requests|HTTP (429|502|503|504)|Server returned HTTP response code: (429|502|503|504)' \
+              "$log"; then
               echo "::error::Android x86 build failed for a non-retryable reason (or exhausted retries)."
               exit 1
             fi
-            echo "::warning::Gradle dependency server returned HTTP 429; waiting before bounded retry ${attempt}/3"
+            echo "::warning::Gradle dependency server returned a transient HTTP error; waiting before bounded retry ${attempt}/3"
             sleep $((attempt * 60))
           done
       - name: Preserve compiled APK
@@ -198,6 +192,43 @@ jobs:
             exit 1
           fi
       - uses: android-actions/setup-android@v4
+      - name: Compile test-only accessibility dialogue input helper
+        run: |
+          set -euo pipefail
+          # The legacy `uiautomator runtest` runner requires android.test.base,
+          # which Android 11 removed. Keep this test-only helper on API 29 and
+          # compile against the same platform used by the emulator below.
+          sdkmanager "platforms;android-29"
+          platform="$ANDROID_HOME/platforms/android-29"
+          test -s "$platform/uiautomator.jar"
+          test -s "$platform/android.jar"
+          classes="$RUNNER_TEMP/dialogue-input-classes"
+          compile_stub="$RUNNER_TEMP/dialogue-input-compile-stub"
+          dex="$RUNNER_TEMP/dialogue-input-dex"
+          d8="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -type f -name d8 \
+            -printf '%p\n' | sort -V | tail -n 1)"
+          test -x "$d8"
+          mkdir -p "$classes" "$compile_stub/junit/framework" "$dex"
+          printf 'package junit.framework; public class TestCase {}\n' \
+            > "$compile_stub/junit/framework/TestCase.java"
+          javac -source 8 -target 8 \
+            -classpath "$platform/android.jar:$platform/uiautomator.jar" \
+            -d "$compile_stub" \
+            "$compile_stub/junit/framework/TestCase.java"
+          javac -source 8 -target 8 \
+            -classpath "$platform/android.jar:$platform/uiautomator.jar:$compile_stub" \
+            -d "$classes" \
+            scripts/android-dialogue-input-test/DialogueInputTest.java
+          # UiAutomator loads DEX from its test JAR; the device supplies JUnit at runtime.
+          "$d8" --min-api 16 \
+            --lib "$platform/android.jar" \
+            --classpath "$platform/uiautomator.jar" \
+            --classpath "$compile_stub" \
+            --output "$dex" \
+            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest.class" \
+            "$classes/com/xbaconator/essentialsstudiomobile/smoketests/DialogueInputTest\$AccessibilityObject.class"
+          jar cf "$RUNNER_TEMP/dialogue-input-test.jar" -C "$dex" classes.dex
+          echo "ANDROID_DIALOGUE_INPUT_TEST_JAR=$RUNNER_TEMP/dialogue-input-test.jar" >> "$GITHUB_ENV"
       - name: Confirm downloaded APK and source identity
         run: |
           test -n "$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
@@ -206,11 +237,12 @@ jobs:
       - name: Install and launch compiled APK
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          # Retain API30 Google APIs for comparability with the previous
-          # macOS test runs. Linux KVM replaces the CPU-starved macOS Intel
-          # host that intermittently lost ADB/package-manager responsiveness.
-          # Never count picker display or app launch as a successful import.
+          api-level: 29
+          # Legacy UiAutomator 1.x needs android.test.base, present through API
+          # 29 but removed in Android 11. Linux KVM replaces the CPU-starved
+          # macOS Intel host that intermittently lost ADB/package-manager
+          # responsiveness. Never count picker display or app launch as a
+          # successful import.
           target: google_apis
           arch: x86_64
           profile: pixel_2

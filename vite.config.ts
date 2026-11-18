@@ -6,6 +6,9 @@ import react from "@vitejs/plugin-react";
 const token = process.env.ESSENTIALS_BROWSER_TOKEN;
 export default defineConfig({
   plugins: [react()],
+  build: {
+    target: "chrome74",
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

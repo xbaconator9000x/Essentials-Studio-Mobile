@@ -1,81 +1,99 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useReducer } from "react";
+
+type UndoableState<T> = {
+  value: T | null;
+  past: T[];
+  future: T[];
+};
+
+type UndoableAction<T> =
+  | { type: "set"; value: T | null | ((previous: T | null) => T | null); maxHistory: number }
+  | { type: "setWithoutHistory"; value: T | null }
+  | { type: "resetHistory" }
+  | { type: "undo" }
+  | { type: "redo"; maxHistory: number };
+
+function snapshot<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function boundedHistory<T>(history: T[], maxHistory: number): T[] {
+  return maxHistory > 0 ? history.slice(-maxHistory) : [];
+}
+
+function undoableReducer<T>(
+  state: UndoableState<T>,
+  action: UndoableAction<T>,
+): UndoableState<T> {
+  switch (action.type) {
+    case "set": {
+      const value = typeof action.value === "function"
+        ? (action.value as (previous: T | null) => T | null)(state.value)
+        : action.value;
+      if (state.value === null) return { ...state, value };
+      return {
+        value,
+        past: boundedHistory([...state.past, snapshot(state.value)], action.maxHistory),
+        future: [],
+      };
+    }
+    case "setWithoutHistory":
+      return { ...state, value: action.value };
+    case "resetHistory":
+      return { ...state, past: [], future: [] };
+    case "undo": {
+      if (state.value === null || state.past.length === 0) return state;
+      return {
+        value: state.past[state.past.length - 1],
+        past: state.past.slice(0, -1),
+        future: [...state.future, snapshot(state.value)],
+      };
+    }
+    case "redo": {
+      if (state.value === null || state.future.length === 0) return state;
+      return {
+        value: state.future[state.future.length - 1],
+        past: boundedHistory([...state.past, snapshot(state.value)], action.maxHistory),
+        future: state.future.slice(0, -1),
+      };
+    }
+  }
+}
 
 /**
- * Hook that wraps a state value with undo/redo history.
- * Tracks changes as snapshots (deep-cloned JSON).
+ * Wraps a state value with undo/redo history using JSON snapshots.
  *
  * @param initialValue The initial state value
  * @param maxHistory Max number of undo steps to keep (default 50)
  */
 export function useUndoable<T>(initialValue: T | null, maxHistory = 50) {
-  const [value, setValue] = useState<T | null>(initialValue);
-  const historyRef = useRef<string[]>([]);
-  const futureRef = useRef<string[]>([]);
-  const skipRecordRef = useRef(false);
+  const [state, dispatch] = useReducer(undoableReducer<T>, {
+    value: initialValue,
+    past: [],
+    future: [],
+  });
 
-  /**
-   * Set a new value and push current state to undo history.
-   * Use this instead of direct setState for undoable changes.
-   */
   const set = useCallback(
-    (newValueOrUpdater: T | null | ((prev: T | null) => T | null)) => {
-      setValue((prev) => {
-        const next =
-          typeof newValueOrUpdater === "function"
-            ? (newValueOrUpdater as (prev: T | null) => T | null)(prev)
-            : newValueOrUpdater;
-
-        if (!skipRecordRef.current && prev !== null) {
-          historyRef.current.push(JSON.stringify(prev));
-          if (historyRef.current.length > maxHistory) {
-            historyRef.current.shift();
-          }
-          futureRef.current = []; // Clear redo on new edit
-        }
-        skipRecordRef.current = false;
-
-        return next;
-      });
+    (value: T | null | ((previous: T | null) => T | null)) => {
+      dispatch({ type: "set", value, maxHistory });
     },
-    [maxHistory]
+    [maxHistory],
   );
-
-  /**
-   * Set value WITHOUT recording to undo history.
-   * Use for initial loads, saves, or non-user-initiated changes.
-   */
-  const setWithoutHistory = useCallback((newValue: T | null) => {
-    skipRecordRef.current = true;
-    setValue(newValue);
-    // Don't clear history/future on load
+  const setWithoutHistory = useCallback((value: T | null) => {
+    dispatch({ type: "setWithoutHistory", value });
   }, []);
+  const resetHistory = useCallback(() => dispatch({ type: "resetHistory" }), []);
+  const undo = useCallback(() => dispatch({ type: "undo" }), []);
+  const redo = useCallback(() => dispatch({ type: "redo", maxHistory }), [maxHistory]);
 
-  /** Reset history (call when loading a new entity) */
-  const resetHistory = useCallback(() => {
-    historyRef.current = [];
-    futureRef.current = [];
-  }, []);
-
-  const undo = useCallback(() => {
-    setValue((prev) => {
-      if (historyRef.current.length === 0 || prev === null) return prev;
-      futureRef.current.push(JSON.stringify(prev));
-      const restored = historyRef.current.pop()!;
-      return JSON.parse(restored) as T;
-    });
-  }, []);
-
-  const redo = useCallback(() => {
-    setValue((prev) => {
-      if (futureRef.current.length === 0 || prev === null) return prev;
-      historyRef.current.push(JSON.stringify(prev));
-      const restored = futureRef.current.pop()!;
-      return JSON.parse(restored) as T;
-    });
-  }, []);
-
-  const canUndo = historyRef.current.length > 0;
-  const canRedo = futureRef.current.length > 0;
-
-  return { value, set, setWithoutHistory, resetHistory, undo, redo, canUndo, canRedo };
+  return {
+    value: state.value,
+    set,
+    setWithoutHistory,
+    resetHistory,
+    undo,
+    redo,
+    canUndo: state.past.length > 0,
+    canRedo: state.future.length > 0,
+  };
 }

@@ -23,8 +23,11 @@ test("full-project sweep enforces three XP layers and i16 tile fidelity", () => 
 test("full-project sweep checks native event pages and command structures", () => {
   const info = { id: 7, page_count: 1 };
   assert.deepEqual(validateEvent({ id: 7, pages: [
-    { list: [{ code: 101, indent: 0, parameters: ["test"] }] },
-  ] }, 1, info), { pages: 1, commands: 1 });
+    { list: [
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+      { code: 401, indent: 0, parameters: ["test"] },
+    ] },
+  ] }, 1, info), { pages: 1, commands: 2 });
   assert.throws(() => validateEvent({ id: 7, pages: [] }, 1, info), /page count/);
   assert.throws(() => validateEvent({ id: 7, pages: [
     { list: [{ code: 101, indent: 0 }] },
