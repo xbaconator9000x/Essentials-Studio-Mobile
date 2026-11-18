@@ -68,6 +68,10 @@ export function MobileWorkspaceBar({
           <span className="app-mobile-workspace-name" title={onMap ? mapName || projectName : projectName}>
             {onMap ? (mapName || "Select a map") : projectName}
           </span>
+          <span role="status" aria-live="off" aria-label={`Toolbar state: ${busy ? "busy" : "idle"}, tools ${toolsOpen ? "open" : "closed"}`}
+            style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+            {`Toolbar state: ${busy ? "busy" : "idle"}, tools ${toolsOpen ? "open" : "closed"}`}
+          </span>
           <span className={dirtyCount ? "app-mobile-workspace-dirty" : "app-mobile-workspace-clean"}
             role="status" aria-live="polite" aria-atomic="true">
             {dirtyCount ? `${dirtyCount} unsaved` : "Saved"}
