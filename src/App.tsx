@@ -1091,41 +1091,45 @@ function AppContent() {
         </div>
         <div className="app-welcome">
           <div className="app-welcome-content">
-            <h1>Essentials Studio</h1>
-            <p>A modern editor for Pokémon Essentials projects</p>
-            {canOpenProjectFolder && (
-              <button
-                className="app-welcome-btn"
-                onClick={handleBrowseProject}
-                disabled={loading}
-              >
-                {loading ? "Opening..." : "Open Project Folder"}
-              </button>
+            <header className="app-welcome-hero">
+              <span className="app-welcome-mark" aria-hidden="true">ES</span>
+              <h1>Essentials Studio</h1>
+              <p>Edit Pokémon Essentials projects on your phone: maps, events and sprites.</p>
+            </header>
+            {isBrowserDev ? (
+              <p role="status" className="app-welcome-card">Browser ZIP import runs when launching the editor. Restart with <code>npm run dev:web -- /absolute/path/project.zip</code> to create a new safe working copy.</p>
+            ) : (
+              /* The bounded File.slice importer comes first; the scoped native
+                 Android picker below remains as fallback (emulator 41304956412). */
+              <label className="app-welcome-btn app-welcome-btn--primary app-archive-picker">
+                <span className="app-welcome-btn-title">Import Essentials Project ZIP</span>
+                <span className="app-welcome-btn-sub">Your original ZIP is never modified</span>
+                <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
+                  aria-label="Choose Essentials Project ZIP" disabled={loading}
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void handleImportProjectZip(file);
+                  }} />
+              </label>
             )}
+            {archiveProgress !== null && (
+              <div className="app-welcome-progress" role="progressbar" aria-label="Importing project"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress}>
+                <div className="app-welcome-progress-bar" style={{ width: `${archiveProgress}%` }} />
+                <span>Importing project: {archiveProgress}%</span>
+              </div>
+            )}
+            {archiveOutcome && <p role="status" aria-live="polite" className="app-welcome-card">{archiveOutcome}</p>}
             {lastProjectPath && (
               <button className="app-welcome-btn" onClick={() => void handleReopenLastProject()} disabled={loading}>
                 Reopen Last Project
               </button>
             )}
-            {/* The native Android dialog can return without resolving its
-                callback (emulator 41304956412). Use the bounded File.slice
-                importer first; retain the scoped native picker as fallback. */}
-            {isBrowserDev ? (
-              <p role="status">Browser ZIP import runs when launching the editor. Restart with <code>npm run dev:web -- /absolute/path/project.zip</code> to create a new safe working copy.</p>
-            ) : (
-            <label className="app-welcome-btn app-archive-picker">
-              Import Essentials Project ZIP
-              <input type="file" accept={PROJECT_ARCHIVE_ACCEPT} className="app-archive-picker-input"
-                aria-label="Choose Essentials Project ZIP" disabled={loading}
-                onChange={event => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) void handleImportProjectZip(file);
-                }} />
-            </label>
-            )}
-            {isAndroid && (
-              <p role="note">On Android, open projects from a ZIP archive. The source ZIP remains unchanged.</p>
+            {canOpenProjectFolder && (
+              <button className="app-welcome-btn" onClick={handleBrowseProject} disabled={loading}>
+                {loading ? "Opening..." : "Open Project Folder"}
+              </button>
             )}
             {isAndroid && (
               <button className="app-welcome-btn" aria-label="Use native Android document picker"
@@ -1133,13 +1137,21 @@ function AppContent() {
                 Import ZIP via Android document picker
               </button>
             )}
-            {archiveProgress !== null && <p>Importing project: {archiveProgress}%</p>}
-            {archiveOutcome && <p role="status" aria-live="polite">{archiveOutcome}</p>}
-            <p className="app-welcome-hint">
-              Select a folder containing a Game.rxproj file
-              <br />
-              <span style={{ opacity: 0.6 }}>Shortcut: Cmd+O</span>
-            </p>
+            <ol className="app-welcome-steps" aria-label="How it works">
+              <li><strong>Import</strong><span>Choose a ZIP of your project (it must contain Game.rxproj).</span></li>
+              <li><strong>Edit</strong><span>Paint maps, edit events and draw sprites with touch tools.</span></li>
+              <li><strong>Export</strong><span>Save All, then export a new ZIP. Unknown files are preserved.</span></li>
+            </ol>
+            {isAndroid && (
+              <p role="note" className="app-welcome-hint">Projects stay on this device. Nothing is uploaded.</p>
+            )}
+            {!mobileLayout && (
+              <p className="app-welcome-hint">
+                Select a folder containing a Game.rxproj file
+                <br />
+                <span style={{ opacity: 0.6 }}>Shortcut: Cmd+O</span>
+              </p>
+            )}
           </div>
           {error && (
             <div className="app-error">
