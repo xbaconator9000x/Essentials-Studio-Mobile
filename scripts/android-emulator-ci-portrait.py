@@ -373,9 +373,16 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
         toggle = action(current, "Show map tools")
         if toggle and attempts < 3:
             toggle_nodes = [n for n in current if "Show map tools" in label(n)]
-            attempt_log.append({"tap": toggle,
-                                "bounds": [n.get("bounds") for n in toggle_nodes],
-                                "class": [n.get("class") for n in toggle_nodes]})
+            attempt_log.append({
+                "tap": toggle,
+                "bounds": [n.get("bounds") for n in toggle_nodes],
+                "enabled": [n.get("enabled") for n in toggle_nodes],
+                "clickable": [n.get("clickable") for n in toggle_nodes],
+                "selected": [n.get("selected") for n in toggle_nodes],
+                "class": [n.get("class") for n in toggle_nodes],
+                "already_editable": bool(action(current, "Switch map to view mode")),
+                "paint_workflow_visible": any("Mobile paint workflow" in label(n) for n in current),
+            })
             tap(toggle)
             attempts += 1
             time.sleep(2)
