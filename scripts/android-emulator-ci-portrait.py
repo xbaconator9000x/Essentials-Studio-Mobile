@@ -360,6 +360,7 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
         return nodes
     deadline = time.monotonic() + timeout
     attempts = 0
+    attempt_log: list[dict[str, object]] = []
     last_labels: list[str] = []
     while time.monotonic() < deadline:
         # Android WebView accessibility can publish the previous frame after
@@ -371,6 +372,10 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
         last_labels = [label(node) for node in current if label(node)]
         toggle = action(current, "Show map tools")
         if toggle and attempts < 3:
+            toggle_nodes = [n for n in current if "Show map tools" in label(n)]
+            attempt_log.append({"tap": toggle,
+                                "bounds": [n.get("bounds") for n in toggle_nodes],
+                                "class": [n.get("class") for n in toggle_nodes]})
             tap(toggle)
             attempts += 1
             time.sleep(2)
@@ -382,7 +387,8 @@ def open_map_tools(name: str, timeout: int = 35) -> list[dict[str, str]]:
         time.sleep(2)
     raise AssertionError(
         f"Map contextual tools did not expand to an accessible editing state "
-        f"after {attempts} disclosure attempts; visible labels={last_labels!r}")
+        f"after {attempts} disclosure attempts; attempts={attempt_log!r}; "
+        f"visible labels={last_labels!r}")
 
 def native_map_edit_and_save(package: str) -> dict[str, object]:
     """Paint one actual synthetic map tile through Android touch then Save All.
